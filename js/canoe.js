@@ -212,3 +212,60 @@ export function createMist(scene) {
   scene.add(group);
   return { group, update(dt, level, color) { group.children.forEach((q) => { q.position.x += q.userData.v[0] * dt; q.position.z += q.userData.v[1] * dt; q.material.opacity = level * 0.32 * q.userData.base; q.material.color.copy(color); }); group.visible = level > 0.01; } };
 }
+
+// ------------------------------------------------------------------ towed swimmer (easter egg)
+export function createSwimmer(scene) {
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body); g.visible = false; scene.add(g);
+  const vest = flat(0xff6a14, { roughness: 0.7 }), strap = flat(0x1d1d22), skin = flat(0x8a5a44), suit = flat(0x2d3e5c);
+  // lying back in the water, head toward the canoe (+z local), feet trailing
+  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(0.26, 1), vest); torso.scale.set(1.25, 0.75, 1.35); torso.position.set(0, 0.02, 0); body.add(torso);
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.07, 6, 10), vest); collar.rotation.x = Math.PI / 2.4; collar.position.set(0, 0.1, 0.3); body.add(collar);
+  [-0.12, 0.08].forEach((z) => { const s = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.03, 0.05), strap); s.position.set(0, 0.17, z); body.add(s); });
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14, 1), skin); head.position.set(0, 0.16, 0.5); body.add(head);
+  const hat = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 1), flat(0x2f6a8a)); hat.scale.set(1, 0.7, 1); hat.position.set(0, 0.24, 0.53); body.add(hat);
+  const legs = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.7, 2, 6), suit); legs.rotation.x = Math.PI / 2 - 0.25; legs.position.set(0, -0.18, -0.65); legs.scale.x = 1.7; body.add(legs);
+  const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.45, 2, 5), vest.clone()); armL.material.color.set(0x2d3e5c);
+  const armR = armL.clone(); body.add(armL, armR);
+  armL.position.set(0.14, 0.12, 0.62); armL.rotation.set(Math.PI / 2 - 0.5, 0, -0.35);
+  armR.position.set(-0.14, 0.12, 0.62); armR.rotation.set(Math.PI / 2 - 0.5, 0, 0.35);
+  const ropeMat = new THREE.MeshStandardMaterial({ color: 0xe8d9a8, roughness: 0.9 });
+  let rope = null;
+  const pos = new THREE.Vector3(), vel = new THREE.Vector3(), stern = new THREE.Vector3(), hands = new THREE.Vector3(), tmp = new THREE.Vector3();
+  const LEN = 7;
+  const api = {
+    group: g, on: false,
+    toggle(canoeRoot) {
+      api.on = !api.on; g.visible = api.on;
+      if (api.on) { canoeRoot.localToWorld(stern.set(0, 0.35, -2.6)); tmp.set(-Math.sin(canoeRoot.rotation.y), 0, -Math.cos(canoeRoot.rotation.y)); pos.copy(stern).addScaledVector(tmp, LEN - 0.5); pos.y = 0; vel.set(0, 0, 0); }
+      if (!api.on && rope) { g.parent.remove(rope); rope.geometry.dispose(); rope = null; }
+      return api.on;
+    },
+    position: pos,
+    update(dt, t, canoeRoot, ripples) {
+      if (!api.on) return;
+      canoeRoot.localToWorld(stern.set(0, 0.36, -2.62));
+      // water drag + rope constraint (rope only pulls, never pushes)
+      vel.multiplyScalar(Math.exp(-1.6 * dt)); pos.addScaledVector(vel, dt);
+      tmp.set(pos.x - stern.x, 0, pos.z - stern.z); const d = tmp.length();
+      if (d > 3 * LEN) { tmp.normalize(); pos.set(stern.x + tmp.x * LEN, 0, stern.z + tmp.z * LEN); vel.set(0, 0, 0); }
+      else if (d > LEN) { tmp.multiplyScalar(1 / d); const over = d - LEN; pos.x -= tmp.x * over; pos.z -= tmp.z * over; const vn = vel.x * tmp.x + vel.z * tmp.z; if (vn > 0) { vel.x -= tmp.x * vn; vel.z -= tmp.z * vn; } vel.x -= tmp.x * over * 3; vel.z -= tmp.z * over * 3; }
+      const speed = Math.hypot(vel.x, vel.z);
+      g.position.set(pos.x, -0.05 + Math.sin(t * 1.7) * 0.03 + Math.min(speed, 2) * 0.03, pos.z);
+      g.rotation.y = Math.atan2(stern.x - pos.x, stern.z - pos.z);
+      body.rotation.z = Math.sin(t * 1.3) * 0.12; body.rotation.x = -0.12 - Math.min(speed, 2.5) * 0.05;
+      armL.rotation.z = -0.35 + Math.sin(t * 2.1) * 0.08; armR.rotation.z = 0.35 - Math.sin(t * 2.1 + 1) * 0.08;
+      api.wake = (api.wake || 0) - dt;
+      if (speed > 0.4 && api.wake < 0) { api.wake = 0.5; ripples.spawn(pos.x, pos.z, 1.6 + speed * 0.6, 2.2, 0.28, 0.4); }
+      // sagging rope from the stern to the swimmer's hands
+      body.localToWorld(hands.set(0, 0.2, 0.95));
+      const slack = clamp(1 - d / LEN, 0, 1), pts = [];
+      for (let i = 0; i <= 10; i++) {
+        const u = i / 10, p = new THREE.Vector3().lerpVectors(stern, hands, u);
+        p.y -= Math.sin(u * Math.PI) * (0.12 + slack * 0.6); p.y = Math.max(p.y, 0.02); pts.push(p);
+      }
+      const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.012, 4);
+      if (rope) { rope.geometry.dispose(); rope.geometry = geo; } else { rope = new THREE.Mesh(geo, ropeMat); g.parent.add(rope); }
+    },
+  };
+  return api;
+}

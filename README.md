@@ -23,6 +23,7 @@ python3 -m http.server 8000   # then open http://localhost:8000
 | Time of day | `1` dawn · `2` day · `3` dusk · `4` night | HUD buttons |
 | Mute | `M` | HUD button |
 | Pause | `Esc` / `P` | ❚❚ button |
+| Tow a swimmer | triple-tap the canoe (again to let go) | same |
 | Auto paddle | leave the controls alone for 8 s | same |
 | Map / travel | `N` or click the minimap | tap the minimap |
 
