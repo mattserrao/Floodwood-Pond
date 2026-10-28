@@ -49,7 +49,8 @@ function build() {
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: 1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const G = { mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
+const VERSION = '0.1.0';
+const G = { paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
 
@@ -60,12 +61,17 @@ function resetPlayer() {
 
 // ------------------------------------------------------------------ input
 addEventListener('keydown', (e) => {
-  if (e.repeat) return; const k = e.key.toLowerCase(); keys.add(k);
-  if (k === 'm') toggleMute();
+  if (e.repeat) return; const k = e.key.toLowerCase();
+  if (k === 'escape' || k === 'p') { if (G.mapOpen) closeMap(); else if (!G.menu) setPaused(!G.paused); return; }
+  if (k === 'm') { toggleMute(); return; }
+  if (G.paused || G.mapOpen || G.menu) return;
+  keys.add(k);
   if (k >= '1' && k <= '4') jumpTo([5.7, 12, 18.3, 22.5][+k - 1]);
+  if (k === 'n' && G.mode === 'play') openMap();
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 addEventListener('blur', () => keys.clear());
+document.addEventListener('visibilitychange', () => { if (document.hidden && G.mode === 'play' && !G.menu) setPaused(true); });
 let drag = null;
 canvas.addEventListener('pointerdown', (e) => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); G.idle = 0; });
 canvas.addEventListener('pointermove', (e) => {
@@ -88,35 +94,103 @@ joyEl.addEventListener('pointermove', (e) => { if (e.pointerId === joyId) joyMov
 const joyEnd = (e) => { if (e.pointerId === joyId) { joyId = null; joy.x = joy.y = 0; nub.style.transform = ''; } };
 joyEl.addEventListener('pointerup', joyEnd); joyEl.addEventListener('pointercancel', joyEnd);
 
-function toggleMute() { audio.setMuted(!audio.muted); $('mute').textContent = audio.muted ? 'Sound off' : 'Sound on'; }
-$('mute').addEventListener('click', toggleMute);
-document.querySelectorAll('#btns [data-t]').forEach((b) => b.addEventListener('click', () => jumpTo(+b.dataset.t)));
-function jumpTo(h) { let to = h; if (to <= G.hour) to += 24; G.jump = { from: G.hour, to, t: 0 }; }
-
-// ------------------------------------------------------------------ minimap
-const mini = $('miniC'), mctx = mini.getContext('2d');
-const MM = { x0: -1250, x1: 1250, z0: -880, z1: 880 };
-const mmX = (x) => ((x - MM.x0) / (MM.x1 - MM.x0)) * mini.width, mmZ = (z) => ((z - MM.z0) / (MM.z1 - MM.z0)) * mini.height;
-const staticMap = document.createElement('canvas'); staticMap.width = mini.width; staticMap.height = mini.height;
-function drawStaticMap() {
-  const c = staticMap.getContext('2d');
-  c.fillStyle = '#2b3b2a'; c.fillRect(0, 0, staticMap.width, staticMap.height);
-  c.strokeStyle = 'rgba(214,190,140,.7)'; c.lineWidth = 2;
-  MAP.roads.forEach((r) => { c.beginPath(); r.pts.forEach((p, i) => (i ? c.lineTo(mmX(p[0]), mmZ(p[1])) : c.moveTo(mmX(p[0]), mmZ(p[1])))); c.stroke(); });
-  c.strokeStyle = 'rgba(214,190,140,.35)'; c.lineWidth = 1;
-  MAP.trails.forEach((r) => { c.beginPath(); r.pts.forEach((p, i) => (i ? c.lineTo(mmX(p[0]), mmZ(p[1])) : c.moveTo(mmX(p[0]), mmZ(p[1])))); c.stroke(); });
-  c.fillStyle = '#3d6e86';
-  MAP.others.forEach((o) => { c.beginPath(); o.ring.forEach((p, i) => (i ? c.lineTo(mmX(p[0]), mmZ(p[1])) : c.moveTo(mmX(p[0]), mmZ(p[1])))); c.closePath(); c.fill(); });
-  c.beginPath(); MAP.pond.forEach((r) => { r.forEach((p, i) => (i ? c.lineTo(mmX(p[0]), mmZ(p[1])) : c.moveTo(mmX(p[0]), mmZ(p[1])))); c.closePath(); });
-  c.fillStyle = '#4f8fb0'; c.fill('evenodd');
-  c.fillStyle = '#e8873a'; MAP.camps.forEach((p) => { c.fillRect(mmX(p[0]) - 1.5, mmZ(p[1]) - 1.5, 3, 3); });
-  c.fillStyle = '#fff'; c.font = '16px Georgia'; c.fillText('N ↑', 8, 20);
+function toggleMute() {
+  audio.setMuted(!audio.muted);
+  const label = audio.muted ? 'Sound off' : 'Sound on';
+  $('mute').textContent = label; $('pMute').textContent = label;
 }
-function drawMini() {
-  mctx.drawImage(staticMap, 0, 0);
-  mctx.save(); mctx.translate(mmX(P.x), mmZ(P.z)); mctx.rotate(-P.psi + Math.PI);
-  mctx.fillStyle = '#ffe9a8'; mctx.strokeStyle = '#1b2a2a'; mctx.lineWidth = 2;
-  mctx.beginPath(); mctx.moveTo(0, -10); mctx.lineTo(6, 8); mctx.lineTo(0, 4); mctx.lineTo(-6, 8); mctx.closePath(); mctx.fill(); mctx.stroke(); mctx.restore();
+$('mute').addEventListener('click', toggleMute);
+document.querySelectorAll('[data-t]').forEach((b) => b.addEventListener('click', () => jumpTo(+b.dataset.t)));
+function jumpTo(h) { if (G.paused) { G.hour = h; G.jump = null; return; } let to = h; if (to <= G.hour) to += 24; G.jump = { from: G.hour, to, t: 0 }; }
+
+// ------------------------------------------------------------------ pause / main menu
+function setPaused(p) {
+  if (G.mode === 'title') return;
+  G.paused = p; keys.clear(); joy.x = joy.y = 0;
+  $('pause').classList.toggle('on', p);
+  audio.setPaused(p || G.menu);
+}
+$('pauseBtn').addEventListener('click', () => setPaused(true));
+$('pResume').addEventListener('click', () => setPaused(false));
+$('pMute').addEventListener('click', toggleMute);
+$('pRestart').addEventListener('click', () => {
+  resetPlayer(); G.mode = 'launch'; G.launchT = 0; G.splashed = false; G.snap = true; P.act = 0;
+  setPaused(false);
+});
+$('pMenu').addEventListener('click', () => {
+  G.menu = true; $('pause').classList.remove('on'); G.paused = false; audio.setPaused(true);
+  document.body.classList.remove('play'); $('title').classList.remove('hide'); $('start').textContent = 'Continue';
+});
+
+// ------------------------------------------------------------------ minimap + big map
+const MM = { x0: -1250, x1: 1250, z0: -880, z1: 880 };
+function drawMap(cv, big) {
+  const c = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const X = (x) => ((x - MM.x0) / (MM.x1 - MM.x0)) * W, Z = (z) => ((z - MM.z0) / (MM.z1 - MM.z0)) * H, k = W / 380;
+  const line = (pts) => { c.beginPath(); pts.forEach((p, i) => (i ? c.lineTo(X(p[0]), Z(p[1])) : c.moveTo(X(p[0]), Z(p[1])))); };
+  c.fillStyle = '#2b3b2a'; c.fillRect(0, 0, W, H);
+  c.strokeStyle = 'rgba(214,190,140,.7)'; c.lineWidth = 2 * k; MAP.roads.forEach((r) => { line(r.pts); c.stroke(); });
+  c.strokeStyle = 'rgba(214,190,140,.35)'; c.lineWidth = 1 * k; MAP.trails.forEach((r) => { line(r.pts); c.stroke(); });
+  c.fillStyle = '#3d6e86'; MAP.others.forEach((o) => { line(o.ring); c.closePath(); c.fill(); });
+  c.beginPath(); MAP.pond.forEach((r) => { r.forEach((p, i) => (i ? c.lineTo(X(p[0]), Z(p[1])) : c.moveTo(X(p[0]), Z(p[1])))); c.closePath(); });
+  c.fillStyle = '#4f8fb0'; c.fill('evenodd');
+  if (big) { c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 1.2 * k; c.stroke(); }
+  c.fillStyle = '#e8873a'; const cs = 3 * k; MAP.camps.forEach((p) => c.fillRect(X(p[0]) - cs / 2, Z(p[1]) - cs / 2, cs, cs));
+  c.fillStyle = '#fff'; c.font = `${Math.round(16 * Math.min(k, 1.6))}px Georgia`; c.fillText('N ↑', 8 * k, 20 * k);
+  if (big) {
+    c.font = `italic ${Math.round(13 * Math.min(k, 1.5))}px Georgia`; c.fillStyle = 'rgba(255,248,230,.9)'; c.textAlign = 'center';
+    const isl = MAP.pond.slice(1).sort((a, b) => b.length - a.length)[0];
+    if (isl) { const cx = isl.reduce((s, p) => s + p[0], 0) / isl.length, cz = isl.reduce((s, p) => s + p[1], 0) / isl.length; c.fillText('Big Island', X(cx), Z(cz) - 12 * k); }
+    c.fillText('Hand launch', X(launchInfo.q[0]), Z(launchInfo.q[1]) - 8 * k);
+    c.fillText('Floodwood Pond', X(250), Z(120));
+    c.textAlign = 'left';
+  }
+  return { X, Z };
+}
+function drawCanoeMarker(cv, X, Z, scale) {
+  const c = cv.getContext('2d'); c.save(); c.translate(X(P.x), Z(P.z)); c.rotate(-P.psi + Math.PI); c.scale(scale, scale);
+  c.fillStyle = '#ffe9a8'; c.strokeStyle = '#1b2a2a'; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(0, -10); c.lineTo(6, 8); c.lineTo(0, 4); c.lineTo(-6, 8); c.closePath(); c.fill(); c.stroke(); c.restore();
+}
+const mini = $('miniC'), staticMap = document.createElement('canvas'); staticMap.width = mini.width; staticMap.height = mini.height;
+let miniXZ = null;
+function drawStaticMap() { miniXZ = drawMap(staticMap, false); }
+function drawMini() { mini.getContext('2d').drawImage(staticMap, 0, 0); drawCanoeMarker(mini, miniXZ.X, miniXZ.Z, 1); }
+
+const big = $('bigC');
+let bigXZ = null;
+function openMap() {
+  if (G.mode !== 'play' || G.paused || G.menu) return;
+  const aspect = (MM.x1 - MM.x0) / (MM.z1 - MM.z0);
+  let w = Math.min(innerWidth * 0.94, 1000), h = w / aspect;
+  if (h > innerHeight * 0.78) { h = innerHeight * 0.78; w = h * aspect; }
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  big.style.width = w + 'px'; big.style.height = h + 'px'; big.width = Math.round(w * dpr); big.height = Math.round(h * dpr);
+  bigXZ = drawMap(big, true); drawCanoeMarker(big, bigXZ.X, bigXZ.Z, big.width / 380 * 0.9);
+  G.mapOpen = true; keys.clear(); joy.x = joy.y = 0; $('bigmap').classList.add('on');
+}
+function closeMap() { G.mapOpen = false; $('bigmap').classList.remove('on'); }
+$('mini').addEventListener('click', (e) => { e.stopPropagation(); openMap(); });
+$('mapClose').addEventListener('click', (e) => { e.stopPropagation(); closeMap(); });
+$('bigmap').addEventListener('click', (e) => { if (e.target.id === 'bigmap') closeMap(); });
+big.addEventListener('click', (e) => {
+  const r = big.getBoundingClientRect();
+  const x = MM.x0 + ((e.clientX - r.left) / r.width) * (MM.x1 - MM.x0), z = MM.z0 + ((e.clientY - r.top) / r.height) * (MM.z1 - MM.z0);
+  travelTo(x, z); closeMap();
+});
+/** Move the canoe to the nearest open water at (x, z), facing away from the closest shore. */
+function travelTo(x, z) {
+  let sd = pondSD(x, z), tx = x, tz = z;
+  const grad = (px, pz) => { const e = 3, gx = pondSD(px + e, pz) - pondSD(px - e, pz), gz = pondSD(px, pz + e) - pondSD(px, pz - e), l = Math.hypot(gx, gz) || 1; return [gx / l, gz / l]; };
+  if (sd < 10) {
+    pondSD(x, z); const qx = NQ.x, qz = NQ.z; const [nx, nz] = grad(qx, qz);
+    let d = 10; while (pondSD(qx + nx * d, qz + nz * d) < 9 && d < 40) d += 3;
+    tx = qx + nx * d; tz = qz + nz * d; sd = pondSD(tx, tz);
+  }
+  P.x = tx; P.z = tz; P.vx = P.vz = P.w = 0; P.act = 0;
+  if (sd < 40) { const [nx, nz] = grad(tx, tz); P.psi = Math.atan2(nx, nz); }
+  cam.heading = P.psi; cam.yaw = 0; G.snap = true;
+  ripples.spawn(tx, tz, 5, 3, 0.5, 0.4); audio.splash(0, 0.6);
 }
 
 // ------------------------------------------------------------------ physics
@@ -144,7 +218,9 @@ function stepCanoe(dt, controllable) {
     const u = P.phase;
     if (u < 0.5) thrust = Math.sin((u / 0.5) * Math.PI) * 1.55 * hard * (Math.abs(throttle) > 0.05 ? Math.sign(throttle) * (throttle > 0 ? 1 : 0.45) : 0.18);
   } else { P.phase = lerp(P.phase, 0.0, Math.min(1, dt * 2)); }
-  vf += (thrust - 0.16 * vf - 0.045 * vf * Math.abs(vf)) * dt;
+  // gliding (no paddle in the water) keeps most of its momentum; paddling adds stroke drag
+  const lin = lerp(0.035, 0.16, P.act), quad = lerp(0.012, 0.045, P.act);
+  vf += (thrust - lin * vf - quad * vf * Math.abs(vf)) * dt;
   vl *= Math.exp(-2.8 * dt);
   const wT = steer * 0.7 * (0.55 + Math.min(Math.abs(vf), 2.2) / 2.2 * 0.5) + (wants ? -P.side * 0.05 * Math.max(thrust, 0) : 0);
   P.w += (wT - P.w) * Math.min(1, dt * 1.8);
@@ -210,7 +286,7 @@ function updateCamera(dt, t) {
   const a = cam.heading + cam.yaw, cp = Math.cos(cam.pitch);
   tmpV.set(P.x - Math.sin(a) * cp * cam.dist, 0.9 + Math.sin(cam.pitch) * cam.dist, P.z - Math.cos(a) * cp * cam.dist);
   tmpV.y = Math.max(tmpV.y, Math.max(heightAt(tmpV.x, tmpV.z), 0) + 1.4);
-  cam.pos.lerp(tmpV, G.mode === 'title' ? 1 : Math.min(1, dt * 6));
+  cam.pos.lerp(tmpV, G.mode === 'title' || G.snap ? 1 : Math.min(1, dt * 6)); G.snap = false;
   camera.position.copy(cam.pos);
   cam.look.set(P.x + Math.sin(P.psi) * 3, 1.0, P.z + Math.cos(P.psi) * 3);
   camera.lookAt(cam.look);
@@ -263,7 +339,7 @@ function updateEnvironment(dt, t) {
   if (G.mode === 'play' && rnd() < dt * 0.18) { const a = rnd() * 6.28, r = 12 + rnd() * 70, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 6) { ripples.spawn(x, z, 3.2, 3, 0.55, 0.2); ripples.spawn(x, z, 1.6, 1.6, 0.4, 0.1); audio.plop(clamp((x - P.x) / 80, -1, 1)); } }
   // audio state + HUD
   const dawn = sstep(4.6, 5.8, h) * (1 - sstep(7.5, 9.5, h)), dusk = sstep(16.5, 18, h) * (1 - sstep(19.8, 21, h));
-  audio.update({ night, day, dawn, dusk, speed: Math.hypot(P.vx, P.vz) });
+  audio.update({ night, day, dawn, dusk, speed: Math.hypot(P.vx, P.vz), paddling: P.act });
   if (t - lastHud > 0.25) {
     lastHud = t; const hh = Math.floor(h), mm = Math.floor((h - hh) * 60), ap = hh >= 12 ? 'PM' : 'AM', h12 = hh % 12 || 12;
     $('time').textContent = `${h12}:${String(mm).padStart(2, '0')} ${ap}`;
@@ -275,7 +351,7 @@ function updateEnvironment(dt, t) {
 const clock = new THREE.Clock(); let started = false;
 function frame() {
   requestAnimationFrame(frame);
-  const dt = Math.min(clock.getDelta(), 0.05); G.time += dt;
+  const raw = Math.min(clock.getDelta(), 0.05), dt = G.paused || G.mapOpen || G.menu ? 0 : raw; G.time += dt;
   let info = { speed: 0 };
   if (G.mode === 'launch') {
     G.launchT += dt; const k = clamp(G.launchT / 6.5, 0, 1), e = k * k * (3 - 2 * k);
@@ -297,7 +373,11 @@ function frame() {
 
 // ------------------------------------------------------------------ boot
 function startGame() {
-  if (started) return; started = true;
+  if (started) {
+    if (G.menu) { G.menu = false; $('title').classList.add('hide'); document.body.classList.add('play'); audio.setPaused(false); }
+    return;
+  }
+  started = true;
   audio.start(); G.mode = 'launch'; G.launchT = 0;
   $('title').classList.add('hide');
   const toast = $('toast'); toast.textContent = 'Launching'; toast.classList.add('on');
@@ -305,13 +385,14 @@ function startGame() {
   document.body.classList.add('play');
 }
 $('start').addEventListener('click', startGame);
-addEventListener('keydown', (e) => { if (!started && (e.key === 'Enter') && !$('start').disabled) startGame(); });
+addEventListener('keydown', (e) => { if ((!started || G.menu) && (e.key === 'Enter') && !$('start').disabled) startGame(); });
 
 setTimeout(() => {
   try {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap();
     cam.pos.set(P.x, 5, P.z - 12);
-    window.game = { P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, keys };
+    document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
+    window.game = { P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, keys, travelTo, openMap, setPaused };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     $('start').disabled = false; $('start').textContent = 'Launch canoe';
     frame();

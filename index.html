@@ -40,6 +40,25 @@
   body.touch #joy { display:block; } body.touch #hint { display:none; } body.touch #mini { width:140px; height:104px; bottom:auto; top:56px; }
   #toast { position:fixed; left:50%; top:20%; transform:translateX(-50%); font-size:clamp(20px,4vw,34px); letter-spacing:.2em; text-transform:uppercase; opacity:0; transition:opacity 1.6s; z-index:4; text-shadow:0 2px 24px rgba(0,0,0,.6); pointer-events:none; text-align:center; }
   #toast.on { opacity:1; }
+  #mini { pointer-events:auto; cursor:pointer; }
+  #mini::after { content:'Map'; position:absolute; right:8px; bottom:6px; font-size:11px; letter-spacing:.15em; text-transform:uppercase; opacity:.7; pointer-events:none; }
+  .ver { position:absolute; left:0; right:0; bottom:max(14px,env(safe-area-inset-bottom)); font-size:12px; letter-spacing:.2em; opacity:.55; text-align:center; }
+  .overlay { position:fixed; inset:0; z-index:10; display:none; align-items:center; justify-content:center; flex-direction:column;
+    background:rgba(8,12,24,.55); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); padding:20px; }
+  .overlay.on { display:flex; }
+  .panel { background:rgba(14,22,36,.82); border:1px solid var(--line); border-radius:18px; padding:28px 34px; text-align:center; min-width:min(320px,90vw); position:relative; }
+  .panel h2 { font-weight:400; letter-spacing:.3em; text-transform:uppercase; font-size:22px; margin:0 0 22px; }
+  .panel .menu button { display:block; width:100%; font:inherit; font-size:16px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink);
+    background:rgba(244,234,213,.06); border:1px solid var(--line); border-radius:30px; padding:11px 22px; margin:9px 0; cursor:pointer; }
+  .panel .menu button:hover { background:rgba(244,234,213,.18); }
+  .panel .times { display:flex; gap:6px; justify-content:center; margin:14px 0 4px; flex-wrap:wrap; }
+  .panel .times button { font:inherit; font-size:12px; color:var(--ink); background:transparent; border:1px solid var(--line); border-radius:16px; padding:5px 10px; cursor:pointer; }
+  .panel .keys { font-size:12px; opacity:.7; line-height:1.9; margin-top:16px; letter-spacing:.05em; }
+  .panel .ver { position:static; margin-top:14px; }
+  #bigmap .wrap { position:relative; }
+  #bigC { display:block; border-radius:12px; border:1px solid var(--line); cursor:crosshair; box-shadow:0 10px 50px rgba(0,0,0,.5); }
+  #bigmap .cap { margin-top:12px; font-size:14px; letter-spacing:.1em; opacity:.85; text-align:center; }
+  #mapClose { position:absolute; top:10px; right:10px; font:inherit; font-size:18px; color:var(--ink); background:rgba(14,22,36,.7); border:1px solid var(--line); border-radius:50%; width:36px; height:36px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -47,17 +66,32 @@
 <div id="toast"></div>
 <div id="clock" class="hud"><span id="time">6:00 AM</span><small id="phase">Dawn</small></div>
 <div id="btns" class="hud">
-  <button data-t="5.7" title="Dawn (1)">Dawn</button><button data-t="12" title="Day (2)">Day</button><button data-t="18.3" title="Dusk (3)">Dusk</button><button data-t="22.5" title="Night (4)">Night</button><button id="mute" title="Mute (M)">Sound on</button>
+  <button id="pauseBtn" title="Pause (Esc)">❚❚</button><button data-t="5.7" title="Dawn (1)">Dawn</button><button data-t="12" title="Day (2)">Day</button><button data-t="18.3" title="Dusk (3)">Dusk</button><button data-t="22.5" title="Night (4)">Night</button><button id="mute" title="Mute (M)">Sound on</button>
 </div>
 <div id="mini" class="hud"><canvas id="miniC" width="380" height="280"></canvas></div>
-<div id="hint" class="hud">W paddle &nbsp;·&nbsp; A / D steer &nbsp;·&nbsp; Shift paddle hard &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; 1–4 time of day</div>
+<div id="hint" class="hud">W paddle &nbsp;·&nbsp; A / D steer &nbsp;·&nbsp; Shift paddle hard &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; 1–4 time of day &nbsp;·&nbsp; Esc pause</div>
 <div id="joy" class="hud"><i></i></div>
 <div id="title">
   <h1>Floodwood Pond</h1>
   <div class="sub">St. Regis Canoe Area &nbsp;·&nbsp; Adirondack Park, New York</div>
   <button id="start" disabled>Loading map…</button>
   <div class="note">Headphones recommended. Shoreline, islands and campsites traced from OpenStreetMap data.</div>
+  <div class="ver">v0.1.0</div>
 </div>
+<div id="pause" class="overlay"><div class="panel">
+  <h2>Paused</h2>
+  <div class="menu">
+    <button id="pResume">Resume</button>
+    <button id="pMute">Sound on</button>
+    <button id="pRestart">Restart at the launch</button>
+    <button id="pMenu">Main menu</button>
+  </div>
+  <div class="times"><button data-t="5.7">Dawn</button><button data-t="12">Day</button><button data-t="18.3">Dusk</button><button data-t="22.5">Night</button></div>
+  <div class="keys">W paddle · A / D steer · S back-paddle · Shift paddle hard<br>Drag to look · N or tap minimap for the map · Esc pause · M mute</div>
+  <div class="ver">v0.1.0</div>
+</div></div>
+<div id="bigmap" class="overlay"><div class="wrap"><canvas id="bigC"></canvas><button id="mapClose" title="Close (Esc)">×</button></div>
+  <div class="cap">Tap anywhere on the water to paddle there</div></div>
 <script type="importmap">{"imports":{"three":"./lib/three.module.js"}}</script>
 <script type="module" src="./js/main.js"></script>
 </body>

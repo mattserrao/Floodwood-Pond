@@ -35,7 +35,7 @@ export class AmbientAudio {
       el.loop = true; el.setAttribute('playsinline', ''); el.setAttribute('x-webkit-airplay', 'deny'); el.preload = 'auto';
     }
     const p = this.silentEl.play(); if (p && p.catch) p.catch(() => {});
-    if (this.ctx) {
+    if (this.ctx && !this.paused) {
       if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
       const b = this.ctx.createBuffer(1, 1, 22050), s = this.ctx.createBufferSource(); s.buffer = b; s.connect(this.ctx.destination); s.start(0);
     }
@@ -48,7 +48,7 @@ export class AmbientAudio {
     const ctx = (this.ctx = new AC());
     this.unlockIOS();
     // iOS suspends/interrupts the context (lock screen, calls, app switch): resume on the next touch or when visible again
-    const resume = () => { if (this.ctx && this.ctx.state !== 'running' && !this.muted) this.unlockIOS(); };
+    const resume = () => { if (this.ctx && this.ctx.state !== 'running' && !this.muted && !this.paused) this.unlockIOS(); };
     ['touchend', 'pointerdown', 'keydown'].forEach((ev) => window.addEventListener(ev, resume, { passive: true }));
     document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
     const now = ctx.currentTime;
@@ -81,6 +81,12 @@ export class AmbientAudio {
     this.buildBeds();
     this.timer = setInterval(() => this.tick(), 180);
     this.t.chord = now; this.t.note = now + 2; this.t.bird = now + 4; this.t.owl = now + 25; this.t.loon = now + 18;
+  }
+
+  setPaused(p) {
+    this.paused = p;
+    if (!this.ctx) return;
+    if (p) this.ctx.suspend().catch(() => {}); else this.unlockIOS();
   }
 
   setMuted(m) {
@@ -161,7 +167,8 @@ export class AmbientAudio {
     Object.assign(this.s, s);
     const t = this.ctx.currentTime, k = 0.8;
     this.cricketG.gain.setTargetAtTime(0.012 * Math.max(0, Math.min(1, s.night * 1.2 + s.dusk * 0.5)), t, k);
-    this.wakeG.gain.setTargetAtTime(0.004 + 0.03 * Math.min(1, s.speed / 3), t, 0.3);
+    const pad = s.paddling === undefined ? 1 : s.paddling; // silent glide: hull hiss only while paddling
+    this.wakeG.gain.setTargetAtTime(pad * (0.004 + 0.03 * Math.min(1, s.speed / 3)), t, 0.4);
     this.windG.gain.setTargetAtTime(0.04 + 0.03 * s.day, t, 2);
     this.musicBus.gain.setTargetAtTime(0.5 - 0.1 * s.night, t, 3);
   }
