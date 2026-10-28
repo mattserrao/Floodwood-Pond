@@ -220,6 +220,14 @@ export class AmbientAudio {
     }
   }
 
+  /** Soft shimmer as the creek fog swallows the canoe. */
+  chime() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    [74, 78, 81, 86, 90, 93, 98].forEach((m, i) => this.pluck(t + 0.1 + i * 0.32, mtof(m), 0.06));
+    this.pad(t + 0.2, [62, 69, 74, 78], 9);
+  }
+
   // ---------- scheduled generative layers ----------
   tick() {
     const ctx = this.ctx; if (!ctx) return;

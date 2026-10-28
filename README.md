@@ -22,11 +22,16 @@ python3 -m http.server 8000   # then open http://localhost:8000
 | Look around | drag / scroll to zoom | drag |
 | Time of day | `1` dawn · `2` day · `3` dusk · `4` night | HUD buttons |
 | Mute | `M` | HUD button |
+| Pause | `Esc` / `P` | ❚❚ button |
+| Map / travel | `N` or click the minimap | tap the minimap |
 
 ## What's in it
 - **Real map**: shoreline, three islands, neighbouring ponds, streams, Floodwood Road, trails and ~22 backcountry campsites come from OpenStreetMap (`js/mapdata.js`, generated once from the OSM API; Floodwood relation 1694318). Local metres, north = up.
 - **Day/night cycle** (9 real minutes per 24 h, starting just before sunrise): shader sky with toon clouds, stars, moon, sun glints, dawn mist, fireflies, lantern light on the canoe and campfire glows at night.
 - **Audio** is fully procedural (Web Audio): generative ambient music, wind, lapping water, paddle splashes, birdsong by day, crickets and owls at night, loon calls at dawn/dusk, geese flying over, fish rising.
+- **The southwest island** is enlarged and rises steeply from the water, with tall white pines and spruce, low shoreline scrub, granite boulders and a sandy landing beach on its SW corner. Look for the old pine near the beach.
+- **The creek** at the pond's southwest tip is narrow and rocky. Paddle far enough down it and the fog rolls in…
+- **Moon phases**: each moonrise brings a random phase, from thin crescent to full.
 - **Wildlife**: loons that dive and resurface, a V of geese, rising fish, lily pads and shoreline reeds. Foliage is late-October: golden tamaracks and red/orange maples.
 
 ## Layout

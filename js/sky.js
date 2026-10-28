@@ -43,11 +43,12 @@ export function createSky() {
       uSun: { value: new THREE.Vector3(0, 1, 0) }, uMoon: { value: new THREE.Vector3(0, -1, 0) }, uSunCol: { value: new THREE.Color() },
       uSunI: { value: 0 }, uGlow: { value: 1 }, uMoonI: { value: 0 }, uStars: { value: 0 }, uTime: { value: 0 },
       uCloudLit: { value: new THREE.Color() }, uCloudShade: { value: new THREE.Color() },
+      uPhase: { value: 0.5 }, uFogCol: { value: new THREE.Color() }, uFogMix: { value: 0 },
     },
     vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * p; gl_Position.z = gl_Position.w * 0.99999; }`,
     fragmentShader: `
       varying vec3 vDir;
-      uniform vec3 uTop,uMid,uHor,uSun,uMoon,uSunCol,uCloudLit,uCloudShade; uniform float uSunI,uGlow,uMoonI,uStars,uTime;
+      uniform vec3 uTop,uMid,uHor,uSun,uMoon,uSunCol,uCloudLit,uCloudShade,uFogCol; uniform float uSunI,uGlow,uMoonI,uStars,uTime,uPhase,uFogMix;
       float h3(vec3 p){ p=fract(p*0.3183099+.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
       float h2(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
       float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h2(i),h2(i+vec2(1,0)),f.x), mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x), f.y); }
@@ -61,7 +62,15 @@ export function createSky() {
         float sd = max(dot(d,uSun),0.);
         col += uSunCol * (pow(sd,6.)*0.28*uGlow + pow(sd,48.)*0.55*uGlow + smoothstep(0.99935,0.9997,sd)*3.0*uSunI);
         float md = max(dot(d,uMoon),0.);
-        col += vec3(.88,.93,1.) * smoothstep(0.99955,0.9998,md) * uMoonI * 1.4 + vec3(.35,.45,.8) * pow(md,60.) * 0.22 * uMoonI;
+        // moon disk with phase: project onto the moon's tangent plane, light one side of the terminator
+        vec3 mr = normalize(cross(uMoon, vec3(0.,1.,0.))), mu = cross(mr, uMoon);
+        vec2 mp = vec2(dot(d,mr), dot(d,mu)) / 0.021;
+        float disk = smoothstep(1.0, 0.9, length(mp)) * step(0.5, dot(d,uMoon));
+        float k = cos(uPhase*6.2831853), sx = sqrt(max(1.-mp.y*mp.y,0.));
+        float lit = uPhase < .5 ? smoothstep(k*sx-.06, k*sx+.06, mp.x) : smoothstep(-k*sx+.06, -k*sx-.06, mp.x);
+        float frac = .5 - .5*k;
+        float crater = .85 + .15*n2(mp*3.+7.);
+        col += vec3(.88,.93,1.) * disk * (lit*crater*1.5 + .035) * uMoonI + vec3(.35,.45,.8) * pow(md,60.) * 0.22 * uMoonI * (.25+.75*frac);
         if (uStars > 0.001 && d.y > -0.05) {
           vec3 sp = d*260.; vec3 id = floor(sp); vec3 fr = fract(sp)-.5; float r = h3(id);
           float star = step(.983,r) * smoothstep(.34,.0,length(fr));
@@ -79,6 +88,7 @@ export function createSky() {
           cc += uSunCol * pow(sd,3.)*0.25;
           col = mix(col, cc, cov * smoothstep(0.,.16,d.y) * .92);
         }
+        col = mix(col, uFogCol, uFogMix);
         gl_FragColor = vec4(col,1.);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -122,7 +132,7 @@ export function createWater(depthTex) {
         float mp = pow(max(dot(R,uMoon),0.),500.)*2.0 + pow(max(dot(R,uMoon),0.),60.)*.12;
         col += vec3(.7,.8,1.) * mp * uMoonI;
         float ld = length(p - uLantern.xz);
-        col += vec3(1.,.62,.28) * uLanternI * (exp(-ld*ld/55.)*.5 + exp(-ld*ld/600.)*.12);
+        col += vec3(1.,.62,.28) * uLanternI * (exp(-ld*ld/5.)*.42 + exp(-ld*ld/30.)*.07);
         float edge = smoothstep(.45,.0,depth);
         col = mix(col, vec3(.8,.78,.7)*uLight, edge*.18);
         float alpha = mix(.62, 1., smoothstep(.0,.9,depth)); alpha = max(alpha, fr);

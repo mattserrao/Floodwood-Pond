@@ -28,11 +28,40 @@ function pip(ring, x, z) {
   return inside;
 }
 function evenOdd(rings, x, z) { let inside = false; for (const r of rings) if (pip(r, x, z)) inside = !inside; return inside; }
+// ---------- the southwest island: enlarged, tall, with a landing beach on its SW corner ----------
+export const ISLE = (() => {
+  let best = -1, bd = 1e9;
+  MAP.pond.forEach((r, i) => { if (i === 0) return; const cx = r.reduce((a, p) => a + p[0], 0) / r.length, cz = r.reduce((a, p) => a + p[1], 0) / r.length, d = Math.hypot(cx + 599, cz - 306); if (d < bd) { bd = d; best = i; } });
+  const r0 = MAP.pond[best], cx = r0.reduce((a, p) => a + p[0], 0) / r0.length, cz = r0.reduce((a, p) => a + p[1], 0) / r0.length;
+  let ring = r0.map((p) => [cx + (p[0] - cx) * 1.6, cz + (p[1] - cz) * 1.6]);
+  for (let it = 0; it < 2; it++) { // Chaikin smoothing for a more natural outline
+    const o = []; for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; o.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]], [0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]); } ring = o;
+  }
+  ring = ring.map((p) => [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]);
+  MAP.pond[best] = ring;
+  // beach = the most south-westerly shore point (+z is south, -x is west)
+  let bp = ring[0]; ring.forEach((p) => { if (-(p[0] - cx) + (p[1] - cz) > -(bp[0] - cx) + (bp[1] - cz)) bp = p; });
+  const bl = Math.hypot(bp[0] - cx, bp[1] - cz);
+  const xs = ring.map((p) => p[0]), zs = ring.map((p) => p[1]);
+  return { index: best, ring, cx, cz, beach: bp, bdx: (bp[0] - cx) / bl, bdz: (bp[1] - cz) / bl,
+    box: { x0: Math.min(...xs) - 30, x1: Math.max(...xs) + 30, z0: Math.min(...zs) - 30, z1: Math.max(...zs) + 30 } };
+})();
+export const inIsleBox = (x, z) => x > ISLE.box.x0 && x < ISLE.box.x1 && z > ISLE.box.z0 && z < ISLE.box.z1;
+/** 0..1: how much (x,z) belongs to the landing beach sector on the SW corner. */
+export function beachFactor(x, z) {
+  const ux = x - ISLE.cx, uz = z - ISLE.cz, r = Math.hypot(ux, uz) || 1;
+  return sstep(0.72, 0.93, (ux * ISLE.bdx + uz * ISLE.bdz) / r) * (1 - sstep(20, 38, Math.hypot(x - ISLE.beach[0], z - ISLE.beach[1])));
+}
+function isleLandHeight(x, z, dd) {
+  const cliff = Math.min(dd * 0.9, 5.5) + sstep(4, 40, dd) * 15 + fbm(x * 0.06, z * 0.06) * 3 * sstep(3, 14, dd);
+  const beach = 0.2 + dd * 0.09 + sstep(10, 24, dd) * 3 + fbm(x * 0.2, z * 0.2) * 0.25;
+  return lerp(cliff, Math.min(beach, cliff), beachFactor(x, z));
+}
 const pondSegsArr = []; MAP.pond.forEach((r) => ringSegs(r, pondSegsArr));
 const otherSegsArr = []; MAP.others.forEach((o) => ringSegs(o.ring, otherSegsArr));
 const pondSegs = new Float32Array(pondSegsArr);
 const allSegs = new Float32Array([...pondSegsArr, ...otherSegsArr]);
-const NQ = { x: 0, z: 0 };
+const NQ = { x: 0, z: 0, creek: false };
 function nearest(segs, x, z) {
   let best = 1e18, qx = 0, qz = 0;
   for (let i = 0; i < segs.length; i += 4) {
@@ -43,10 +72,61 @@ function nearest(segs, x, z) {
   }
   NQ.x = qx; NQ.z = qz; return Math.sqrt(best);
 }
+
+// ---------- the SW creek: a narrow, rocky outlet from the pond's south-west tip ----------
+export const CREEK = (() => {
+  const outer = MAP.pond[0];
+  let tip = outer[0]; outer.forEach((p) => { if (-p[0] + p[1] > -tip[0] + tip[1]) tip = p; });
+  // start inside the pond, a little up the SW arm
+  let sx = tip[0], sz = tip[1];
+  for (let k = 0; k < 120; k++) { sx += 0.72; sz -= 0.69; if (evenOdd(MAP.pond, sx, sz) && nearest(pondSegs, sx, sz) > 9) break; }
+  const pts = []; let x = sx, z = sz, s = 0; const base = Math.atan2(0.67, -0.74); // heading SW: x decreases (west), z increases (south)
+  const L = 400, STEP = 8;
+  while (s <= L) {
+    const w = 6.2 + 1.1 * Math.sin(s / 29) - 1.2 * sstep(L * 0.6, L, s);
+    pts.push([x, z, w, s]);
+    const a = base + 0.42 * Math.sin(s / 47) + 0.22 * Math.sin(s / 19 + 1.3);
+    x += Math.cos(a) * STEP; z += Math.sin(a) * STEP; s += STEP;
+  }
+  const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
+  const box = { x0: Math.min(...xs) - 45, x1: Math.max(...xs) + 45, z0: Math.min(...zs) - 45, z1: Math.max(...zs) + 45 };
+  // rocks: bank boulders and a few in mid-stream, always leaving a channel
+  const rocks = [];
+  for (let i = 3; i < pts.length - 1; i++) {
+    const [px, pz, w] = pts[i], [qx, qz] = pts[i + 1], l = Math.hypot(qx - px, qz - pz), nx = -(qz - pz) / l, nz = (qx - px) / l;
+    const side = rnd() < 0.5 ? -1 : 1;
+    if (rnd() < 0.8) { const r = 0.6 + rnd() * 0.9, o = side * (w - r * 0.6 - rnd() * 0.8); rocks.push({ x: px + nx * o, z: pz + nz * o, r, h: 0.4 + rnd() * 0.8 }); }
+    if (rnd() < 0.3) { const r = 0.45 + rnd() * 0.4, o = -side * (0.8 + rnd() * 1.4); rocks.push({ x: px + nx * o + (qx - px) * 0.5, z: pz + nz * o + (qz - pz) * 0.5, r, h: 0.25 + rnd() * 0.4 }); }
+  }
+  return { pts, L, box, rocks, tip };
+})();
+const CQ = { x: 0, z: 0, s: 0 };
+/** Signed distance to the creek bank (+ in the creek). Sets CQ to the nearest bank point and CQ.s to the distance along the creek. */
+export function creekSD(x, z) {
+  const b = CREEK.box; if (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) return -1e9;
+  let best = 1e18, bw = 0, cx = 0, cz = 0, bs = 0; const P = CREEK.pts;
+  for (let i = 0; i < P.length - 1; i++) {
+    const a = P[i], c = P[i + 1], dx = c[0] - a[0], dz = c[1] - a[1], l2 = dx * dx + dz * dz;
+    let t = ((x - a[0]) * dx + (z - a[1]) * dz) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const px = a[0] + t * dx, pz = a[1] + t * dz, d2 = (x - px) ** 2 + (z - pz) ** 2;
+    if (d2 < best) { best = d2; cx = px; cz = pz; bw = lerp(a[2], c[2], t); bs = lerp(a[3], c[3], t); }
+  }
+  const d = Math.sqrt(best), ux = d > 1e-6 ? (x - cx) / d : 1, uz = d > 1e-6 ? (z - cz) / d : 0;
+  CQ.x = cx + ux * bw; CQ.z = cz + uz * bw; CQ.s = bs;
+  return bw - d;
+}
+export { CQ };
+export const inCreekBox = (x, z) => x > CREEK.box.x0 && x < CREEK.box.x1 && z > CREEK.box.z0 && z < CREEK.box.z1;
+
 /** Signed distance to Floodwood Pond shoreline (+ in water, - on land/islands). Sets NQ to the nearest shore point. */
-export function pondSD(x, z) { const d = nearest(pondSegs, x, z); return evenOdd(MAP.pond, x, z) ? d : -d; }
+export function pondSD(x, z) {
+  const d = nearest(pondSegs, x, z), sd = evenOdd(MAP.pond, x, z) ? d : -d;
+  const c = creekSD(x, z);
+  if (c > sd) { NQ.x = CQ.x; NQ.z = CQ.z; NQ.creek = true; return c; }
+  NQ.creek = false; return sd;
+}
 export { NQ };
-export function inPond(x, z) { return evenOdd(MAP.pond, x, z); }
+export function inPond(x, z) { return evenOdd(MAP.pond, x, z) || creekSD(x, z) > 0; }
 
 // ---------- terrain ----------
 let SD, H;
@@ -56,7 +136,8 @@ function bil(arr, x, z) {
   const ix = Math.floor(fx), iz = Math.floor(fz), tx = fx - ix, tz = fz - iz, i = iz * EXT.NX + ix;
   return lerp(lerp(arr[i], arr[i + 1], tx), lerp(arr[i + EXT.NX], arr[i + EXT.NX + 1], tx), tz);
 }
-export const heightAt = (x, z) => bil(H, x, z);
+export const inPatch = (x, z) => inIsleBox(x, z) || inCreekBox(x, z);
+export const heightAt = (x, z) => (inPatch(x, z) ? fullHeight(x, z) : bil(H, x, z));
 export const gridSD = (x, z) => bil(SD, x, z);
 
 function landHeight(d, x, z) {
@@ -67,7 +148,51 @@ function landHeight(d, x, z) {
   return bank + k * (hill * 90 + 6 * fbm(x * 0.012, z * 0.012) + bowl * 0.6) + bowl * 0.4 * k;
 }
 function waterHeight(sd, x, z) {
-  return -(Math.min(sd * 0.3, 2.8) + sstep(50, 260, sd) * 3.2 + fbm(x * 0.02, z * 0.02) * 0.6 * sstep(5, 40, sd));
+  const shelf = inIsleBox(x, z) ? 1 - 0.65 * beachFactor(x, z) : 1; // shallow sandy shelf off the landing beach
+  return -shelf * (Math.min(sd * 0.3, 2.8) + sstep(50, 260, sd) * 3.2 + fbm(x * 0.02, z * 0.02) * 0.6 * sstep(5, 40, sd));
+}
+
+/** Exact (non-gridded) terrain height; used for the detailed island patch. */
+/** Shared terrain sampler: returns { h, sd, dd, water } for any point (sd > 0 in water). */
+function sampleTerrain(x, z) {
+  const d0 = nearest(allSegs, x, z), c = creekSD(x, z);
+  const inPoly = evenOdd(MAP.pond, x, z) || MAP.others.some((o) => pip(o.ring, x, z));
+  if (inPoly || c > 0) { const sd = inPoly ? Math.max(d0, c) : c; return { h: waterHeight(sd, x, z), sd, dd: 0, water: true }; }
+  const dd = Math.min(d0, -c);
+  return { h: pip(ISLE.ring, x, z) ? isleLandHeight(x, z, dd) : landHeight(dd, x, z), sd: -dd, dd, water: false };
+}
+export function fullHeight(x, z) { return sampleTerrain(x, z).h; }
+function terrainColor(x, z, h, dd, water, c) {
+  if (inIsleBox(x, z) && (water || pip(ISLE.ring, x, z))) return isleColor(x, z, h, dd, c);
+  const n1 = fbm(x * 0.02, z * 0.02), n2 = fbm(x * 0.07 + 9, z * 0.07);
+  if (water) c.setRGB(0.12 + 0.04 * n1, 0.11 + 0.04 * n1, 0.07 + 0.02 * n1);
+  else if (dd < 4) c.setRGB(0.5 + 0.1 * n2, 0.43 + 0.08 * n2, 0.29);
+  else if (dd < 26) { c.setRGB(0.26 + 0.08 * n2, 0.3 + 0.06 * n1, 0.12); if (n1 > 0.58) c.setRGB(0.42, 0.32, 0.12); }
+  else {
+    c.setRGB(0.1, 0.19, 0.08).lerp(new THREE.Color(0.24, 0.16, 0.08), sstep(0.38, 0.62, n1)).lerp(new THREE.Color(0.38, 0.28, 0.08), sstep(0.55, 0.75, n2) * 0.7);
+    if (h > 55) c.lerp(new THREE.Color(0.28, 0.3, 0.26), sstep(55, 110, h) * 0.8);
+  }
+  return c;
+}
+function isleColor(x, z, h, dd, c) {
+  const n = fbm(x * 0.15, z * 0.15), rock = fbm(x * 0.4 + 5, z * 0.4), bf = beachFactor(x, z);
+  if (h < 0) { c.setRGB(0.16 + 0.12 * bf, 0.14 + 0.1 * bf, 0.08 + 0.06 * bf); return c; }
+  if (bf > 0.35 && dd < 26) { c.setRGB(0.62 + 0.06 * n, 0.55 + 0.05 * n, 0.4); if (rock > 0.6) c.setRGB(0.42, 0.41, 0.38); return c; }
+  if (dd < 9) { c.setRGB(0.36 + 0.05 * n, 0.35 + 0.04 * n, 0.32); if (rock < 0.45) c.setRGB(0.24, 0.24, 0.16); return c; } // granite ledges + lichen
+  c.setRGB(0.15 + 0.08 * n, 0.14 + 0.05 * n, 0.07); return c; // needle duff
+}
+function buildPatch(scene, box) {
+  const { x0, x1, z0, z1 } = box, C = 2.5, nx = Math.ceil((x1 - x0) / C) + 1, nz = Math.ceil((z1 - z0) / C) + 1;
+  const pos = new Float32Array(nx * nz * 3), col = new Float32Array(nx * nz * 3), c = new THREE.Color();
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const x = x0 + i * C, z = z0 + j * C, k = j * nx + i, T = sampleTerrain(x, z), h = T.h;
+    pos[k * 3] = x; pos[k * 3 + 1] = h; pos[k * 3 + 2] = z;
+    terrainColor(x, z, h, T.dd, T.water, c); col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
+  }
+  const idx = [];
+  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) { const a = j * nx + i, b = a + 1, d = a + nx, e = d + 1; idx.push(a, d, b, b, d, e); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
+  scene.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 })));
 }
 
 export function buildTerrain(scene) {
@@ -79,27 +204,10 @@ export function buildTerrain(scene) {
   for (let iz = 0; iz < NZ; iz++) {
     for (let ix = 0; ix < NX; ix++) {
       const i = iz * NX + ix, x = minX + ix * CELL, z = minZ + iz * CELL;
-      const dd = nearest(allSegs, x, z);
-      const water = evenOdd(MAP.pond, x, z) || MAP.others.some((o) => pip(o.ring, x, z));
-      const sd = water ? dd : -dd; SD[i] = sd;
-      let h;
-      if (water) h = waterHeight(sd, x, z); else h = landHeight(dd, x, z);
-      H[i] = h; pos[i * 3] = x; pos[i * 3 + 1] = h; pos[i * 3 + 2] = z;
-      depth[i] = water ? Math.round(clamp(-h / 8, 0, 1) * 255) : 0;
-      // colours
-      const n1 = fbm(x * 0.02, z * 0.02), n2 = fbm(x * 0.07 + 9, z * 0.07);
-      if (water) {
-        c.setRGB(0.12 + 0.04 * n1, 0.11 + 0.04 * n1, 0.07 + 0.02 * n1);
-      } else if (dd < 4) {
-        c.setRGB(0.5 + 0.1 * n2, 0.43 + 0.08 * n2, 0.29);
-      } else if (dd < 26) {
-        c.setRGB(0.26 + 0.08 * n2, 0.3 + 0.06 * n1, 0.12); // sedge & marsh
-        if (n1 > 0.58) c.setRGB(0.42, 0.32, 0.12);          // golden tamarack litter
-      } else {
-        const green = new THREE.Color(0.1, 0.19, 0.08), brown = new THREE.Color(0.24, 0.16, 0.08), gold = new THREE.Color(0.38, 0.28, 0.08);
-        c.copy(green).lerp(brown, sstep(0.38, 0.62, n1)).lerp(gold, sstep(0.55, 0.75, n2) * 0.7);
-        if (h > 55) c.lerp(new THREE.Color(0.28, 0.3, 0.26), sstep(55, 110, h) * 0.8);
-      }
+      const T = sampleTerrain(x, z), h = T.h; SD[i] = T.sd;
+      H[i] = h; pos[i * 3] = x; pos[i * 3 + 1] = inPatch(x, z) ? Math.min(h, 0) - 2 : h; pos[i * 3 + 2] = z;
+      depth[i] = T.water ? Math.round(clamp(-h / 8, 0, 1) * 255) : 0;
+      terrainColor(x, z, h, T.dd, T.water, c);
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
   }
@@ -114,6 +222,7 @@ export function buildTerrain(scene) {
   g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
   const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
   scene.add(mesh);
+  buildPatch(scene, ISLE.box); buildPatch(scene, CREEK.box);
   const depthTex = new THREE.DataTexture(depth, NX, NZ, THREE.RedFormat, THREE.UnsignedByteType);
   depthTex.magFilter = depthTex.minFilter = THREE.LinearFilter; depthTex.needsUpdate = true;
   return { mesh, depthTex };
@@ -141,12 +250,68 @@ function ribbon(points, width, yOff, color, waterY) {
   return new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true, side: THREE.DoubleSide }));
 }
 
+/** Split a path where it crosses the creek; returns dry runs plus bridge spans [a, b]. */
+function splitAtCreek(points) {
+  const pts = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 4));
+    for (let j = 0; j < n; j++) pts.push([lerp(a[0], b[0], j / n), lerp(a[1], b[1], j / n)]);
+  }
+  pts.push(points[points.length - 1]);
+  const runs = [], spans = []; let cur = [], lastDry = null;
+  for (const p of pts) {
+    const wet = creekSD(p[0], p[1]) > -3;
+    if (!wet) { if (!cur.length && lastDry && runs.length) spans.push([lastDry, p]); cur.push(p); lastDry = p; }
+    else if (cur.length) { runs.push(cur); cur = []; }
+  }
+  if (cur.length) runs.push(cur);
+  return { runs, spans };
+}
+function bridge(g, a, b, width) {
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6b5236, flatShading: true, roughness: 1 });
+  const ya = Math.max(heightAt(a[0], a[1]), 0), yb = Math.max(heightAt(b[0], b[1]), 0), y = Math.max(ya, yb, 2.3) + 0.2;
+  const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) + 3, ang = Math.atan2(dx, dz);
+  const grp = new THREE.Group(); grp.position.set((a[0] + b[0]) / 2, y, (a[1] + b[1]) / 2); grp.rotation.y = ang; g.add(grp);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(width, 0.25, L), wood); grp.add(deck);
+  for (const sx of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, L), wood); rail.position.set(sx * width / 2, 0.9, 0); grp.add(rail);
+    for (let k = -L / 2 + 0.5; k <= L / 2; k += 2.2) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.95, 0.14), wood); post.position.set(sx * width / 2, 0.45, k); grp.add(post); }
+    for (const sz of [-1, 1]) { const pile = new THREE.Mesh(new THREE.BoxGeometry(0.35, y + 2, 0.35), wood); pile.position.set(sx * (width / 2 - 0.2), -(y + 2) / 2, sz * (L / 2 - 1)); grp.add(pile); }
+  }
+}
 export function buildPaths(scene) {
   const g = new THREE.Group();
-  MAP.roads.forEach((r) => { const m = ribbon(r.pts, 5, 0.2, 0x6e6046); if (m) g.add(m); });
-  MAP.trails.forEach((r) => { const m = ribbon(r.pts, 1.6, 0.18, /Rail/.test(r.name) ? 0x6b665a : 0x5a4a30); if (m) g.add(m); });
+  const add = (list, width, yOff, colorFn) => list.forEach((r) => {
+    const { runs, spans } = splitAtCreek(r.pts);
+    runs.forEach((run) => { if (run.length > 1) { const m = ribbon(run, width, yOff, colorFn(r)); if (m) g.add(m); } });
+    spans.forEach(([a, b]) => bridge(g, a, b, Math.max(width, 2.4)));
+  });
+  add(MAP.roads, 5, 0.2, () => 0x6e6046);
+  add(MAP.trails, 1.6, 0.18, (r) => (/Rail/.test(r.name) ? 0x6b665a : 0x5a4a30));
   MAP.streams.forEach((r) => { const m = ribbon(r.pts, 3.2, 0, 0x1a3a40, 0.04); if (m) g.add(m); });
   scene.add(g); return g;
+}
+
+export function buildCreek(scene) {
+  const rocks = CREEK.rocks;
+  const im = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.9 }), rocks.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
+  rocks.forEach((r, i) => {
+    q.setFromEuler(new THREE.Euler(rnd(), rnd() * 6, rnd() * 0.5));
+    m4.compose(new THREE.Vector3(r.x, r.h - r.r * 0.75, r.z), q, new THREE.Vector3(r.r, r.r * 0.85, r.r * (0.9 + rnd() * 0.3))); im.setMatrixAt(i, m4);
+    const gg = 0.3 + rnd() * 0.12, moss = rnd() < 0.4; c.setRGB(moss ? gg * 0.8 : gg, gg * (moss ? 1.05 : 0.98), gg * (moss ? 0.7 : 0.93)); im.setColorAt(i, c);
+  });
+  scene.add(im);
+  // reeds and sedge tufts along both banks
+  const tuft = new THREE.ConeGeometry(0.12, 1.4, 4); tuft.translate(0, 0.7, 0);
+  const tufts = [];
+  CREEK.pts.forEach(([x, z, w], i) => {
+    const n = CREEK.pts[Math.min(i + 1, CREEK.pts.length - 1)], dx = n[0] - x, dz = n[1] - z, l = Math.hypot(dx, dz) || 1;
+    for (let k = 0; k < 8; k++) { const side = k % 2 ? 1 : -1, o = side * (w - 0.5 + rnd() * 1.8), t = rnd(); tufts.push([x + dx * t - dz / l * o, z + dz * t + dx / l * o]); }
+  });
+  const tm = new THREE.InstancedMesh(tuft, new THREE.MeshStandardMaterial({ color: 0xa48a4a, flatShading: true }), tufts.length);
+  tufts.forEach((p, i) => { m4.compose(new THREE.Vector3(p[0], Math.max(heightAt(p[0], p[1]), -0.2), p[1]), q.setFromEuler(new THREE.Euler((rnd() - 0.5) * 0.4, rnd() * 6, (rnd() - 0.5) * 0.4)), new THREE.Vector3(1, 0.6 + rnd() * 0.9, 1)); tm.setMatrixAt(i, m4); });
+  scene.add(tm);
 }
 
 // ---------- vegetation ----------
@@ -196,12 +361,12 @@ export function buildTrees(scene) {
     for (let z = EXT.minZ + 8; z < EXT.minZ + EXT.D - 8; z += STEP) {
       const px = x + (rnd() - 0.5) * STEP * 0.9, pz = z + (rnd() - 0.5) * STEP * 0.9;
       const sd = bil(SD, px, pz), d = -sd;
-      if (d < 5) continue;
+      if (d < 5 || inIsleBox(px, pz)) continue;
       const mi = Math.round((pz - EXT.minZ) / EXT.CELL) * EXT.NX + Math.round((px - EXT.minX) / EXT.CELL);
       if (mask[mi]) continue;
       const dens = d < 450 ? 0.62 : 0.14; // forest hugs the water; hills are sparser (and cheaper)
       if (rnd() > dens * (d < 26 ? 0.5 : 1)) continue;
-      const h = bil(H, px, pz), far = d > 450 ? 1.5 : 1, s = (0.75 + rnd() * 0.85) * far;
+      const h = inCreekBox(px, pz) ? fullHeight(px, pz) : bil(H, px, pz), far = d > 450 ? 1.5 : 1, s = (0.75 + rnd() * 0.85) * far;
       const isBroad = d > 26 && rnd() < 0.2 + 0.1 * fbm(px * 0.004, pz * 0.004);
       const rec = [px, h - 0.3, pz, s, rnd() * 6.28, rnd()];
       (isBroad ? broadAt : conAt).push(rec);
@@ -231,7 +396,7 @@ export function buildTrees(scene) {
     const ax = pondSegs[i], az = pondSegs[i + 1], bx = pondSegs[i + 2], bz = pondSegs[i + 3], L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 3.5));
     for (let j = 0; j < n; j++) {
       const t = rnd(), x = lerp(ax, bx, t), z = lerp(az, bz, t), nx = -(bz - az) / L, nz = (bx - ax) / L;
-      for (let k = 0; k < 5; k++) { const o = (rnd() - 0.5) * 5, px = x + nx * o + rnd() * 1.2, pz = z + nz * o + rnd() * 1.2; const sd = pondSD(px, pz); if (sd > -2 && sd < 7 && rnd() < 0.5) reedPts.push([px, pz]); }
+      for (let k = 0; k < 5; k++) { const o = (rnd() - 0.5) * 5, px = x + nx * o + rnd() * 1.2, pz = z + nz * o + rnd() * 1.2; const sd = pondSD(px, pz); if (sd > -2 && sd < 7 && rnd() < 0.5 && (!inIsleBox(px, pz) || beachFactor(px, pz) < 0.2)) reedPts.push([px, pz]); }
     }
   }
   const reeds = new THREE.InstancedMesh(reedGeo, new THREE.MeshStandardMaterial({ color: 0xb59a52, flatShading: true, roughness: 1 }), reedPts.length);
@@ -295,4 +460,106 @@ export function buildDock(scene, p, dirX, dirZ) {
   for (let i = 0; i < 6; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 0.45), wood); b.position.set(0, 0.12, -1.2 + i * 0.52); g.add(b); }
   for (const s of [-1, 1]) { const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 3.1), wood); rail.position.set(s * 1.1, 0.04, 0.2); g.add(rail); }
   g.position.set(p[0], Math.max(heightAt(p[0], p[1]), 0.1), p[1]); g.rotation.y = Math.atan2(dirX, dirZ); scene.add(g);
+}
+
+// ---------- island vegetation, boulders and the sword tree ----------
+export function buildIsland(scene) {
+  const SPR = [0.06, 0.18, 0.1], PIN = [0.1, 0.24, 0.13], white = [1, 1, 1], mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
+  const spruce = mergeGeoms([
+    { geo: new THREE.CylinderGeometry(0.22, 0.32, 2, 5), color: [0.22, 0.14, 0.08], y: 1 },
+    { geo: cone(2.4, 4.2), color: SPR, y: 3.3 }, { geo: cone(1.9, 3.8), color: SPR, y: 5.6 },
+    { geo: cone(1.3, 3.6), color: SPR, y: 7.8 }, { geo: cone(0.7, 2.6), color: SPR, y: 9.6 },
+  ]);
+  // Eastern white pine: tall bare trunk, a few flat, windswept tiers up top
+  const tier = (r, h, y, ox, oz) => { const g = new THREE.CylinderGeometry(r * 0.35, r, h, 7, 1); g.translate(ox, 0, oz); return { geo: g, color: PIN, y }; };
+  const pine = mergeGeoms([
+    { geo: new THREE.CylinderGeometry(0.2, 0.42, 9, 6), color: [0.3, 0.22, 0.15], y: 4.5 },
+    tier(2.6, 1.3, 7.6, 0.6, 0), tier(2.2, 1.2, 9.4, -0.5, 0.4), tier(2.4, 1.2, 11.2, 0.4, -0.3), tier(1.4, 1.2, 12.8, 0, 0.2),
+  ]);
+  const inIsle = (x, z) => pip(ISLE.ring, x, z);
+  const dist = (x, z) => nearest(allSegs, x, z);
+  // sword tree spot: walk inland from the beach until ~13 m from the water
+  let sx = ISLE.beach[0], sz = ISLE.beach[1];
+  for (let k = 0; k < 80 && !(inIsle(sx, sz) && dist(sx, sz) > 13); k++) { sx -= ISLE.bdx; sz -= ISLE.bdz; }
+  const swordTree = { x: sx, z: sz };
+
+  const tall = [], scrub = [], rocks = [];
+  const { x0, x1, z0, z1 } = ISLE.box;
+  for (let x = x0; x < x1; x += 6.5) for (let z = z0; z < z1; z += 6.5) {
+    const px = x + (rnd() - 0.5) * 5, pz = z + (rnd() - 0.5) * 5;
+    if (!inIsle(px, pz)) continue;
+    const dd = dist(px, pz), bf = beachFactor(px, pz);
+    if (dd < 7 || bf > 0.3 && dd < 24) continue;
+    if (Math.hypot(px - swordTree.x, pz - swordTree.z) < 9) continue;
+    if (rnd() < 0.85) tall.push([px, fullHeight(px, pz) - 0.3, pz, 1.45 + rnd() * 0.75, rnd() * 6.28, rnd() < 0.38]);
+  }
+  for (let x = x0; x < x1; x += 2.1) for (let z = z0; z < z1; z += 2.1) {
+    const px = x + (rnd() - 0.5) * 2, pz = z + (rnd() - 0.5) * 2;
+    if (!inIsle(px, pz)) continue;
+    const dd = dist(px, pz), bf = beachFactor(px, pz);
+    if (bf > 0.35 && dd < 20) { if (dd > 15 && rnd() < 0.5) scrub.push([px, pz, dd]); continue; } // keep the sand open
+    if (dd > 0.6 && dd < 11 && rnd() < 0.75) scrub.push([px, pz, dd]);
+    else if (dd >= 11 && rnd() < 0.12) scrub.push([px, pz, dd]);
+  }
+  // boulders: granite along the shoreline and scattered on the beach
+  for (let i = 0; i < ISLE.ring.length; i += 2) {
+    const p = ISLE.ring[i]; if (rnd() < 0.45) rocks.push([p[0] + (rnd() - 0.5) * 4, p[1] + (rnd() - 0.5) * 4, 0.5 + rnd() * 1.1]);
+  }
+  for (let i = 0; i < 9; i++) rocks.push([ISLE.beach[0] - ISLE.bdx * rnd() * 16 + (rnd() - 0.5) * 22, ISLE.beach[1] - ISLE.bdz * rnd() * 16 + (rnd() - 0.5) * 22, 0.25 + rnd() * 0.5]);
+
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+  const place = (geo, list, colorFn, material = mat) => {
+    const im = new THREE.InstancedMesh(geo, material, list.length);
+    list.forEach((r, i) => { const [pos, rot, scl] = r; q.setFromEuler(rot); m4.compose(pos, q, scl); im.setMatrixAt(i, m4); im.setColorAt(i, colorFn(i)); });
+    if (im.instanceColor) im.instanceColor.needsUpdate = true; scene.add(im); return im;
+  };
+  const E = (y) => new THREE.Euler(0, y, 0), V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const tallPine = tall.filter((t) => t[5]), tallSpruce = tall.filter((t) => !t[5]);
+  place(pine, tallPine.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.9, t[3] * 1.05, t[3] * 0.9)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
+  place(spruce, tallSpruce.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.85, t[3], t[3] * 0.85)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
+  const shrubGeo = new THREE.IcosahedronGeometry(1, 0); shrubGeo.scale(1.25, 0.62, 1.25); shrubGeo.translate(0, 0.35, 0);
+  const shrubCols = [[0.46, 0.1, 0.05], [0.3, 0.24, 0.09], [0.2, 0.24, 0.09], [0.1, 0.19, 0.08], [0.55, 0.22, 0.06]];
+  place(shrubGeo, scrub.map((s) => { const k = 0.45 + rnd() * 0.85; return [V(s[0], fullHeight(s[0], s[1]) - 0.15, s[1]), E(rnd() * 6), V(k * (0.8 + rnd() * 0.5), k, k * (0.8 + rnd() * 0.5))]; }),
+    () => { const b = shrubCols[Math.floor(rnd() * shrubCols.length)], j = 0.85 + rnd() * 0.3; return c.setRGB(b[0] * j, b[1] * j, b[2] * j); },
+    new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }));
+  place(new THREE.DodecahedronGeometry(1, 0), rocks.map((r) => [V(r[0], Math.max(fullHeight(r[0], r[1]), -0.6) - r[2] * 0.35, r[1]), new THREE.Euler(rnd(), rnd() * 6, rnd()), V(r[2] * (1 + rnd() * 0.6), r[2] * 0.7, r[2] * (1 + rnd() * 0.5))]),
+    () => { const g = 0.36 + rnd() * 0.12; return c.setRGB(g, g * 0.98, g * 0.93); }, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.9 }));
+
+  // --- the sword tree: an old white pine with a katana driven into its trunk ~3 m (10 ft) up, facing the beach
+  const gy = fullHeight(swordTree.x, swordTree.z);
+  const tree = new THREE.Group(); tree.position.set(swordTree.x, gy - 0.3, swordTree.z); scene.add(tree);
+  const bark = new THREE.MeshStandardMaterial({ color: 0xa08a74, flatShading: true, roughness: 1 });
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.6, 15, 7), bark); trunk.position.y = 7.5; tree.add(trunk);
+  const needles = new THREE.MeshStandardMaterial({ color: 0x1d3a22, flatShading: true, roughness: 1 });
+  [[3.2, 1.6, 11.2, 0.9, 0.2], [2.7, 1.4, 13.2, -0.8, 0.5], [3.0, 1.4, 15.0, 0.5, -0.6], [1.8, 1.4, 16.8, 0, 0.1]].forEach(([r, h, y, ox, oz]) => {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.35, r, h, 7), needles); t.position.set(ox, y, oz); tree.add(t);
+  });
+  [[5.5, 0.9], [7.4, 2.6], [9.2, 4.4]].forEach(([y, a]) => { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.12, 1.4, 5), bark); b.position.set(Math.cos(a) * 0.6, y, Math.sin(a) * 0.6); b.rotation.set(0, -a, Math.PI / 2.4); tree.add(b); });
+  const sword = makeKatana();
+  const trunkR = lerp(0.6, 0.34, 3.3 / 15);
+  // stuck into the side of the trunk, so it shows in profile from the beach
+  const tx = -ISLE.bdz, tz = ISLE.bdx;
+  sword.position.set(tx * (trunkR - 0.24), 3.35, tz * (trunkR - 0.24)); // ~3 m (10 ft) above the ground
+  sword.rotation.y = Math.atan2(-tz, tx);
+  tree.add(sword);
+  return { swordTree, beach: ISLE.beach, counts: { tall: tall.length, scrub: scrub.length, rocks: rocks.length } };
+}
+
+function makeKatana() {
+  // Built along +x: the tip (x = 0) is buried in the trunk, the handle sticks out.
+  const g = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: 0xd4dae2, metalness: 0.15, roughness: 0.28, emissive: 0x1c1f24 });
+  const shape = new THREE.Shape(); const L = 0.72, Wd = 0.032, curve = (t) => 0.018 * t * t; // gentle sori
+  shape.moveTo(0, curve(0) + 0.006);
+  for (let i = 1; i <= 12; i++) { const t = i / 12; shape.lineTo(t * L, curve(1 - t) + (i === 12 ? Wd : Wd * Math.min(1, 0.4 + t * 3))); }
+  shape.lineTo(L, 0); for (let i = 11; i >= 0; i--) { const t = i / 12; shape.lineTo(t * L, curve(1 - t) - (i === 0 ? -0.006 : 0)); }
+  const blade = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.007, bevelEnabled: false }), steel); blade.position.set(0, -0.016, -0.0035); g.add(blade);
+  const habaki = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.016), new THREE.MeshStandardMaterial({ color: 0xb8902e, metalness: 0.6, roughness: 0.35 })); habaki.position.set(L + 0.012, 0.002, 0); g.add(habaki);
+  const tsuba = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.008, 10), new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5, roughness: 0.5 })); tsuba.rotation.z = Math.PI / 2; tsuba.position.set(L + 0.03, 0.002, 0); g.add(tsuba);
+  const tsuka = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.032, 0.024), new THREE.MeshStandardMaterial({ color: 0x15151c, roughness: 0.8 })); tsuka.position.set(L + 0.165, 0.002, 0); g.add(tsuka);
+  const wrapMat = new THREE.MeshStandardMaterial({ color: 0xe8e2cf, roughness: 0.9 });
+  for (let i = 0; i < 7; i++) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.034, 0.026), wrapMat); w.position.set(L + 0.05 + i * 0.033, 0.002, 0); w.rotation.y = 0.5; g.add(w); }
+  const kashira = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.036, 0.028), habaki.material); kashira.position.set(L + 0.302, 0.002, 0); g.add(kashira);
+  g.scale.setScalar(1.3);
+  return g;
 }

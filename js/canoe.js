@@ -63,9 +63,9 @@ export function createCanoe() {
   const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffc27a }));
   lantern.position.set(0, 0.62, 2.35); body.add(lantern);
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 4), wood); post.position.set(0, 0.45, 2.35); body.add(post);
-  const light = new THREE.PointLight(0xffb066, 0, 22, 1.6); light.position.set(0, 0.8, 2.35); body.add(light);
+  const light = new THREE.PointLight(0xffb066, 0, 6.5, 2); light.position.set(0, 0.8, 2.35); body.add(light);
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffa95a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }));
-  halo.scale.setScalar(2.2); halo.position.copy(lantern.position); body.add(halo);
+  halo.scale.setScalar(1.1); halo.position.copy(lantern.position); body.add(halo);
   return { root, body, paddle, person, armL, armR, light, halo, lantern, blade, mask };
 }
 
