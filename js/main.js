@@ -119,7 +119,7 @@ $('pRestart').addEventListener('click', () => {
 });
 $('pMenu').addEventListener('click', () => {
   G.menu = true; $('pause').classList.remove('on'); G.paused = false; audio.setPaused(true);
-  document.body.classList.remove('play'); $('title').classList.remove('hide'); $('start').textContent = 'Continue';
+  document.body.classList.remove('play'); $('title').classList.remove('hide');
 });
 
 // ------------------------------------------------------------------ minimap + big map
@@ -359,7 +359,6 @@ function frame() {
     P.vx = (launchInfo.end[0] - launchInfo.start[0]) * 6 * k * (1 - k) / 6.5; P.vz = (launchInfo.end[1] - launchInfo.start[1]) * 6 * k * (1 - k) / 6.5;
     P.act = lerp(P.act, 0, Math.min(1, dt * 3));
     if (G.launchT > 2.0 && !G.splashed) { G.splashed = true; ripples.spawn(launchInfo.q[0], launchInfo.q[1], 6, 3.4, 0.6, 0.5); audio.plop(0); audio.splash(0, 1.2); }
-    if (G.launchT > 3.5 && !G.toast2) { G.toast2 = true; $('toast').textContent = ''; $('toast').classList.remove('on'); }
     if (k >= 1) { G.mode = 'play'; document.body.classList.add('play'); setTimeout(() => $('hint').classList.add('fade'), 14000); }
     info.speed = Math.hypot(P.vx, P.vz);
   } else if (G.mode === 'play') info = stepCanoe(dt, true);
@@ -372,20 +371,24 @@ function frame() {
 }
 
 // ------------------------------------------------------------------ boot
+// Title screen is pure scenery + version number. The first tap / click / key launches the canoe.
+let ready = false, pendingStart = false;
 function startGame() {
+  audio.start();                          // must happen inside the user gesture (iOS)
+  if (!ready) { pendingStart = true; return; }
   if (started) {
     if (G.menu) { G.menu = false; $('title').classList.add('hide'); document.body.classList.add('play'); audio.setPaused(false); }
     return;
   }
   started = true;
-  audio.start(); G.mode = 'launch'; G.launchT = 0;
+  G.mode = 'launch'; G.launchT = 0;
   $('title').classList.add('hide');
-  const toast = $('toast'); toast.textContent = 'Launching'; toast.classList.add('on');
-  setTimeout(() => { toast.classList.remove('on'); }, 3200);
   document.body.classList.add('play');
 }
-$('start').addEventListener('click', startGame);
-addEventListener('keydown', (e) => { if ((!started || G.menu) && (e.key === 'Enter') && !$('start').disabled) startGame(); });
+const onTitleGesture = (e) => { if (!$('title').classList.contains('hide')) { e.preventDefault(); startGame(); } };
+$('title').addEventListener('click', onTitleGesture);
+$('title').addEventListener('touchend', onTitleGesture, { passive: false });
+addEventListener('keydown', (e) => { if ((!started || G.menu) && !['escape', 'm', 'p'].includes(e.key.toLowerCase())) onTitleGesture(e); });
 
 setTimeout(() => {
   try {
@@ -394,7 +397,7 @@ setTimeout(() => {
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
     window.game = { P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, keys, travelTo, openMap, setPaused };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
-    $('start').disabled = false; $('start').textContent = 'Launch canoe';
-    frame();
-  } catch (err) { console.error(err); $('start').textContent = 'Error — see console'; }
+    ready = true; frame();
+    if (pendingStart) startGame();
+  } catch (err) { console.error(err); }
 }, 60);
