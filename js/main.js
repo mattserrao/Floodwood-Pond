@@ -182,6 +182,7 @@ function poseCanoe(dt, t, speed) {
   const groundY = Math.max(heightAt(P.x, P.z), 0);
   c.root.position.set(P.x, 0.1 + bob + (groundY > 0.05 ? groundY : 0), P.z);
   c.root.rotation.set(P.pitch, P.psi, P.roll, 'YXZ');
+  c.mask.position.y = 0.025 - c.root.position.y;
   // paddle pose
   const u = P.phase, s = P.side, a = P.act;
   let pitch, roll;

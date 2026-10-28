@@ -37,18 +37,28 @@ export function createCanoe() {
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.3), wood); seat.position.set(0, 0.2, -0.55); body.add(seat);
   // paddler
   const person = new THREE.Group(); person.position.set(0, 0, -0.55); body.add(person);
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.24), flat(0xa3322b)); torso.position.y = 0.56; person.add(torso);
-  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.115, 0), flat(0xd9a982)); head.position.y = 0.94; person.add(head);
-  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.1, 8), flat(0x2e2a20)); hat.position.y = 1.03; person.add(hat);
-  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.5), flat(0x3b4a5c)); legs.position.set(0, 0.3, 0.2); person.add(legs);
-  const armMat = flat(0xa3322b);
-  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.42, 0.09), armMat), armR = armL.clone(); person.add(armL, armR);
+  // A soft, shapeless figure: one bundled mass in a hooded parka, no face or distinct limbs.
+  const cloak = flat(0x8a3a2c, { roughness: 1 });
+  const base = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 1), cloak); base.scale.set(1.15, 0.6, 1.25); base.position.set(0, 0.3, 0.05); person.add(base);
+  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 1), cloak); torso.scale.set(1.0, 1.25, 0.85); torso.position.y = 0.6; person.add(torso);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 1), cloak); head.scale.set(1, 1.1, 1.05); head.position.set(0, 0.95, -0.01); person.add(head);
+  const armL = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.28, 2, 6), cloak), armR = armL.clone(); person.add(armL, armR);
   // paddle
   const paddle = new THREE.Group();
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.45, 6), wood); shaft.position.y = -0.4; paddle.add(shaft);
   const blade = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.55, 0.025), flat(0xc9a46a)); blade.position.y = -1.3; paddle.add(blade);
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.04), wood); grip.position.y = 0.33; paddle.add(grip);
   body.add(paddle);
+  // Depth-only "dry hull" mask at the waterline: hides the water plane inside the canoe.
+  const wl = [];
+  const NS = 24;
+  for (let i = 0; i <= NS; i++) { const s = -0.7 + (1.4 * i) / NS, w = 0.5 * Math.pow(Math.max(1 - Math.pow(Math.abs(s), 2.4), 0), 0.5); wl.push([s * L, 0.7 * w * Math.sqrt(Math.max(1 - Math.pow(s / 0.72, 2), 0))]); }
+  const shape = new THREE.Shape();
+  wl.forEach(([z, w], i) => (i ? shape.lineTo(w, z) : shape.moveTo(w, z)));
+  for (let i = wl.length - 1; i >= 0; i--) shape.lineTo(-wl[i][1], wl[i][0]);
+  const maskGeo = new THREE.ShapeGeometry(shape); maskGeo.rotateX(Math.PI / 2); // shape (x,y) -> (x,0,y)
+  const mask = new THREE.Mesh(maskGeo, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }));
+  mask.renderOrder = 0.5; mask.frustumCulled = false; body.add(mask);
   // lantern at the bow
   const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffc27a }));
   lantern.position.set(0, 0.62, 2.35); body.add(lantern);
@@ -56,7 +66,7 @@ export function createCanoe() {
   const light = new THREE.PointLight(0xffb066, 0, 22, 1.6); light.position.set(0, 0.8, 2.35); body.add(light);
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffa95a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }));
   halo.scale.setScalar(2.2); halo.position.copy(lantern.position); body.add(halo);
-  return { root, body, paddle, person, armL, armR, light, halo, lantern, blade };
+  return { root, body, paddle, person, armL, armR, light, halo, lantern, blade, mask };
 }
 
 // ------------------------------------------------------------------ ripples

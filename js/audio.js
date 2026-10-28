@@ -21,11 +21,36 @@ export class AmbientAudio {
     this.melIdx = 4;
   }
 
+  // iOS: must run synchronously inside a user tap. Web Audio on iPhone is muted by the ring/silent switch
+  // unless the page's audio session is "playback", so we request that and keep a silent <audio> element playing.
+  unlockIOS() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+    if (!this.silentEl) {
+      const rate = 8000, n = rate / 2, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+      const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+      const el = (this.silentEl = document.createElement('audio'));
+      el.src = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+      el.loop = true; el.setAttribute('playsinline', ''); el.setAttribute('x-webkit-airplay', 'deny'); el.preload = 'auto';
+    }
+    const p = this.silentEl.play(); if (p && p.catch) p.catch(() => {});
+    if (this.ctx) {
+      if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
+      const b = this.ctx.createBuffer(1, 1, 22050), s = this.ctx.createBufferSource(); s.buffer = b; s.connect(this.ctx.destination); s.start(0);
+    }
+  }
+
   start() {
-    if (this.ctx) { this.ctx.resume(); return; }
+    if (this.ctx) { this.unlockIOS(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = (this.ctx = new AC());
+    this.unlockIOS();
+    // iOS suspends/interrupts the context (lock screen, calls, app switch): resume on the next touch or when visible again
+    const resume = () => { if (this.ctx && this.ctx.state !== 'running' && !this.muted) this.unlockIOS(); };
+    ['touchend', 'pointerdown', 'keydown'].forEach((ev) => window.addEventListener(ev, resume, { passive: true }));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
     const now = ctx.currentTime;
 
     this.master = ctx.createGain();
@@ -61,6 +86,7 @@ export class AmbientAudio {
   setMuted(m) {
     this.muted = m;
     if (!this.ctx) return;
+    if (!m) this.unlockIOS();
     this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.25);
   }
 
