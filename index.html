@@ -24,6 +24,8 @@
   .hud { position:fixed; z-index:3; opacity:0; transition:opacity 1.5s ease; pointer-events:none; }
   body.play .hud { opacity:1; }
   #clock { top:max(14px,env(safe-area-inset-top)); left:16px; font-size:15px; letter-spacing:.14em; text-shadow:0 1px 8px rgba(0,0,0,.6); }
+  #auto { opacity:0; transition:opacity 1.5s; }
+  #auto.on { opacity:.75; }
   #clock small { display:block; opacity:.7; font-size:11px; letter-spacing:.2em; text-transform:uppercase; margin-top:2px; }
   #btns { top:max(10px,env(safe-area-inset-top)); right:12px; display:flex; gap:6px; pointer-events:auto; }
   #btns button { font:inherit; font-size:12px; color:var(--ink); background:var(--glass); border:1px solid var(--line); border-radius:20px;
@@ -65,7 +67,7 @@
 <body>
 <canvas id="c"></canvas>
 <div id="veil"></div>
-<div id="clock" class="hud"><span id="time">6:00 AM</span><small id="phase">Dawn</small></div>
+<div id="clock" class="hud"><span id="time">6:00 AM</span><small id="phase">Dawn</small><small id="auto">Auto paddle</small></div>
 <div id="btns" class="hud">
   <button id="pauseBtn" title="Pause (Esc)">❚❚</button><button data-t="5.7" title="Dawn (1)">Dawn</button><button data-t="12" title="Day (2)">Day</button><button data-t="18.3" title="Dusk (3)">Dusk</button><button data-t="22.5" title="Night (4)">Night</button><button id="mute" title="Mute (M)">Sound on</button>
 </div>
@@ -73,7 +75,7 @@
 <div id="hint" class="hud">W paddle &nbsp;·&nbsp; A / D steer &nbsp;·&nbsp; Shift paddle hard &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; 1–4 time of day &nbsp;·&nbsp; Esc pause</div>
 <div id="joy" class="hud"><i></i></div>
 <div id="title">
-  <div class="ver">v0.2.0</div>
+  <div class="ver">v0.2.1</div>
 </div>
 <div id="pause" class="overlay"><div class="panel">
   <h2>Paused</h2>
@@ -85,7 +87,7 @@
   </div>
   <div class="times"><button data-t="5.7">Dawn</button><button data-t="12">Day</button><button data-t="18.3">Dusk</button><button data-t="22.5">Night</button></div>
   <div class="keys">W paddle · A / D steer · S back-paddle · Shift paddle hard<br>Drag to look · N or tap minimap for the map · Esc pause · M mute</div>
-  <div class="ver">v0.2.0</div>
+  <div class="ver">v0.2.1</div>
 </div></div>
 <div id="bigmap" class="overlay"><div class="wrap"><canvas id="bigC"></canvas><button id="mapClose" title="Close (Esc)">×</button></div>
   <div class="cap">Tap anywhere on the water to paddle there</div></div>

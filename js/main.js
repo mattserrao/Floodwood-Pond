@@ -51,7 +51,7 @@ function build() {
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -208,6 +208,11 @@ function stepCanoe(dt, controllable) {
     if (keys.has('d') || keys.has('arrowright')) steer -= 1;
     if (Math.abs(joy.x) > 0.12 || Math.abs(joy.y) > 0.12) { steer += -joy.x * 1.2; throttle += joy.y < -0.15 ? -joy.y : joy.y > 0.5 ? -0.6 : 0; }
     steer = clamp(steer, -1, 1); throttle = clamp(throttle, -1, 1);
+    // auto paddle: after a quiet spell, gently follow the shoreline around the pond
+    const manual = Math.abs(throttle) > 0.05 || Math.abs(steer) > 0.05 || keys.size > 0;
+    if (manual || G.transport) { G.quiet = 0; if (AUTO.on) setAuto(false); }
+    else { G.quiet = (G.quiet || 0) + dt; if (!AUTO.on && G.quiet > AUTO_DELAY) setAuto(true); }
+    if (AUTO.on) { const a = autoPilot(); throttle = a.throttle; steer = a.steer; }
   }
   const hard = controllable && (keys.has('shift') || keys.has(' ')) ? 1.6 : 1;
   const fx = Math.sin(P.psi), fz = Math.cos(P.psi), lx = fz, lz = -fx;
@@ -220,7 +225,7 @@ function stepCanoe(dt, controllable) {
     if (P.phase >= 1) P.phase -= 1; // always the same side (J-stroke keeps the line straight)
     if (prev < 0.04 && P.phase >= 0.04) catchStroke(Math.abs(throttle) > 0.05 ? 1 : 0.6);
     const u = P.phase;
-    if (u < 0.5) thrust = Math.sin((u / 0.5) * Math.PI) * 1.55 * hard * (Math.abs(throttle) > 0.05 ? Math.sign(throttle) * (throttle > 0 ? 1 : 0.45) : 0.18);
+    if (u < 0.5) thrust = Math.sin((u / 0.5) * Math.PI) * 1.55 * hard * (AUTO.on ? 0.6 : 1) * (Math.abs(throttle) > 0.05 ? Math.sign(throttle) * (throttle > 0 ? 1 : 0.45) : 0.18);
   } else if (P.act > 0.02) { P.phase = (P.phase + dt / 1.6) % 1; } // finish the motion while the paddle settles
   // gliding (no paddle in the water) keeps most of its momentum; paddling adds stroke drag
   const lin = lerp(0.035, 0.16, P.act), quad = lerp(0.012, 0.045, P.act);
@@ -257,6 +262,60 @@ function stepCanoe(dt, controllable) {
   if (speed > 0.5 && P.wakeT < 0) { P.wakeT = 0.45; ripples.spawn(P.x - fx * 2.5, P.z - fz * 2.5, 2.2 + speed, 2.6, 0.22, 0.5); }
   return { speed, throttle, steer, thrust };
 }
+// ------------------------------------------------------------------ auto paddle
+const AUTO_DELAY = 8;
+const AUTO = { on: false, path: [], idx: 0, dir: 1 };
+function buildAutoPath() {
+  const ring = MAP.pond[0], pts = [];
+  const grad = (x, z) => { const e = 3, gx = pondSD(x + e, z) - pondSD(x - e, z), gz = pondSD(x, z + e) - pondSD(x, z - e), l = Math.hypot(gx, gz) || 1; return [gx / l, gz / l]; };
+  // resample the shoreline every ~18 m, then push each point out into open water (~32 m from any shore)
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length], n = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / 18));
+    for (let j = 0; j < n; j++) {
+      let x = lerp(a[0], b[0], j / n), z = lerp(a[1], b[1], j / n), best = null, bsd = -1e9;
+      for (let k = 0; k < 40; k++) {
+        const sd = pondSD(x, z); if (sd > bsd) { bsd = sd; best = [x, z]; } if (sd >= 32) break;
+        const [gx, gz] = grad(x, z); x += gx * 3; z += gz * 3;
+      }
+      if (bsd > 8) pts.push(best);
+    }
+  }
+  let path = pts;
+  for (let it = 0; it < 3; it++) { const o = []; for (let i = 0; i < path.length; i++) { const p = path[(i - 1 + path.length) % path.length], c = path[i], n = path[(i + 1) % path.length]; o.push([(p[0] + 2 * c[0] + n[0]) / 4, (p[1] + 2 * c[1] + n[1]) / 4]); } path = o; }
+  AUTO.path = path.filter((p) => pondSD(p[0], p[1]) > 10);
+}
+function setAuto(on) {
+  AUTO.on = on; $('auto').classList.toggle('on', on);
+  if (!on) return;
+  if (!AUTO.path.length) buildAutoPath();
+  let bi = 0, bd = 1e18; AUTO.path.forEach((p, i) => { const d = (p[0] - P.x) ** 2 + (p[1] - P.z) ** 2; if (d < bd) { bd = d; bi = i; } });
+  const N = AUTO.path.length, a = AUTO.path[bi], b = AUTO.path[(bi + 1) % N];
+  AUTO.dir = Math.sin(P.psi) * (b[0] - a[0]) + Math.cos(P.psi) * (b[1] - a[1]) >= 0 ? 1 : -1; // keep going the way we face
+  AUTO.idx = bi;
+}
+function autoPilot() {
+  const N = AUTO.path.length;
+  // advance the waypoint once we're close to it, aim a few points ahead for smooth curves
+  for (let k = 0; k < 4; k++) { const p = AUTO.path[AUTO.idx]; if (Math.hypot(p[0] - P.x, p[1] - P.z) < 26) AUTO.idx = (AUTO.idx + AUTO.dir + N) % N; else break; }
+  const t = AUTO.path[AUTO.idx];
+  let want = Math.atan2(t[0] - P.x, t[1] - P.z);
+  // steer around islands/points: pick the clear heading closest to the target direction
+  const clear = (a, len) => { for (let d = 4; d <= len; d += 4) if (pondSD(P.x + Math.sin(a) * d, P.z + Math.cos(a) * d) < 5) return false; return true; };
+  const look = Math.min(30, Math.hypot(t[0] - P.x, t[1] - P.z));
+  if (!clear(want, look)) {
+    for (let k = 1; k <= 8; k++) {
+      const off = k * 0.2;
+      if (clear(want + off * AUTO.dir * -1, 24)) { want += -off * AUTO.dir; break; }
+      if (clear(want + off * AUTO.dir, 24)) { want += off * AUTO.dir; break; }
+    }
+  }
+  // unstick: if barely moving for a while, skip ahead
+  AUTO.slow = Math.hypot(P.vx, P.vz) < 0.25 ? (AUTO.slow || 0) + 1 / 60 : 0;
+  if (AUTO.slow > 4) { AUTO.idx = (AUTO.idx + AUTO.dir * 3 + N) % N; AUTO.slow = 0; }
+  const diff = ((want - P.psi + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  return { throttle: Math.abs(diff) > 1.4 ? 0.25 : 1, steer: clamp(diff * 1.6, -0.8, 0.8) };
+}
+
 function catchStroke(power) {
   const w = new THREE.Vector3(); canoe.blade.getWorldPosition(w);
   ripples.spawn(w.x, w.z, 2.2, 2.2, 0.45, 0.15); ripples.spawn(w.x, w.z, 1.2, 1.2, 0.5, 0.1);
@@ -439,7 +498,7 @@ setTimeout(() => {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap();
     cam.pos.set(P.x, 5, P.z - 12);
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
-    window.game = { P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, CREEK, heightAt, keys, travelTo, openMap, setPaused };
+    window.game = { P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     ready = true; frame();
     if (pendingStart) startGame();
