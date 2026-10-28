@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b1533">
+<title>Floodwood Pond</title>
+<style>
+  :root { --ink:#f4ead5; --glass:rgba(14,22,36,.55); --line:rgba(244,234,213,.22); }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:#0b1533; overflow:hidden; color:var(--ink);
+    font-family: "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; touch-action:none; user-select:none; -webkit-user-select:none; }
+  canvas#c { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #title { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    background:radial-gradient(ellipse at 50% 60%, rgba(10,16,34,.15), rgba(10,16,34,.68)); transition:opacity 1.6s ease; padding:24px; }
+  #title.hide { opacity:0; pointer-events:none; }
+  #title h1 { font-weight:400; font-size:clamp(38px,9vw,92px); letter-spacing:.06em; margin:0 0 6px; text-shadow:0 2px 30px rgba(0,0,0,.5); }
+  #title .sub { letter-spacing:.28em; text-transform:uppercase; font-size:clamp(11px,2.4vw,14px); opacity:.85; margin-bottom:38px; }
+  #start { font:inherit; font-size:18px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink); background:rgba(244,234,213,.08);
+    border:1px solid var(--line); border-radius:40px; padding:14px 38px; cursor:pointer; backdrop-filter:blur(8px); transition:background .3s, transform .3s; }
+  #start:hover { background:rgba(244,234,213,.2); transform:translateY(-1px); }
+  #start[disabled] { opacity:.5; cursor:wait; }
+  #title .note { margin-top:22px; font-size:12px; opacity:.6; letter-spacing:.08em; max-width:420px; line-height:1.6; }
+  .hud { position:fixed; z-index:3; opacity:0; transition:opacity 1.5s ease; pointer-events:none; }
+  body.play .hud { opacity:1; }
+  #clock { top:max(14px,env(safe-area-inset-top)); left:16px; font-size:15px; letter-spacing:.14em; text-shadow:0 1px 8px rgba(0,0,0,.6); }
+  #clock small { display:block; opacity:.7; font-size:11px; letter-spacing:.2em; text-transform:uppercase; margin-top:2px; }
+  #btns { top:max(10px,env(safe-area-inset-top)); right:12px; display:flex; gap:6px; pointer-events:auto; }
+  #btns button { font:inherit; font-size:12px; color:var(--ink); background:var(--glass); border:1px solid var(--line); border-radius:20px;
+    padding:7px 11px; cursor:pointer; backdrop-filter:blur(6px); letter-spacing:.06em; }
+  #btns button:hover { background:rgba(60,80,110,.6); }
+  #mini { right:12px; bottom:max(12px,env(safe-area-inset-bottom)); width:190px; height:140px; border-radius:10px; border:1px solid var(--line); background:var(--glass); overflow:hidden; backdrop-filter:blur(6px); }
+  #mini canvas { width:100%; height:100%; display:block; }
+  #hint { left:50%; bottom:max(22px,env(safe-area-inset-bottom)); transform:translateX(-50%); font-size:13px; letter-spacing:.08em; text-align:center; background:var(--glass);
+    border:1px solid var(--line); border-radius:24px; padding:9px 18px; backdrop-filter:blur(6px); white-space:nowrap; transition:opacity 2.5s ease 0s; }
+  #hint.fade { opacity:0 !important; }
+  #joy { left:24px; bottom:max(26px,env(safe-area-inset-bottom)); width:132px; height:132px; border-radius:50%; background:rgba(14,22,36,.35); border:1px solid var(--line);
+    pointer-events:auto; display:none; touch-action:none; }
+  #joy i { position:absolute; left:50%; top:50%; width:56px; height:56px; margin:-28px 0 0 -28px; border-radius:50%; background:rgba(244,234,213,.35); border:1px solid var(--line); }
+  body.touch #joy { display:block; } body.touch #hint { display:none; } body.touch #mini { width:140px; height:104px; bottom:auto; top:56px; }
+  #toast { position:fixed; left:50%; top:20%; transform:translateX(-50%); font-size:clamp(20px,4vw,34px); letter-spacing:.2em; text-transform:uppercase; opacity:0; transition:opacity 1.6s; z-index:4; text-shadow:0 2px 24px rgba(0,0,0,.6); pointer-events:none; text-align:center; }
+  #toast.on { opacity:1; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="toast"></div>
+<div id="clock" class="hud"><span id="time">6:00 AM</span><small id="phase">Dawn</small></div>
+<div id="btns" class="hud">
+  <button data-t="5.7" title="Dawn (1)">Dawn</button><button data-t="12" title="Day (2)">Day</button><button data-t="18.3" title="Dusk (3)">Dusk</button><button data-t="22.5" title="Night (4)">Night</button><button id="mute" title="Mute (M)">Sound on</button>
+</div>
+<div id="mini" class="hud"><canvas id="miniC" width="380" height="280"></canvas></div>
+<div id="hint" class="hud">W paddle &nbsp;·&nbsp; A / D steer &nbsp;·&nbsp; Shift paddle hard &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; 1–4 time of day</div>
+<div id="joy" class="hud"><i></i></div>
+<div id="title">
+  <h1>Floodwood Pond</h1>
+  <div class="sub">St. Regis Canoe Area &nbsp;·&nbsp; Adirondack Park, New York</div>
+  <button id="start" disabled>Loading map…</button>
+  <div class="note">Headphones recommended. Shoreline, islands and campsites traced from OpenStreetMap data.</div>
+</div>
+<script type="importmap">{"imports":{"three":"./lib/three.module.js"}}</script>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,204 @@
+import * as THREE from 'three';
+import { clamp, lerp, rnd, pondSD, inPond, NQ, glowTexture } from './world.js';
+
+const flat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, ...extra });
+
+// ------------------------------------------------------------------ canoe + paddler
+export function createCanoe() {
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  const L = 2.75, N = 13;
+  const sections = [];
+  for (let i = 0; i < N; i++) {
+    const s = (i / (N - 1)) * 2 - 1, a = Math.abs(s);
+    const w = 0.5 * Math.pow(Math.max(1 - Math.pow(a, 2.4), 0), 0.5) + 0.015;
+    const gun = 0.3 + 0.38 * Math.pow(a, 3.2), keel = -0.17 + 0.2 * Math.pow(a, 2.2);
+    sections.push({ z: s * L, w, gun, keel });
+  }
+  const profile = (sec, inner) => {
+    const k = inner ? 0.93 : 1, dy = inner ? 0.035 : 0, { w, gun, keel } = sec;
+    const pts = [[-w, gun], [-w * 0.97, lerp(keel, gun, 0.45)], [-w * 0.62, keel + 0.05], [0, keel], [w * 0.62, keel + 0.05], [w * 0.97, lerp(keel, gun, 0.45)], [w, gun]];
+    return pts.map(([x, y]) => [x * k, y - (inner ? 0.02 : 0) + dy]);
+  };
+  const hull = (inner, color) => {
+    const P = [], I = [];
+    sections.forEach((sec) => profile(sec, inner).forEach(([x, y]) => P.push(x, y, sec.z * (inner ? 0.97 : 1))));
+    for (let i = 0; i < N - 1; i++) for (let j = 0; j < 6; j++) { const a = i * 7 + j, b = a + 1, c = a + 7, d = c + 1; I.push(a, c, b, b, c, d); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setIndex(I); g.computeVertexNormals();
+    return new THREE.Mesh(g, flat(color, { side: THREE.DoubleSide }));
+  };
+  body.add(hull(false, 0x1f5a44), hull(true, 0xb9894f));
+  // gunwale rails
+  for (const side of [-1, 1]) {
+    const curve = new THREE.CatmullRomCurve3(sections.map((s) => new THREE.Vector3(side * s.w, s.gun + 0.01, s.z)));
+    body.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.028, 5), flat(0x8a5f30)));
+  }
+  const wood = flat(0x8a5f30);
+  [[0.55, 0.0], [-0.65, 0.0]].forEach(([z]) => { const t = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.04, 0.09), wood); t.position.set(0, 0.34, z + 0.45); body.add(t); });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.3), wood); seat.position.set(0, 0.2, -0.55); body.add(seat);
+  // paddler
+  const person = new THREE.Group(); person.position.set(0, 0, -0.55); body.add(person);
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.24), flat(0xa3322b)); torso.position.y = 0.56; person.add(torso);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.115, 0), flat(0xd9a982)); head.position.y = 0.94; person.add(head);
+  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.1, 8), flat(0x2e2a20)); hat.position.y = 1.03; person.add(hat);
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.5), flat(0x3b4a5c)); legs.position.set(0, 0.3, 0.2); person.add(legs);
+  const armMat = flat(0xa3322b);
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.42, 0.09), armMat), armR = armL.clone(); person.add(armL, armR);
+  // paddle
+  const paddle = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.45, 6), wood); shaft.position.y = -0.4; paddle.add(shaft);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.55, 0.025), flat(0xc9a46a)); blade.position.y = -1.3; paddle.add(blade);
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.04), wood); grip.position.y = 0.33; paddle.add(grip);
+  body.add(paddle);
+  // lantern at the bow
+  const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffc27a }));
+  lantern.position.set(0, 0.62, 2.35); body.add(lantern);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 4), wood); post.position.set(0, 0.45, 2.35); body.add(post);
+  const light = new THREE.PointLight(0xffb066, 0, 22, 1.6); light.position.set(0, 0.8, 2.35); body.add(light);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffa95a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }));
+  halo.scale.setScalar(2.2); halo.position.copy(lantern.position); body.add(halo);
+  return { root, body, paddle, person, armL, armR, light, halo, lantern, blade };
+}
+
+// ------------------------------------------------------------------ ripples
+export class Ripples {
+  constructor(scene, n = 40) {
+    const geo = new THREE.RingGeometry(0.9, 1, 40); geo.rotateX(-Math.PI / 2);
+    this.items = []; this.i = 0;
+    for (let k = 0; k < n; k++) {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+      m.visible = false; m.renderOrder = 3; m.position.y = 0.06; scene.add(m); this.items.push({ m, t: 1, life: 1, r: 1, a: 0 });
+    }
+  }
+  spawn(x, z, r = 2.5, life = 2.4, a = 0.5, r0 = 0.2) {
+    const it = this.items[this.i++ % this.items.length]; it.t = 0; it.life = life; it.r = r; it.a = a; it.r0 = r0;
+    it.m.position.set(x, 0.06, z); it.m.visible = true;
+  }
+  update(dt, tint) {
+    for (const it of this.items) {
+      if (it.t >= it.life) { it.m.visible = false; continue; }
+      it.t += dt; const u = clamp(it.t / it.life, 0, 1);
+      const s = lerp(it.r0, it.r, 1 - Math.pow(1 - u, 2)); it.m.scale.set(s, 1, s);
+      it.m.material.opacity = it.a * (1 - u) * (1 - u); it.m.material.color.copy(tint);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ loons
+function makeLoon() {
+  const g = new THREE.Group(), black = flat(0x15181c), white = flat(0xeeeeea);
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 1), black); body.scale.set(0.8, 0.5, 1.7); body.position.y = 0.05; g.add(body);
+  const belly = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), white); belly.scale.set(0.7, 0.2, 1.4); belly.position.set(0, -0.08, 0.05); g.add(belly);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 0.5, 6), black); neck.position.set(0, 0.42, 0.62); neck.rotation.x = 0.2; g.add(neck);
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.09, 6), white); collar.position.set(0, 0.35, 0.6); g.add(collar);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 0), black); head.position.set(0, 0.7, 0.68); head.scale.set(0.9, 0.9, 1.3); g.add(head);
+  const bill = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.3, 4), flat(0x2a2a2a)); bill.rotation.x = Math.PI / 2; bill.position.set(0, 0.69, 0.9); g.add(bill);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 4, 3), new THREE.MeshBasicMaterial({ color: 0xd22 })); eye.position.set(0.07, 0.73, 0.74); g.add(eye);
+  const eye2 = eye.clone(); eye2.position.x = -0.07; g.add(eye2);
+  // checkered back
+  for (let i = 0; i < 9; i++) { const d = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.08), white); d.position.set((i % 3 - 1) * 0.16, 0.22, -0.15 - Math.floor(i / 3) * 0.2); g.add(d); }
+  return g;
+}
+export class Loons {
+  constructor(scene, count = 3) {
+    this.list = [];
+    for (let i = 0; i < count; i++) {
+      const g = makeLoon(); scene.add(g);
+      const l = { g, x: 0, z: 0, tx: 0, tz: 0, h: rnd() * 6, state: 'swim', timer: 5 + rnd() * 15, sink: 0 };
+      this.place(l); this.list.push(l);
+    }
+  }
+  randomWater() { for (let k = 0; k < 400; k++) { const x = lerp(-1050, 1050, rnd()), z = lerp(-720, 720, rnd()); if (pondSD(x, z) > 40) return [x, z]; } return [0, 0]; }
+  place(l) { const [x, z] = this.randomWater(); l.x = x; l.z = z; [l.tx, l.tz] = this.randomWater(); }
+  update(dt, t, canoePos, ripples, onPlop) {
+    for (const l of this.list) {
+      l.timer -= dt;
+      if (l.state === 'swim') {
+        const dx = l.tx - l.x, dz = l.tz - l.z, d = Math.hypot(dx, dz);
+        const away = Math.hypot(l.x - canoePos.x, l.z - canoePos.z); // shy: keep ~25 m from the canoe
+        const target = Math.atan2(dx, dz);
+        let diff = ((target - l.h + Math.PI * 3) % (Math.PI * 2)) - Math.PI; l.h += diff * Math.min(1, dt * 0.8);
+        const sp = away < 35 ? 1.4 : 0.55;
+        const nx = l.x + Math.sin(l.h) * sp * dt, nz = l.z + Math.cos(l.h) * sp * dt;
+        if (pondSD(nx, nz) > 12) { l.x = nx; l.z = nz; } else [l.tx, l.tz] = this.randomWater();
+        if (d < 8) [l.tx, l.tz] = this.randomWater();
+        if (l.timer < 0 || away < 14) { l.state = 'dive'; l.timer = 1.1; ripples.spawn(l.x, l.z, 3, 2.2, 0.45); onPlop && onPlop(l.x, l.z); }
+        l.g.position.set(l.x, -0.02 + Math.sin(t * 1.3 + l.h) * 0.015, l.z);
+        l.g.rotation.y = l.h; l.g.rotation.z = Math.sin(t * 1.1 + l.h) * 0.02;
+      } else if (l.state === 'dive') {
+        l.sink = clamp(l.sink + dt * 1.3, 0, 1); l.g.position.y = -0.02 - l.sink * 0.9;
+        if (l.timer < 0) { l.state = 'under'; l.timer = 7 + rnd() * 8; l.g.visible = false; }
+      } else { // under: swim a bit
+        l.x += Math.sin(l.h) * 2.2 * dt; l.z += Math.cos(l.h) * 2.2 * dt;
+        if (pondSD(l.x, l.z) < 14) { l.h += Math.PI; }
+        if (l.timer < 0) {
+          l.state = 'swim'; l.timer = 20 + rnd() * 35; l.sink = 0; l.g.visible = true; l.tx = l.x + (rnd() - 0.5) * 300; l.tz = l.z + (rnd() - 0.5) * 300;
+          if (pondSD(l.tx, l.tz) < 30) [l.tx, l.tz] = this.randomWater();
+          ripples.spawn(l.x, l.z, 3.5, 2.6, 0.5);
+        }
+      }
+    }
+  }
+}
+
+// ------------------------------------------------------------------ geese (autumn V formation)
+export class Geese {
+  constructor(scene) {
+    this.g = new THREE.Group(); this.g.visible = false; scene.add(this.g); this.birds = []; this.t = -1; this.next = 25; this.dir = new THREE.Vector3();
+    const mat = new THREE.MeshBasicMaterial({ color: 0x14181c, side: THREE.DoubleSide });
+    const wingGeo = new THREE.BufferGeometry(); wingGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.5, 2.6, 0, -0.4, 0, 0, -0.5], 3)); wingGeo.computeVertexNormals();
+    for (let i = 0; i < 9; i++) {
+      const b = new THREE.Group(), body = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.6, 5), mat); body.rotation.x = Math.PI / 2; b.add(body);
+      const neck = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.9, 4), mat); neck.rotation.x = Math.PI / 2; neck.position.z = 1.0; b.add(neck);
+      const wr = new THREE.Mesh(wingGeo, mat), wl = new THREE.Mesh(wingGeo, mat); wl.scale.x = -1; wr.position.y = wl.position.y = 0.1; b.add(wr, wl);
+      const k = Math.ceil(i / 2) * (i % 2 ? 1 : -1); b.position.set(k * 7, 0, -Math.abs(k) * 7);
+      this.g.add(b); this.birds.push({ b, wr, wl, ph: rnd() * 6 });
+    }
+  }
+  launch(from, honk) {
+    this.t = 0; this.g.visible = true; const a = rnd() * 0.8 - 0.4 + Math.PI * 0.5;
+    this.dir.set(Math.cos(a) * 0.3, 0, Math.sin(a)).normalize();
+    this.start = new THREE.Vector3(from.x - this.dir.x * 1800 + (rnd() - 0.5) * 800, 95 + rnd() * 50, from.z - this.dir.z * 1800);
+    this.g.rotation.y = Math.atan2(this.dir.x, this.dir.z); honk && honk();
+  }
+  update(dt, time, canoePos, honk, active) {
+    if (this.t < 0) { this.next -= dt; if (this.next < 0 && active) { this.launch(canoePos, honk); this.next = 90 + rnd() * 120; } return; }
+    this.t += dt; const sp = 30;
+    this.g.position.set(this.start.x + this.dir.x * sp * this.t, this.start.y, this.start.z + this.dir.z * sp * this.t);
+    this.birds.forEach((o) => { const f = Math.sin(time * 5 + o.ph) * 0.55; o.wr.rotation.z = f; o.wl.rotation.z = -f; });
+    if (this.t * sp > 3600) { this.t = -1; this.g.visible = false; }
+  }
+}
+
+// ------------------------------------------------------------------ fireflies & mist
+export function createFireflies(scene, n = 140) {
+  const pos = new Float32Array(n * 3), seeds = [];
+  for (let i = 0; i < n; i++) seeds.push([rnd() * 6.28, rnd() * 6.28, 0.3 + rnd() * 0.7, rnd() * 10]);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({ map: glowTexture(), color: 0xd9ff7a, size: 1.1, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0, sizeAttenuation: true });
+  const p = new THREE.Points(g, m); p.frustumCulled = false; scene.add(p);
+  return { p, update(center, t, level) {
+    m.opacity = level * (0.6 + 0.4 * Math.sin(t * 3));
+    m.visible = level > 0.02;
+    const a = g.attributes.position;
+    for (let i = 0; i < n; i++) {
+      const s = seeds[i], ang = s[0] + t * 0.05 * s[2], r = 6 + 34 * ((i * 0.618) % 1);
+      a.setXYZ(i, center.x + Math.cos(ang + i) * r + Math.sin(t * 0.7 + s[3]) * 2, 0.4 + 1.8 * (0.5 + 0.5 * Math.sin(t * 0.5 * s[2] + s[3])), center.z + Math.sin(ang + i) * r + Math.cos(t * 0.6 + s[3]) * 2);
+    }
+    a.needsUpdate = true;
+  } };
+}
+
+export function createMist(scene) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c), group = new THREE.Group(), mats = [];
+  for (let i = 0; i < 46; i++) {
+    const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, color: 0xffffff });
+    const s = 260 + rnd() * 380, q = new THREE.Mesh(new THREE.PlaneGeometry(s, s * 0.7), m);
+    q.rotation.x = -Math.PI / 2; q.rotation.z = rnd() * 6; q.position.set(lerp(-1100, 1100, rnd()), 2 + rnd() * 5, lerp(-800, 800, rnd())); q.renderOrder = 4;
+    q.userData = { v: [(rnd() - 0.5) * 0.6, (rnd() - 0.5) * 0.4], base: 0.5 + rnd() * 0.5 }; group.add(q); mats.push(m);
+  }
+  scene.add(group);
+  return { group, update(dt, level, color) { group.children.forEach((q) => { q.position.x += q.userData.v[0] * dt; q.position.z += q.userData.v[1] * dt; q.material.opacity = level * 0.32 * q.userData.base; q.material.color.copy(color); }); group.visible = level > 0.01; } };
+}
