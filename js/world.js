@@ -14,6 +14,16 @@ export function fbm(x, z, o = 4) { let s = 0, a = 0.5; for (let i = 0; i < o; i+
 let seed = 20261028;
 export const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
 
+// ---------- tree sizing: tall at the water's edge, shrinking inland to exaggerate depth ----------
+const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+export const TREES = { mult: QS.has('trees') ? parseFloat(QS.get('trees')) : 3, falloff: QS.get('treefall') !== '0', legacy: QS.get('trees') === 'legacy' };
+/** height factor for a tree d metres from the water */
+export function treeHeight(d) {
+  if (TREES.legacy || !(TREES.mult > 0)) return d > 450 ? 1.5 : 1;
+  return TREES.mult * (TREES.falloff ? lerp(1, 0.42, sstep(20, 900, d)) : 1);
+}
+const treeWidth = (k) => Math.pow(k, 0.62); // taller trees stay slender
+
 export const EXT = { minX: -1700, minZ: -1400, W: 3400, D: 2800, CELL: 10 };
 EXT.NX = EXT.W / EXT.CELL + 1; EXT.NZ = EXT.D / EXT.CELL + 1;
 
@@ -366,9 +376,9 @@ export function buildTrees(scene) {
       if (mask[mi]) continue;
       const dens = d < 450 ? 0.62 : 0.14; // forest hugs the water; hills are sparser (and cheaper)
       if (rnd() > dens * (d < 26 ? 0.5 : 1)) continue;
-      const h = inCreekBox(px, pz) ? fullHeight(px, pz) : bil(H, px, pz), far = d > 450 ? 1.5 : 1, s = (0.75 + rnd() * 0.85) * far;
+      const h = inCreekBox(px, pz) ? fullHeight(px, pz) : bil(H, px, pz), k = treeHeight(d), s = 0.75 + rnd() * 0.85;
       const isBroad = d > 26 && rnd() < 0.2 + 0.1 * fbm(px * 0.004, pz * 0.004);
-      const rec = [px, h - 0.3, pz, s, rnd() * 6.28, rnd()];
+      const rec = [px, h - 0.3, pz, s, rnd() * 6.28, rnd(), 0, k];
       (isBroad ? broadAt : conAt).push(rec);
       if (d < 26 && !isBroad) rec[6] = 4; // shoreline: more tamarack
     }
@@ -377,7 +387,7 @@ export function buildTrees(scene) {
     const im = new THREE.InstancedMesh(geo, mat, list.length), m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
     list.forEach((r, i) => {
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r[4]);
-      m.compose(new THREE.Vector3(r[0], r[1], r[2]), q, new THREE.Vector3(r[3] * (0.85 + r[5] * 0.3), r[3], r[3] * (0.85 + r[5] * 0.3)));
+      const wk = treeWidth(r[7]); m.compose(new THREE.Vector3(r[0], r[1], r[2]), q, new THREE.Vector3(r[3] * wk * (0.85 + r[5] * 0.3), r[3] * r[7], r[3] * wk * (0.85 + r[5] * 0.3)));
       im.setMatrixAt(i, m);
       let ci = Math.floor(r[5] * cols.length);
       if (tamarack) ci = r[6] === 4 ? 4 : r[5] < 0.1 ? 4 : Math.floor(r[5] * 4 / 0.9) % 4;
@@ -515,8 +525,9 @@ export function buildIsland(scene) {
   };
   const E = (y) => new THREE.Euler(0, y, 0), V = (x, y, z) => new THREE.Vector3(x, y, z);
   const tallPine = tall.filter((t) => t[5]), tallSpruce = tall.filter((t) => !t[5]);
-  place(pine, tallPine.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.9, t[3] * 1.05, t[3] * 0.9)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
-  place(spruce, tallSpruce.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.85, t[3], t[3] * 0.85)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
+  const ik = TREES.legacy ? 1 : TREES.mult, iw = treeWidth(ik);
+  place(pine, tallPine.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.9 * iw, t[3] * 1.05 * ik, t[3] * 0.9 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
+  place(spruce, tallSpruce.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.85 * iw, t[3] * ik, t[3] * 0.85 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
   const shrubGeo = new THREE.IcosahedronGeometry(1, 0); shrubGeo.scale(1.25, 0.62, 1.25); shrubGeo.translate(0, 0.35, 0);
   const shrubCols = [[0.46, 0.1, 0.05], [0.3, 0.24, 0.09], [0.2, 0.24, 0.09], [0.1, 0.19, 0.08], [0.55, 0.22, 0.06]];
   place(shrubGeo, scrub.map((s) => { const k = 0.45 + rnd() * 0.85; return [V(s[0], fullHeight(s[0], s[1]) - 0.15, s[1]), E(rnd() * 6), V(k * (0.8 + rnd() * 0.5), k, k * (0.8 + rnd() * 0.5))]; }),
