@@ -50,14 +50,14 @@ function build() {
   buildDock(scene, [qx - nx * 2.5, qz - nz * 2.5], nx, nz);
   canoe = createCanoe(); scene.add(canoe.root);
   // the canoe and paddler read as a silhouette against the water and sky (lantern still glows)
-  canoe.sil = new THREE.MeshBasicMaterial({ color: 0x0b0d10 });
+  canoe.sil = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.DoubleSide });
   canoe.body.traverse((o) => { if (o.isMesh && o !== canoe.lantern && o.material.colorWrite !== false) o.material = canoe.sil; });
   ripples = new Ripples(scene); swimmer = createSwimmer(scene); loons = new Loons(scene, 3); geese = new Geese(scene); flies = createFireflies(scene); mist = createMist(scene);
 }
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -352,7 +352,15 @@ function poseCanoe(dt, t, speed) {
   const groundY = Math.max(heightAt(P.x, P.z), 0);
   c.root.position.set(P.x, 0.1 + bob + (groundY > 0.05 ? groundY : 0), P.z);
   c.root.rotation.set(P.pitch, P.psi, P.roll, 'YXZ');
-  c.mask.position.y = 0.025 - c.root.position.y;
+  c.mask.position.y = 0.1 - c.root.position.y; // above ripples (y 0.06) and the water plane, below the inner floor
+  // lantern swings like a pendulum, pushed by surges, turns and the bob of the hull
+  const vfNow = P.vx * Math.sin(P.psi) + P.vz * Math.cos(P.psi), accel = (vfNow - (P.vfPrev ?? vfNow)) / Math.max(dt, 1e-3); P.vfPrev = vfNow;
+  P.lx = P.lx || 0; P.lz = P.lz || 0; P.lvx = P.lvx || 0; P.lvz = P.lvz || 0;
+  if (dt > 0) {
+    P.lvx += (-14 * P.lx - 1.6 * P.lvx + clamp(accel, -3, 3) * 1.4 + Math.sin(t * 1.1) * 0.25) * dt; P.lx += P.lvx * dt;
+    P.lvz += (-14 * P.lz - 1.6 * P.lvz - P.w * 5 + Math.sin(t * 0.8 + 1) * 0.2) * dt; P.lz += P.lvz * dt;
+  }
+  c.hang.rotation.set(clamp(P.lx, -0.6, 0.6) - P.pitch, 0, clamp(P.lz, -0.6, 0.6) - P.roll);
   // paddle pose
   const u = P.phase, s = P.side, a = P.act;
   // one continuous, eased cycle: pull back with the blade in the water, then lift and feather forward

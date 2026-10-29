@@ -59,14 +59,23 @@ export function createCanoe() {
   const maskGeo = new THREE.ShapeGeometry(shape); maskGeo.rotateX(Math.PI / 2); // shape (x,y) -> (x,0,y)
   const mask = new THREE.Mesh(maskGeo, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }));
   mask.renderOrder = 0.5; mask.frustumCulled = false; body.add(mask);
-  // lantern at the bow
-  const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffc27a }));
-  lantern.position.set(0, 0.62, 2.35); body.add(lantern);
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.34, 4), wood); post.position.set(0, 0.45, 2.35); body.add(post);
-  const light = new THREE.PointLight(0xffb066, 0, 6.5, 2); light.position.set(0, 0.8, 2.35); body.add(light);
+  // lantern pole: rises from the bow seat and arcs forward past the bow, lantern dangling from the tip
+  const poleCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.3, 1.95), new THREE.Vector3(0, 1.05, 2.25), new THREE.Vector3(0, 1.6, 2.75), new THREE.Vector3(0, 1.82, 3.25), new THREE.Vector3(0, 1.8, 3.55),
+  ]);
+  body.add(new THREE.Mesh(new THREE.TubeGeometry(poleCurve, 20, 0.022, 5), wood));
+  const hang = new THREE.Group(); hang.position.set(0, 1.78, 3.55); body.add(hang); // pivot at the pole tip
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.26, 4), wood); cord.position.y = -0.13; hang.add(cord);
+  const cage = flat(0x2a2620);
+  const capTop = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.07, 6), cage); capTop.position.y = -0.29; hang.add(capTop);
+  const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.07, 0.03, 6), cage); lampBase.position.y = -0.5; hang.add(lampBase);
+  for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + Math.PI / 4, bar = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.19, 0.01), cage); bar.position.set(Math.cos(a) * 0.06, -0.41, Math.sin(a) * 0.06); hang.add(bar); }
+  const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.17, 8), new THREE.MeshBasicMaterial({ color: 0xffc27a }));
+  lantern.position.y = -0.41; hang.add(lantern);
+  const light = new THREE.PointLight(0xffb066, 0, 7, 2); light.position.y = -0.41; hang.add(light);
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffa95a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }));
-  halo.scale.setScalar(1.1); halo.position.copy(lantern.position); body.add(halo);
-  return { root, body, paddle, person, armL, armR, light, halo, lantern, blade, mask };
+  halo.scale.setScalar(1.1); halo.position.y = -0.41; hang.add(halo);
+  return { root, body, paddle, person, armL, armR, light, halo, lantern, hang, blade, mask };
 }
 
 // ------------------------------------------------------------------ ripples
