@@ -20,7 +20,7 @@ export class Voices {
 
   /** a sound source at a world position, extra-wet so it sounds like a memory across the water */
   out(pos, vol = 1) {
-    const g = this.audio.at(pos, { wet: 0.95, ref: 22, roll: 0.75, air: 320, echo: 0.35 });
+    const g = this.audio.at(pos, { wet: 0.5, ref: 34, roll: 0.55, air: 520, echo: 0.2 });
     const v = this.ctx.createGain(); v.gain.value = vol; v.connect(g); return v;
   }
 
@@ -49,7 +49,7 @@ export class Voices {
     if (!this.ok()) return; if (this.tryClip(pick(['laugh1', 'laugh2', 'laugh3']), pos, o.vol)) return;
     const t0 = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1);
     const n = o.n || Math.floor(rand(5, 10)); let f = o.f0 || rand(150, 230), t = t0; const vow = pick(['a', 'a', 'e', 'o']);
-    for (let i = 0; i < n; i++) { const len = rand(0.09, 0.14); this.syl(d, t, f, vow, len, 0.22 * (1 - i / (n + 3)), { h: 0.9, glide: -0.05 }); t += len + rand(0.05, 0.09); f *= rand(0.95, 0.99); }
+    for (let i = 0; i < n; i++) { const len = rand(0.08, 0.15); this.syl(d, t, f * rand(0.96, 1.06), vow, len, 0.3 * (1 - i / (n + 4)), { h: 1.1, glide: rand(-0.12, 0.02) }); t += len + rand(0.04, 0.1); f *= rand(0.94, 0.995); }
     if (Math.random() < 0.5) this.syl(d, t + 0.05, f * 1.3, 'a', 0.35, 0.12, { h: 1.2, glide: -0.25 }); // trailing wheeze
   }
 
@@ -98,6 +98,107 @@ export class Voices {
       fetch(`audio/memories/${name}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject())).then((b) => this.ctx.decodeAudioData(b)).then((buf) => { this.clips[name] = buf; }).catch(() => {});
     }
     return false;
+  }
+
+
+  // ---------- memory cues ----------
+  /** soft reversed-swell shimmer as a memory surfaces: tells the player "look - something's here" */
+  memoryIn(pos) {
+    if (!this.ok()) return; const ctx = this.ctx, t = ctx.currentTime, d = this.audio.at(pos, { wet: 1.1, ref: 60, roll: 0.3, air: 900 });
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.16, t + 1.6); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.4); g.connect(d);
+    [74, 81, 86, 90].forEach((m, i) => { const o = this.ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 440 * Math.pow(2, (m - 69) / 12); o.detune.value = rand(-8, 8);
+      const og = ctx.createGain(); og.gain.value = 0.25 / (i + 1); o.connect(og); og.connect(g); o.start(t + i * 0.12); o.stop(t + 3.5); });
+    const n = ctx.createBufferSource(); n.buffer = this.audio.pink; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2;
+    bp.frequency.setValueAtTime(400, t); bp.frequency.exponentialRampToValueAtTime(3200, t + 1.6); const ng = ctx.createGain(); ng.gain.value = 0.35;
+    n.connect(bp); bp.connect(ng); ng.connect(g); n.start(t, Math.random() * 3, 3.4);
+    this.duck(true);
+  }
+  /** airy dissolve as it fades */
+  memoryOut(pos) {
+    if (!this.ok()) return; const ctx = this.ctx, t = ctx.currentTime, d = this.audio.at(pos, { wet: 1.2, ref: 60, roll: 0.3, air: 900 });
+    const n = ctx.createBufferSource(); n.buffer = this.audio.pink; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.5;
+    bp.frequency.setValueAtTime(2600, t); bp.frequency.exponentialRampToValueAtTime(300, t + 2.6);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.12, t + 0.3); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
+    n.connect(bp); bp.connect(g); g.connect(d); n.start(t, Math.random() * 3, 3);
+    this.pluck(pos, 86, 0.05, 2.5); this.pluck(pos, 81, 0.04, 2.5, 0.35);
+    this.duck(false);
+  }
+  pluck(pos, midi, vol, dur, delay = 0) {
+    const ctx = this.ctx, t = ctx.currentTime + delay, o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.audio.at(pos, { wet: 1.2, ref: 60, roll: 0.3 })); o.start(t); o.stop(t + dur + 0.1);
+  }
+  /** pull the music back while a memory plays so the voices sit on top */
+  duck(on) {
+    this.ducks = Math.max(0, (this.ducks || 0) + (on ? 1 : -1));
+    const a = this.audio; if (!a.musicBus) return;
+    a.musicBus.gain.cancelScheduledValues(this.ctx.currentTime);
+    a.musicBus.gain.setTargetAtTime(this.ducks > 0 ? 0.16 : 0.5, this.ctx.currentTime, this.ducks > 0 ? 0.6 : 2.5);
+    a.ducked = this.ducks > 0;
+  }
+
+  // ---------- event foley ----------
+  /** a paddle blade biting the water at a position */
+  paddle(pos, vol = 1) {
+    if (!this.ok()) return; const ctx = this.ctx, t = ctx.currentTime, d = this.audio.at(pos, { wet: 0.45, ref: 20, roll: 0.8, air: 350 });
+    const n = ctx.createBufferSource(); n.buffer = this.audio.white; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
+    bp.frequency.setValueAtTime(rand(1100, 1600), t); bp.frequency.exponentialRampToValueAtTime(380, t + 0.35);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.13 * vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+    n.connect(bp); bp.connect(g); g.connect(d); n.start(t, Math.random() * 2, 0.5);
+  }
+  /** something heavy swishing through the air */
+  whoosh(pos, dur = 1.1) {
+    if (!this.ok()) return; const ctx = this.ctx, t = ctx.currentTime, d = this.audio.at(pos, { wet: 0.3, ref: 14, roll: 0.9 });
+    const n = ctx.createBufferSource(); n.buffer = this.audio.pink; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(300, t); bp.frequency.linearRampToValueAtTime(1400, t + dur * 0.5); bp.frequency.linearRampToValueAtTime(500, t + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.22, t + dur * 0.5); g.gain.linearRampToValueAtTime(0, t + dur);
+    n.connect(bp); bp.connect(g); g.connect(d); n.start(t, Math.random() * 3, dur + 0.1);
+  }
+  /** a big wet "ker-sploosh": low thump, spray and falling drops */
+  bigSplash(pos, k = 1) {
+    if (!this.ok()) return; const ctx = this.ctx, t = ctx.currentTime, d = this.audio.at(pos, { wet: 0.5, ref: 26, roll: 0.7, air: 450 });
+    const o = ctx.createOscillator(), og = ctx.createGain(); o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.3);
+    og.gain.setValueAtTime(0.35 * k, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.4); o.connect(og); og.connect(d); o.start(t); o.stop(t + 0.45);
+    const n = ctx.createBufferSource(); n.buffer = this.audio.white; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.6;
+    bp.frequency.setValueAtTime(2200, t); bp.frequency.exponentialRampToValueAtTime(500, t + 1.0);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.32 * k, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+    n.connect(bp); bp.connect(g); g.connect(d); n.start(t, Math.random() * 2, 1.4);
+    for (let i = 0; i < 9; i++) { const tt = t + rand(0.25, 1.4), f = rand(1400, 3400), p = ctx.createOscillator(), pg = ctx.createGain();
+      p.frequency.setValueAtTime(f, tt); p.frequency.exponentialRampToValueAtTime(f * 0.55, tt + 0.07); pg.gain.setValueAtTime(0, tt); pg.gain.linearRampToValueAtTime(0.03 * k, tt + 0.004); pg.gain.exponentialRampToValueAtTime(0.0001, tt + 0.1);
+      p.connect(pg); pg.connect(d); p.start(tt); p.stop(tt + 0.12); }
+  }
+  /** fibreglass/wood hull grinding into a log */
+  scrape(pos) {
+    if (!this.ok()) return; const ctx = this.ctx, t = ctx.currentTime, d = this.audio.at(pos, { wet: 0.4, ref: 22, roll: 0.8 });
+    const n = ctx.createBufferSource(); n.buffer = this.audio.white; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 3;
+    bp.frequency.setValueAtTime(900, t); bp.frequency.linearRampToValueAtTime(420, t + 0.9);
+    const am = ctx.createOscillator(), amg = ctx.createGain(); am.frequency.value = 38; amg.gain.value = 0.12; am.connect(amg);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18, t + 0.05); g.gain.linearRampToValueAtTime(0, t + 1.0); amg.connect(g.gain);
+    n.connect(bp); bp.connect(g); g.connect(d); n.start(t, 0, 1.1); am.start(t); am.stop(t + 1.1);
+    [0, 180, 500].forEach((ms) => setTimeout(() => this.audio.knock(0.18, 0), ms));
+  }
+  /** rope creak / table knocking on the tow */
+  creak(pos, vol = 1) {
+    if (!this.ok()) return; const ctx = this.ctx, t = ctx.currentTime, d = this.audio.at(pos, { wet: 0.4, ref: 16, roll: 0.9 });
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; const f = rand(180, 260); o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * rand(1.15, 1.35), t + 0.4);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 4;
+    const tr = ctx.createOscillator(), trg = ctx.createGain(); tr.frequency.value = rand(28, 40); trg.gain.value = 0.04 * vol; tr.connect(trg);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05 * vol, t + 0.08); g.gain.linearRampToValueAtTime(0, t + 0.45); trg.connect(g.gain);
+    o.connect(bp); bp.connect(g); g.connect(d); o.start(t); o.stop(t + 0.5); tr.start(t); tr.stop(t + 0.5);
+  }
+  /** a hollow wooden thunk (picnic table bumping on the tow) */
+  thunk(pos, vol = 1) {
+    if (!this.ok()) return; const ctx = this.ctx, t = ctx.currentTime, d = this.audio.at(pos, { wet: 0.4, ref: 18, roll: 0.85 });
+    [[190, 0.14], [410, 0.06], [760, 0.03]].forEach(([f, v]) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f * rand(0.95, 1.05);
+      g.gain.setValueAtTime(v * vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25); o.connect(g); g.connect(d); o.start(t); o.stop(t + 0.3); });
+  }
+  /** an eruption: several young men laughing at once, staggered, different pitches */
+  erupt(pos, sec = 4, vol = 1) {
+    if (!this.ok()) return;
+    for (let i = 0; i < 5; i++) { const p = { x: pos.x + rand(-3, 3), y: 1, z: pos.z + rand(-3, 3) };
+      this.laugh(p, { delay: rand(0, 0.5) + i * 0.15, n: Math.floor(rand(8, 14)), f0: rand(130, 240), vol: vol * rand(0.7, 1) });
+      if (sec > 2.5) this.laugh(p, { delay: rand(1.5, sec - 1), n: Math.floor(rand(5, 9)), f0: rand(140, 230), vol: vol * rand(0.5, 0.8) }); }
+    this.shout(pos, 'oh', { vol, delay: 0.1, f0: 210 }); this.shout(pos, 'dude', { vol: vol * 0.9, delay: rand(0.8, 1.6) });
   }
 
   // ---------- intro foley ----------

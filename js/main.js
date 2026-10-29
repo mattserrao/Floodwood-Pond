@@ -88,7 +88,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -449,6 +449,12 @@ function updateCamera(dt, t) {
   } else if (G.mode === 'launch') {
     const k = clamp(G.launchT / 8, 0, 1); cam.yaw = lerp(0.9, 0, sstep(0, 1, k)); cam.pitch = lerp(0.2, 0.3, k); cam.dist = lerp(15, 11, k);
   } else {
+    // a memory is playing: swing the view round to it (dragging to look always overrides)
+    const F = story && story.focus();
+    if (F && !drag) {
+      const to = Math.atan2(F.x - P.x, F.z - P.z), yT = clamp(((to - cam.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI, -2.7, 2.7);
+      cam.yaw = lerp(cam.yaw, yT * F.k, Math.min(1, dt * 1.6)); cam.pitch = lerp(cam.pitch, 0.22, Math.min(1, dt * 0.8)); G.idle = 0; G.focusK = F.k; G.focusP = F;
+    } else { G.focusK = 0; if (F && drag) G.idle = 0; }
     G.idle += dt; if (G.idle > 5 && !drag) { cam.yaw *= Math.exp(-dt * 0.45); cam.pitch = lerp(cam.pitch, 0.3, Math.min(1, dt * 0.3)); }
     cam.heading += (((P.psi - cam.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, dt * 1.6);
   }
@@ -459,6 +465,7 @@ function updateCamera(dt, t) {
   camera.position.copy(cam.pos);
   const lb = story ? Math.abs(story.glanceYaw) / Math.PI : 0; // while glancing back, look past the canoe into the mist
   cam.look.set(P.x + Math.sin(P.psi) * 3 * (1 - 2.2 * lb), 1.0 + 1.5 * lb, P.z + Math.cos(P.psi) * 3 * (1 - 2.2 * lb));
+  if (G.focusK > 0 && G.mode === 'play') { const k = G.focusK * 0.8, fp = G.focusP; cam.look.set(lerp(cam.look.x, fp.x, k), lerp(cam.look.y, 0.7, k), lerp(cam.look.z, fp.z, k)); }
   camera.lookAt(cam.look);
 }
 

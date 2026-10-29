@@ -219,7 +219,7 @@ export class AmbientAudio {
     const pad = s.paddling === undefined ? 1 : s.paddling; // silent glide: hull hiss only while paddling
     this.wakeG.gain.setTargetAtTime(pad * (0.004 + 0.03 * Math.min(1, s.speed / 3)), t, 0.4);
     this.windG.gain.setTargetAtTime(0.04 + 0.03 * s.day, t, 2);
-    this.musicBus.gain.setTargetAtTime((0.5 - 0.1 * s.night) * (1 - 0.35 * (s.rain || 0)), t, 3);
+    this.musicBus.gain.setTargetAtTime((0.5 - 0.1 * s.night) * (1 - 0.35 * (s.rain || 0)) * (this.ducked ? 0.32 : 1), t, this.ducked ? 0.6 : 3);
     this.rainG.gain.setTargetAtTime(0.06 * (s.rain || 0), t, 1.2);
     const gu = s.gust || 0; this.gustG.gain.setTargetAtTime(0.09 * Math.max(0, gu - 0.15), t, 0.9); this.gustBP.frequency.setTargetAtTime(500 + 500 * gu, t, 1.2);
     this.pullG.gain.setTargetAtTime(0.05 * (s.pull || 0), t, 0.06); this.pullF.frequency.setTargetAtTime(300 + 260 * (s.pull || 0), t, 0.1);
