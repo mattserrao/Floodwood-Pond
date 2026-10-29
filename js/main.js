@@ -1,10 +1,15 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js';
 import { AmbientAudio } from './audio.js';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, buildCreek, CREEK, creekSD, CQ } from './world.js';
-import { createSky, createWater, samplePalette, sunDirection, moonDirection } from './sky.js';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD } from './world.js';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js';
 import { createPost } from './post.js';
 import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js';
+import { WIND, gustAt, updateWind } from './wind.js';
+import { Q } from './quality.js';
+import { WX } from './weather.js';
+import { createWildlife } from './wildlife.js';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -15,22 +20,25 @@ if (isTouch) document.body.classList.add('touch');
 // ------------------------------------------------------------------ renderer / scene
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch ? 1.5 : 2));
+const dprFor = (q) => Math.min(window.devicePixelRatio || 1, q.pixelRatio, isTouch ? 1.5 : 2);
+renderer.setPixelRatio(dprFor(Q.s));
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+renderer.info.autoReset = false; // reset once per frame so the counts cover every pass (reflection + main + post)
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xaabbcc, 0.0007);
 const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 9000);
 function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 const post = createPost(renderer);
-addEventListener('resize', () => post.setSize());
+const refl = createReflection(renderer);
+addEventListener('resize', () => { post.setSize(); refl.resize(); });
 
 const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 1);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1), moonLight = new THREE.DirectionalLight(0x8fa8ff, 0);
 scene.add(hemi, sunLight, sunLight.target, moonLight, moonLight.target);
 
 // ------------------------------------------------------------------ build the world
-let world = {}, swimmer, canoe, ripples, loons, geese, flies, mist, sky, water, camps, audio = new AmbientAudio();
+let world = {}, swimmer, canoe, ripples, loons, geese, flies, mist, sky, water, camps, wild, floatLeaves, fallLeaves, drips, rain, audio = new AmbientAudio();
 const launchInfo = {};
 function build() {
   const { depthTex } = buildTerrain(scene);
@@ -52,12 +60,32 @@ function build() {
   // the canoe and paddler read as a silhouette against the water and sky (lantern still glows)
   canoe.sil = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.DoubleSide });
   canoe.body.traverse((o) => { if (o.isMesh && o !== canoe.lantern && o.material.colorWrite !== false) o.material = canoe.sil; });
-  ripples = new Ripples(scene); swimmer = createSwimmer(scene); loons = new Loons(scene, 3); geese = new Geese(scene); flies = createFireflies(scene); mist = createMist(scene);
+  ripples = new Ripples(scene, 160); swimmer = createSwimmer(scene); loons = new Loons(scene, 3); geese = new Geese(scene); flies = createFireflies(scene); mist = createMist(scene);
+  loons.onRun = (l) => { audio.wings({ x: l.x, y: 0.5, z: l.z }, 1.2); if (rnd() < 0.6 && audio.ctx) audio.loon(audio.ctx.currentTime + 0.3, { x: l.x, y: 1, z: l.z }); };
+  loons.onLand = (l) => audio.splash(0, 0.9, { x: l.x, y: 0, z: l.z });
+  audio.loonPos = () => { const v = loons.list.filter((l) => l.g.visible); const l = v.length ? v[Math.floor(rnd() * v.length)] : null; return l ? { x: l.x, y: 1, z: l.z } : audio.woods(150, 500, 1); };
+  wild = createWildlife(scene, Q.s.wildlife);
+  floatLeaves = createFloatingLeaves(scene, 300); fallLeaves = createFallingLeaves(scene, floatLeaves); drips = createDrips(scene); rain = createRain(scene, 1400);
+  // things that must not show up in the mirrored treeline
+  refl.hide.push(water, ripples.mesh, mist.group, rain.lines, drips.points, floatLeaves.mesh, canoe.mask, WORLD.pads);
+  applyQuality();
 }
+// ------------------------------------------------------------------ quality tiers
+function applyQuality() {
+  const q = Q.s;
+  renderer.setPixelRatio(dprFor(q)); renderer.setSize(innerWidth, innerHeight, false);
+  post.setQuality(q); refl.setScale(q.refl);
+  if (water) water.material.uniforms.uReflOn.value = q.refl > 0 ? 1 : 0;
+  if (floatLeaves) floatLeaves.setCount(q.leaves);
+  if (rain) rain.setCount(q.rain);
+  setLitterScale(q.litter);
+  const el = document.getElementById('pQual'); if (el) el.textContent = 'Graphics: ' + Q.label();
+}
+Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.3.2';
+const VERSION = '0.4.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -137,6 +165,14 @@ $('pResume').addEventListener('click', () => setPaused(false));
 $('pMute').addEventListener('click', toggleMute);
 $('pMood').addEventListener('click', () => { post.enabled = !post.enabled; $('pMood').textContent = post.enabled ? 'Mood filter on' : 'Mood filter off'; try { localStorage.setItem('fp-mood', post.enabled ? '1' : '0'); } catch (e) {} });
 try { if (localStorage.getItem('fp-mood') === '0') { post.enabled = false; $('pMood').textContent = 'Mood filter off'; } } catch (e) {}
+// v0.4: cinematic 30 fps (physics stays at full rate) with motion blur, optional letterbox, graphics tier
+const CINE = { on: false, box: false, lastDraw: 0 };
+function setCine(on) { CINE.on = on; post.motionBlur = on; $('pCine').textContent = on ? 'Cinematic 30 fps on' : 'Cinematic 30 fps off'; try { localStorage.setItem('fp-cine', on ? '1' : '0'); } catch (e) {} }
+function setBox(on) { CINE.box = on; document.body.classList.toggle('box', on); $('pBox').textContent = on ? 'Letterbox on' : 'Letterbox off'; try { localStorage.setItem('fp-box', on ? '1' : '0'); } catch (e) {} }
+$('pCine').addEventListener('click', () => setCine(!CINE.on));
+$('pBox').addEventListener('click', () => setBox(!CINE.box));
+$('pQual').addEventListener('click', () => Q.cycle());
+try { const qs = new URLSearchParams(location.search); setCine(qs.has('cine') ? qs.get('cine') !== '0' : localStorage.getItem('fp-cine') === '1'); setBox(qs.has('box') ? qs.get('box') !== '0' : localStorage.getItem('fp-box') === '1'); } catch (e) {}
 $('pRestart').addEventListener('click', () => {
   resetPlayer(); G.mode = 'launch'; G.launchT = 0; G.splashed = false; G.snap = true; P.act = 0;
   setPaused(false);
@@ -246,16 +282,22 @@ function stepCanoe(dt, controllable) {
     const prev = P.phase; P.phase += dt / (1.45 / Math.sqrt(hard));
     if (P.phase >= 1) P.phase -= 1; // always the same side (J-stroke keeps the line straight)
     if (prev < 0.04 && P.phase >= 0.04) catchStroke(Math.abs(throttle) > 0.05 ? 1 : 0.6);
+    if (prev < 0.5 && P.phase >= 0.5) releaseStroke(hard);
     const u = P.phase;
     if (u < 0.5) thrust = Math.sin((u / 0.5) * Math.PI) * 1.55 * hard * (AUTO.on ? 0.6 : 1) * (Math.abs(throttle) > 0.05 ? Math.sign(throttle) * (throttle > 0 ? 1 : 0.45) : 0.18);
   } else if (P.act > 0.02) { P.phase = (P.phase + dt / 1.6) % 1; } // finish the motion while the paddle settles
   // gliding (no paddle in the water) keeps most of its momentum; paddling adds stroke drag
   const lin = lerp(0.035, 0.16, P.act), quad = lerp(0.012, 0.045, P.act);
-  vf += (thrust - lin * vf - quad * vf * Math.abs(vf)) * dt;
-  vl *= Math.exp(-2.8 * dt);
+  // wind: a gust pushes the canoe downwind (mostly sideways - a canoe has little grip in the water) and weathervanes the stern
+  const gu = gustAt(P.x, P.z), wpush = (WIND.base * 0.03 + gu * 0.09) * (NQ.creek ? 0.2 : 1);
+  const wf = WIND.dir.x * fx + WIND.dir.y * fz, wl = WIND.dir.x * lx + WIND.dir.y * lz;
+  vf += (thrust - lin * vf - quad * vf * Math.abs(vf) + wf * wpush * 0.4) * dt;
+  vl += wl * wpush * dt; vl *= Math.exp(-(1.2 + 1.6 * P.act) * dt);
+  P.w += Math.sin(Math.atan2(WIND.dir.x, WIND.dir.y) - P.psi) * wpush * 0.18 * dt * (1 - P.act * 0.7);
+  P.gust = gu;
   const wT = steer * 0.7 * (0.55 + Math.min(Math.abs(vf), 2.2) / 2.2 * 0.5);
   P.w += (wT - P.w) * Math.min(1, dt * 1.8);
-  P.psi += P.w * dt;
+  P.psi += P.w * dt; P.turnAmt = steer;
   P.vx = fx * vf + lx * vl; P.vz = fz * vf + lz * vl;
   P.x += P.vx * dt; P.z += P.vz * dt;
   // keep the canoe on the water
@@ -282,6 +324,7 @@ function stepCanoe(dt, controllable) {
   // wake ripples
   P.wakeT -= dt;
   if (speed > 0.5 && P.wakeT < 0) { P.wakeT = 0.45; ripples.spawn(P.x - fx * 2.5, P.z - fz * 2.5, 2.2 + speed, 2.6, 0.22, 0.5); }
+  P.pull = thrust > 0 ? clamp(thrust / 1.6, 0, 1) : 0;
   return { speed, throttle, steer, thrust };
 }
 // ------------------------------------------------------------------ auto paddle
@@ -338,10 +381,27 @@ function autoPilot() {
   return { throttle: Math.abs(diff) > 1.4 ? 0.25 : 1, steer: clamp(diff * 1.6, -0.8, 0.8) };
 }
 
+const bladeW = new THREE.Vector3();
 function catchStroke(power) {
-  const w = new THREE.Vector3(); canoe.blade.getWorldPosition(w);
-  ripples.spawn(w.x, w.z, 2.2, 2.2, 0.45, 0.15); ripples.spawn(w.x, w.z, 1.2, 1.2, 0.5, 0.1);
-  audio.splash(clamp(-P.side * 0.45, -1, 1), power);
+  canoe.blade.getWorldPosition(bladeW);
+  ripples.spawn(bladeW.x, bladeW.z, 2.2, 2.2, 0.45, 0.15); ripples.spawn(bladeW.x, bladeW.z, 1.2, 1.2, 0.5, 0.1);
+  audio.strokeCatch(clamp(-P.side * 0.45, -1, 1), power);
+}
+function releaseStroke(power) {
+  canoe.blade.getWorldPosition(bladeW);
+  ripples.spawn(bladeW.x, bladeW.z, 1.4, 1.5, 0.35, 0.1);
+  audio.strokeRelease(clamp(-P.side * 0.45, -1, 1), Math.min(1.2, power));
+  drips.emit(bladeW, 5, P.vx, P.vz);
+}
+/** water runs off the blade through the recovery, and keeps dripping for a while once you stop */
+function updateDrips(dt) {
+  if (G.mode !== 'play' && G.mode !== 'launch') return;
+  canoe.blade.getWorldPosition(bladeW);
+  const recovering = P.act > 0.3 && P.phase > 0.5 && P.phase < 0.92;
+  P.wetBlade = recovering ? 1 : Math.max(0, (P.wetBlade || 0) - dt / 14);
+  const rate = recovering ? 14 : P.wetBlade * 1.6;
+  if (bladeW.y > 0.08 && rnd() < dt * rate) drips.emit(bladeW, 1);
+  drips.update(dt, ripples, () => audio.drip(clamp(-P.side * 0.4, -1, 1)));
 }
 
 function poseCanoe(dt, t, speed) {
@@ -397,7 +457,7 @@ function updateCamera(dt, t) {
 }
 
 // ------------------------------------------------------------------ day / night
-const sunV = new THREE.Vector3(), moonV = new THREE.Vector3(), tintC = new THREE.Color();
+const sunV = new THREE.Vector3(), moonV = new THREE.Vector3(), tintC = new THREE.Color(), greyA = new THREE.Color(), greyB = new THREE.Color();
 let lastHud = 0;
 function updateEnvironment(dt, t) {
   if (G.jump) {
@@ -405,33 +465,54 @@ function updateEnvironment(dt, t) {
     G.hour = (lerp(G.jump.from, G.jump.to, e)) % 24; if (k >= 1) G.jump = null;
   } else if (G.mode !== 'title') G.hour = (G.hour + (dt * 24) / DAY_LEN) % 24;
   const h = G.hour, pal = samplePalette(h);
+  WX.update(G.mode !== 'title' ? dt : 0, h, DAY_LEN);
+  updateWind(dt, t, WX.wind); SWAY.uTime.value = t;
+  const cover = WX.cloud;
   sunDirection(h, sunV); moonDirection(h, moonV);
-  const sunI = sstep(-0.03, 0.2, sunV.y), moonVis = sstep(-0.01, 0.06, moonV.y) * (1 - sstep(0.0, 0.3, sunV.y));
+  const sunI = sstep(-0.03, 0.2, sunV.y) * (1 - 0.8 * cover), moonVis = sstep(-0.01, 0.06, moonV.y) * (1 - sstep(0.0, 0.3, sunV.y));
   const night = 1 - sstep(-0.18, 0.04, sunV.y), glow = sstep(-0.16, 0.06, sunV.y);
-  const stars = clamp((-sunV.y - 0.04) / 0.25, 0, 1);
+  const stars = clamp((-sunV.y - 0.04) / 0.25, 0, 1) * (1 - 0.95 * cover);
   const twilight = sstep(-0.3, -0.04, sunV.y) * (1 - sstep(0.0, 0.2, sunV.y));
   const day = sstep(0.04, 0.35, sunV.y);
   // a new moon phase each moonrise
   const up = moonV.y > -0.02; if (G.moonUp === false && up) G.moonPhase = 0.08 + Math.random() * 0.84; G.moonUp = up;
   const moonFrac = 0.5 - 0.5 * Math.cos(G.moonPhase * Math.PI * 2);
+  // grey days: flatten and desaturate the palette toward a soft, even light
+  if (cover > 0.01) {
+    const lvl = 0.25 + 0.75 * sstep(-0.2, 0.3, sunV.y);
+    ['top', 'mid', 'hor', 'fog', 'hemiS'].forEach((k) => { const L = (pal[k].r + pal[k].g + pal[k].b) / 3; pal[k].lerp(greyA.setRGB(L * 0.92, L * 0.96, L * 1.02), cover * 0.7).lerp(greyB.setRGB(0.42, 0.45, 0.48).multiplyScalar(lvl), cover * 0.35); });
+    pal.hemiI *= 1 + 0.25 * cover;
+  }
   // lights
   sunLight.color.copy(pal.sun); sunLight.intensity = 3.2 * sunI; sunLight.position.set(P.x + sunV.x * 300, sunV.y * 300 + 20, P.z + sunV.z * 300); sunLight.target.position.set(P.x, 0, P.z);
   moonLight.intensity = 0.8 * moonVis * (0.2 + 0.8 * moonFrac); moonLight.position.set(P.x + moonV.x * 300, moonV.y * 300 + 20, P.z + moonV.z * 300); moonLight.target.position.set(P.x, 0, P.z);
   hemi.color.copy(pal.hemiS); hemi.groundColor.copy(pal.hemiG); hemi.intensity = pal.hemiI * 1.15;
-  const fogA = clamp(G.fog, 0, 1), fogTint = pal.fog.clone().lerp(tintC.setRGB(0.86, 0.88, 0.9), 0.25 + 0.45 * day).multiplyScalar(0.35 + 0.65 * Math.max(day, 0.25));
+  const fogA = clamp(G.fog, 0, 1);
+  // v0.4: haze follows the day - thick at dawn and at night, clearest at midday - plus fog mornings and rain
+  const dawnHaze = sstep(4.3, 5.6, h) * (1 - sstep(7.4, 10, h)), nightHaze = night * (1 - dawnHaze);
+  pal.fogD *= (1 + 1.1 * dawnHaze + 0.7 * nightHaze) * (1 - 0.12 * day);
+  pal.fogD += WX.fog * 0.0028 + cover * 0.00035 + WX.rain * 0.0011;
+  if (WX.fog > 0.01 || WX.rain > 0.01) pal.fog.lerp(greyA.setRGB(0.62, 0.65, 0.68).multiplyScalar(0.25 + 0.75 * sstep(-0.2, 0.3, sunV.y)), clamp(WX.fog * 0.7 + WX.rain * 0.5, 0, 0.85));
+  const fogTint = pal.fog.clone().lerp(tintC.setRGB(0.86, 0.88, 0.9), 0.25 + 0.45 * day).multiplyScalar(0.35 + 0.65 * Math.max(day, 0.25));
   const fogCol = pal.fog.clone().lerp(fogTint, fogA), fogD = lerp(pal.fogD, 0.05, Math.pow(fogA, 1.4));
   scene.fog.color.copy(fogCol); scene.fog.density = fogD; scene.background = null;
   $('veil').style.background = '#' + fogTint.clone().convertLinearToSRGB().getHexString();
   // sky
   const su = sky.material.uniforms; su.uTop.value.copy(pal.top); su.uMid.value.copy(pal.mid); su.uHor.value.copy(pal.hor);
   su.uSun.value.copy(sunV); su.uMoon.value.copy(moonV); su.uSunCol.value.copy(pal.sun.clone().multiplyScalar(0.9));
-  su.uSunI.value = sstep(-0.012, 0.03, sunV.y); su.uGlow.value = glow; su.uMoonI.value = moonVis; su.uStars.value = stars; su.uTime.value = t; su.uPhase.value = G.moonPhase; su.uFogCol.value.copy(fogCol); su.uFogMix.value = fogA * 0.92;
+  su.uSunI.value = sstep(-0.012, 0.03, sunV.y) * (1 - cover); su.uGlow.value = glow * (1 - 0.75 * cover); su.uCover.value = cover; su.uMoonI.value = moonVis * (1 - 0.9 * cover); su.uStars.value = stars; su.uTime.value = t; su.uPhase.value = G.moonPhase; su.uFogCol.value.copy(fogCol); su.uFogMix.value = fogA * 0.92;
   su.uCloudLit.value.copy(pal.hor).lerp(tintC.set(0xffffff), 0.45 * day).multiplyScalar(0.8 + 0.5 * day); su.uCloudShade.value.copy(pal.mid).multiplyScalar(0.55);
   sky.position.copy(camera.position);
   // water
   const wu = water.material.uniforms; wu.uTime.value = t; wu.uSun.value.copy(sunV); wu.uMoon.value.copy(moonV); wu.uSunCol.value.copy(pal.sun);
   wu.uSunI.value = sstep(-0.02, 0.1, sunV.y); wu.uMoonI.value = moonVis * (0.15 + 0.85 * moonFrac); wu.uSkyTop.value.copy(pal.top).lerp(pal.mid, 0.3); wu.uSkyHor.value.copy(pal.hor);
-  wu.uFog.value.copy(fogCol); wu.uFogD.value = fogD; wu.uLight.value = clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y) + 0.14 * moonVis, 0, 1);
+  wu.uFog.value.copy(fogCol); wu.uFogD.value = fogD; wu.uRain.value = WX.rain; wu.uCover.value = cover;
+  wu.uTreeCol.value.setRGB(0.04, 0.08, 0.05).multiplyScalar(0.3 + 0.7 * clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y), 0, 1)).lerp(fogCol, clamp(1 - Math.exp(-Math.pow(450 * fogD, 2)), 0, 1));
+  wu.tRefl.value = refl.rt.texture; wu.uReflRes.value.set(refl.rt.width, refl.rt.height); wu.uTexMat.value = refl.texMat; // same object: refl.render() updates it just before the main pass
+  post.uniforms.uMist.value = 1 + WX.fog * 0.8 + WX.wet * 0.6; post.uniforms.uDim.value = cover * 0.6 + WX.rain * 0.4;
+  // the fog decides how far you can see; whole forest tiles past that are skipped
+  G.visDist = Math.min(9000, 2.4 / Math.max(fogD, 1e-5));
+  cullTiles(camera.position, G.visDist, Math.min(G.visDist, 320), 900); wu.uLight.value = clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y) + 0.14 * moonVis, 0, 1);
   // lanterns
   const lamp = 1 - sstep(-0.06, 0.14, sunV.y), flick = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 5.3);
   canoe.light.intensity = 2.2 * lamp;
@@ -441,20 +522,25 @@ function updateEnvironment(dt, t) {
   // wildlife & atmosphere
   const bothTw = twilight;
   flies.update(P, t, clamp((night * 0.9 + bothTw * 0.6) * (h > 17 || h < 5 ? 1 : 0.2), 0, 0.95));
-  const mistLevel = sstep(4.6, 5.6, h) * (1 - sstep(7.2, 9.6, h)) * 1.0 + 0.12 * twilight;
-  mist.update(dt, clamp(mistLevel + fogA, 0, 1), tintC.copy(pal.fog).lerp(new THREE.Color(1, 1, 1), 0.35));
+  const mistLevel = sstep(4.6, 5.6, h) * (1 - sstep(7.2, 9.6, h)) * 1.0 + 0.12 * twilight + WX.fog * 0.6 + WX.wet * 0.5;
+  mist.update(dt, clamp(mistLevel + fogA, 0, 1), tintC.copy(pal.fog).lerp(greyB.setRGB(1, 1, 1), 0.35), camera.position.y);
   ripples.update(dt, tintC.copy(pal.hor).lerp(new THREE.Color(1, 1, 1), 0.35 * day + 0.1));
   loons.update(dt, t, P, ripples, (x, z) => audio.plop(clamp((x - P.x) / 200, -1, 1)));
-  geese.update(dt, t, P, () => audio.honkFlock(clamp(rnd() * 2 - 1, -0.7, 0.7)), day + (h > 5 && h < 8 ? 1 : 0) > 0.5);
+  geese.update(dt, t, P, () => audio.honkFlock(0, { x: geese.start.x, y: geese.start.y, z: geese.start.z }), day + (h > 5 && h < 8 ? 1 : 0) > 0.5);
+  if (G.mode !== 'title') wild.update(dt, t, { P, hour: h, day, night, audio, ripples, rain: WX.rain > 0.2, clock: WX.clock || 0, dayLen: DAY_LEN, forceMoose: G.forceMoose });
+  floatLeaves.update(dt, t, P, Math.hypot(P.vx, P.vz)); fallLeaves.update(dt, t, P);
+  rain.update(dt, camera.position, WX.rain, greyA.copy(fogCol).lerp(greyB.setRGB(1, 1, 1), 0.4));
+  if (WX.rain > 0.05 && rnd() < dt * 40 * WX.rain) { const a = rnd() * 6.28, r = 3 + rnd() * 30, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 0.5) ripples.spawn(x, z, 0.5 + rnd() * 0.4, 1, 0.25, 0.05); }
   // fish rising
   if (G.mode === 'play' && rnd() < dt * 0.18) { const a = rnd() * 6.28, r = 12 + rnd() * 70, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 6) { ripples.spawn(x, z, 3.2, 3, 0.55, 0.2); ripples.spawn(x, z, 1.6, 1.6, 0.4, 0.1); audio.plop(clamp((x - P.x) / 80, -1, 1)); } }
   // audio state + HUD
   const dawn = sstep(4.6, 5.8, h) * (1 - sstep(7.5, 9.5, h)), dusk = sstep(16.5, 18, h) * (1 - sstep(19.8, 21, h));
-  audio.update({ night, day, dawn, dusk, speed: Math.hypot(P.vx, P.vz), paddling: P.act });
+  camera.getWorldDirection(tmpV); audio.setListener(camera.position, tmpV, camera.up);
+  audio.update({ night, day, dawn, dusk, speed: Math.hypot(P.vx, P.vz), paddling: P.act, rain: WX.rain, gust: P.gust || 0, pull: (P.pull || 0) * P.act, turn: P.turnAmt || 0, play: G.mode === 'play' });
   if (t - lastHud > 0.25) {
     lastHud = t; const hh = Math.floor(h), mm = Math.floor((h - hh) * 60), ap = hh >= 12 ? 'PM' : 'AM', h12 = hh % 12 || 12;
     $('time').textContent = `${h12}:${String(mm).padStart(2, '0')} ${ap}`;
-    $('phase').textContent = h < 4.5 || h >= 20.5 ? 'Night' : h < 5.4 ? 'Before dawn' : h < 7 ? 'Sunrise' : h < 11 ? 'Morning' : h < 15 ? 'Midday' : h < 17.4 ? 'Afternoon' : h < 18.5 ? 'Golden hour' : h < 19.4 ? 'Sunset' : 'Dusk';
+    const wl = WX.label(); $('phase').textContent = (wl ? wl + ' · ' : '') + (h < 4.5 || h >= 20.5 ? 'Night' : h < 5.4 ? 'Before dawn' : h < 7 ? 'Sunrise' : h < 11 ? 'Morning' : h < 15 ? 'Midday' : h < 17.4 ? 'Afternoon' : h < 18.5 ? 'Golden hour' : h < 19.4 ? 'Sunset' : 'Dusk');
   }
 }
 
@@ -483,8 +569,10 @@ function updateCreek(dt) {
 
 // ------------------------------------------------------------------ main loop
 const clock = new THREE.Clock(); let started = false;
-function frame() {
+let lastFrameMs = 0;
+function frame(now) {
   requestAnimationFrame(frame);
+  now = now || performance.now(); lastFrameMs = now;
   const raw = Math.min(clock.getDelta(), 0.05), dt = G.paused || G.mapOpen || G.menu ? 0 : raw; G.time += dt;
   let info = { speed: 0 };
   if (G.mode === 'launch') {
@@ -501,7 +589,20 @@ function frame() {
   swimmer.update(dt, G.time, canoe.root, ripples);
   updateCamera(dt, G.time);
   updateEnvironment(dt, G.time);
+  updateDrips(dt);
   if (G.mode === 'play' || G.mode === 'launch') drawMini();
+  // cinematic mode: simulate every frame, but only render ~30 times a second (even on 60/120 Hz screens)
+  const sinceDraw = CINE.lastDraw ? now - CINE.lastDraw : 1000;
+  const calibrating = (G.mode === 'play' || G.mode === 'launch') && !G.paused && !document.hidden && Q.sample(Math.min(sinceDraw, 250));
+  if (CINE.on && !calibrating && sinceDraw < 1000 / 30 - 4) return;
+  CINE.lastDraw = now; renderer.info.reset();
+  camera.updateMatrixWorld();
+  if (Q.s.refl > 0) {
+    // the mirror is low-res and mostly shows the shoreline: skip litter and far reeds, pull the far cull in
+    cullTiles(camera.position, Math.min(G.visDist || 3000, 1700), 0, 260);
+    refl.render(scene, camera, sky);
+    cullTiles(camera.position, G.visDist || 3000, Math.min(G.visDist || 3000, 320), 900);
+  }
   if (post.active) {
     const useSun = sunV.y > -0.05, L = useSun ? sunV : moonV;
     post.render(scene, camera, G.time, L, useSun ? sunLight.color : tintC.setRGB(0.6, 0.7, 1.0), scene.fog.color);
@@ -533,7 +634,7 @@ setTimeout(() => {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap();
     cam.pos.set(P.x, 5, P.z - 12);
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
-    window.game = { P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
+    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') stepCanoe(dt, false); poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     ready = true; frame();
     if (pendingStart) startGame();

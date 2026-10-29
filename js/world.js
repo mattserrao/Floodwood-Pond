@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js';
+import { WIND, GUST_GLSL } from './wind.js';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -342,6 +343,64 @@ function mergeGeoms(parts) {
 }
 const cone = (r, h, seg = 6) => new THREE.ConeGeometry(r, h, seg, 1, true);
 
+
+// ---------- v0.4: wind sway (GPU only) and tiled instancing (so the forest can be culled) ----------
+export const SWAY = { uTime: { value: 0 } };
+/** Bend instanced vegetation with the shared gust field. hScale: height (m) at which the bend reaches amp metres. */
+export function swayMaterial(mat, hScale = 30, amp = 1) {
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, WIND.uniforms, SWAY);
+    sh.vertexShader = 'uniform float uTime;\n' + GUST_GLSL + '\n' + sh.vertexShader.replace('#include <project_vertex>', `
+      vec4 mvPosition = vec4( transformed, 1.0 );
+      #ifdef USE_INSTANCING
+        mvPosition = instanceMatrix * mvPosition;
+        vec3 ib = instanceMatrix[3].xyz;
+        float hy = max(mvPosition.y - ib.y, 0.) / ${hScale.toFixed(1)};
+        float gu = gustAt(ib.xz), ph = dot(ib.xz, vec2(.37, .61));
+        float bend = hy * hy * ${amp.toFixed(2)};
+        float osc = .55 * sin(uTime * 1.3 + ph) + .3 * sin(uTime * 2.9 + ph * 1.7);
+        mvPosition.xz += uWindDir * bend * (gu * 1.1 + osc * (.12 + .5 * gu)) + vec2(-uWindDir.y, uWindDir.x) * bend * .15 * sin(uTime * 2.2 + ph * 2.3) * gu;
+      #endif
+      mvPosition = modelViewMatrix * mvPosition;
+      gl_Position = projectionMatrix * mvPosition;`);
+  };
+  mat.customProgramCacheKey = () => 'sway' + hScale + '_' + amp;
+  return mat;
+}
+export const TILES = [];
+const TILE = 400;
+/** Split one big instance list into ~400 m tiles; each tile is its own InstancedMesh with a bounding sphere.
+ *  lodGeo: a much simpler stand-in drawn instead when the tile is far away (shares the instance buffers). */
+function tiled(scene, geo, mat, list, write, tag, lodGeo) {
+  const buckets = new Map();
+  list.forEach((r, i) => { const k = Math.floor((r[0] - EXT.minX) / TILE) + ',' + Math.floor((r[2] - EXT.minZ) / TILE); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(i); });
+  const out = [];
+  buckets.forEach((idx) => {
+    const im = new THREE.InstancedMesh(geo, mat, idx.length);
+    idx.forEach((li, j) => write(im, j, list[li]));
+    im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.computeBoundingSphere(); im.userData.full = idx.length; im.userData.tag = tag;
+    scene.add(im); out.push(im); TILES.push(im);
+    if (lodGeo) {
+      const lod = new THREE.InstancedMesh(lodGeo, mat, idx.length);
+      lod.instanceMatrix = im.instanceMatrix; lod.instanceColor = im.instanceColor; lod.boundingSphere = im.boundingSphere; lod.visible = false;
+      im.userData.lod = lod; scene.add(lod);
+    }
+  });
+  return out;
+}
+export const CULL = { lodDist: 520 };
+/** hide whole tiles beyond what the fog lets you see (frustum culling does the rest); far tree tiles switch to the LOD */
+export function cullTiles(camPos, visDist, litterDist, reedDist = visDist) {
+  for (const im of TILES) {
+    const s = im.boundingSphere, d = Math.hypot(s.center.x - camPos.x, s.center.z - camPos.z) - s.radius, tag = im.userData.tag;
+    const vis = d < (tag === 'litter' ? litterDist : tag === 'reed' ? reedDist : visDist), lod = im.userData.lod;
+    if (lod) { const near = d < CULL.lodDist; im.visible = vis && near; lod.visible = vis && !near; } else im.visible = vis;
+  }
+}
+/** scale how many litter clusters are drawn (instances are shuffled, so any prefix is an even sample) */
+export function setLitterScale(k) { for (const im of TILES) if (im.userData.tag === 'litter') im.count = Math.floor(im.userData.full * k); }
+
 export function buildTrees(scene) {
   const white = [1, 1, 1];
   const conifer = mergeGeoms([
@@ -354,7 +413,10 @@ export function buildTrees(scene) {
     { geo: new THREE.IcosahedronGeometry(3.0, 0), color: white, y: 6.4 },
     { geo: new THREE.IcosahedronGeometry(2.1, 0), color: white, y: 8.6 },
   ]);
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
+  // far-away stand-ins: one cone / one blob, ~1/6 of the triangles
+  const coniferLod = mergeGeoms([{ geo: new THREE.ConeGeometry(2.3, 10.5, 5, 1, true), color: white, y: 5.6 }]);
+  const broadLod = mergeGeoms([{ geo: new THREE.CylinderGeometry(0.3, 0.4, 5, 3, 1, true), color: [0.28, 0.22, 0.16], y: 2.5 }, { geo: new THREE.OctahedronGeometry(3.1, 0), color: white, y: 7.0 }]);
+  const mat = swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }), 30, 1.1);
   const mask = new Uint8Array(EXT.NX * EXT.NZ);
   const markPts = (pts, r) => pts.forEach((p) => {
     const ix = Math.round((p[0] - EXT.minX) / EXT.CELL), iz = Math.round((p[1] - EXT.minZ) / EXT.CELL);
@@ -383,21 +445,22 @@ export function buildTrees(scene) {
       if (d < 26 && !isBroad) rec[6] = 4; // shoreline: more tamarack
     }
   }
-  const mk = (geo, list, cols, tamarack) => {
-    const im = new THREE.InstancedMesh(geo, mat, list.length), m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
-    list.forEach((r, i) => {
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r[4]);
-      const wk = treeWidth(r[7]); m.compose(new THREE.Vector3(r[0], r[1], r[2]), q, new THREE.Vector3(r[3] * wk * (0.85 + r[5] * 0.3), r[3] * r[7], r[3] * wk * (0.85 + r[5] * 0.3)));
-      im.setMatrixAt(i, m);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), Y = new THREE.Vector3(0, 1, 0), P3 = new THREE.Vector3(), S3 = new THREE.Vector3();
+  const mk = (geo, list, cols, tamarack, tag, lodGeo) => {
+    list.forEach((r) => {
       let ci = Math.floor(r[5] * cols.length);
       if (tamarack) ci = r[6] === 4 ? 4 : r[5] < 0.1 ? 4 : Math.floor(r[5] * 4 / 0.9) % 4;
-      const base = cols[Math.min(ci, cols.length - 1)], j = 0.88 + rnd() * 0.24;
-      c.setRGB(base[0] * j, base[1] * j, base[2] * j); im.setColorAt(i, c);
+      const base = cols[Math.min(ci, cols.length - 1)], j = 0.88 + rnd() * 0.24; r[8] = [base[0] * j, base[1] * j, base[2] * j]; r[9] = ci;
     });
-    im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
-    im.frustumCulled = false; scene.add(im); return im;
+    return tiled(scene, geo, mat, list, (im, i, r) => {
+      q.setFromAxisAngle(Y, r[4]); const wk = treeWidth(r[7]);
+      m.compose(P3.set(r[0], r[1], r[2]), q, S3.set(r[3] * wk * (0.85 + r[5] * 0.3), r[3] * r[7], r[3] * wk * (0.85 + r[5] * 0.3)));
+      im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(r[8][0], r[8][1], r[8][2]));
+    }, tag, lodGeo);
   };
-  mk(conifer, conAt, conCols, true); mk(broad, broadAt, broadCols, false);
+  mk(conifer, conAt, conCols, true, 'tree', coniferLod); mk(broad, broadAt, broadCols, false, 'tree', broadLod);
+  // maples near the water drop leaves when a gust passes (see leaves.js)
+  const maples = broadAt.filter((r) => -bil(SD, r[0], r[2]) < 90 && r[9] !== 3).map((r) => ({ x: r[0], z: r[2], y: r[1] + 6.6 * r[3] * r[7], r: 2.6 * r[3] * treeWidth(r[7]), col: r[8] }));
 
   // Reeds & cattails along the shoreline (golden in autumn)
   const reedGeo = new THREE.ConeGeometry(0.1, 1.9, 4); reedGeo.translate(0, 0.95, 0);
@@ -409,10 +472,9 @@ export function buildTrees(scene) {
       for (let k = 0; k < 5; k++) { const o = (rnd() - 0.5) * 5, px = x + nx * o + rnd() * 1.2, pz = z + nz * o + rnd() * 1.2; const sd = pondSD(px, pz); if (sd > -2 && sd < 7 && rnd() < 0.5 && (!inIsleBox(px, pz) || beachFactor(px, pz) < 0.2)) reedPts.push([px, pz]); }
     }
   }
-  const reeds = new THREE.InstancedMesh(reedGeo, new THREE.MeshStandardMaterial({ color: 0xb59a52, flatShading: true, roughness: 1 }), reedPts.length);
   const m4 = new THREE.Matrix4(), e = new THREE.Euler();
-  reedPts.forEach((p, i) => { const s = 0.6 + rnd() * 0.9; e.set((rnd() - 0.5) * 0.35, rnd() * 6, (rnd() - 0.5) * 0.35); m4.compose(new THREE.Vector3(p[0], 0, p[1]), new THREE.Quaternion().setFromEuler(e), new THREE.Vector3(1, s, 1)); reeds.setMatrixAt(i, m4); });
-  reeds.frustumCulled = false; scene.add(reeds);
+  const reedMat = swayMaterial(new THREE.MeshStandardMaterial({ color: 0xb59a52, flatShading: true, roughness: 1 }), 1.9, 0.35);
+  tiled(scene, reedGeo, reedMat, reedPts.map((p) => [p[0], 0, p[1]]), (im, i, p) => { const s = 0.6 + rnd() * 0.9; e.set((rnd() - 0.5) * 0.35, rnd() * 6, (rnd() - 0.5) * 0.35); m4.compose(P3.set(p[0], 0, p[2]), q.setFromEuler(e), S3.set(1, s, 1)); im.setMatrixAt(i, m4); }, 'reed');
 
   // Lily pads in the shallows (late-season: olive and brown)
   const padGeo = new THREE.CircleGeometry(0.55, 7); padGeo.rotateX(-Math.PI / 2);
@@ -424,8 +486,57 @@ export function buildTrees(scene) {
   const padMesh = new THREE.InstancedMesh(padGeo, new THREE.MeshStandardMaterial({ color: 0x5b6b2a, roughness: 0.8, side: THREE.DoubleSide }), pads.length);
   const pc = new THREE.Color();
   pads.forEach((p, i) => { const s = 0.7 + rnd() * 0.9; m4.compose(new THREE.Vector3(p[0], 0.045, p[1]), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 6), new THREE.Vector3(s, 1, s)); padMesh.setMatrixAt(i, m4); pc.setHSL(0.17 + rnd() * 0.08, 0.5, 0.2 + rnd() * 0.12); padMesh.setColorAt(i, pc); });
-  scene.add(padMesh);
-  return { trees: conAt.length + broadAt.length, reeds: reedPts.length, pads: pads.length };
+  scene.add(padMesh); WORLD.pads = padMesh;
+  const litter = buildLitter(scene);
+  WORLD.maples = maples;
+  return { trees: conAt.length + broadAt.length, reeds: reedPts.length, pads: pads.length, litter, tiles: TILES.length };
+}
+
+
+export const WORLD = {};
+export const LEAF_COLS = [[0.62, 0.16, 0.04], [0.74, 0.32, 0.05], [0.78, 0.55, 0.12], [0.5, 0.1, 0.05], [0.42, 0.28, 0.12], [0.6, 0.42, 0.1]];
+/** a small flat leaf (diamond), lying in the xz plane */
+export function leafGeometry(size = 1) {
+  const g = new THREE.BufferGeometry(), a = 0.5 * size, b = 0.24 * size;
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, a, b, 0.02, 0, 0, 0, -a * 0.8, 0, 0, a, 0, 0, -a * 0.8, -b, 0.02, 0], 3));
+  g.computeVertexNormals(); return g;
+}
+// ---------- leaf litter: autumn leaves on the banks and the island beach, close to the water only ----------
+function buildLitter(scene) {
+  // one cluster = a few leaves at odd angles
+  const parts = [];
+  for (let k = 0; k < 4; k++) { const g = leafGeometry(0.32 + rnd() * 0.12); g.rotateY(rnd() * 6.28); g.rotateX((rnd() - 0.5) * 0.4); g.translate((rnd() - 0.5) * 0.7, 0.01 * k, (rnd() - 0.5) * 0.7); parts.push(g); }
+  const P = []; parts.forEach((g) => { const p = g.attributes.position; for (let i = 0; i < p.count; i++) P.push(p.getX(i), p.getY(i), p.getZ(i)); });
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.computeVertexNormals();
+  const pts = [];
+  const scatter = (segs, onIsle) => {
+    for (let i = 0; i < segs.length; i += 4) {
+      const ax = segs[i], az = segs[i + 1], bx = segs[i + 2], bz = segs[i + 3], L = Math.hypot(bx - ax, bz - az); if (L < 1e-3) continue;
+      const n = Math.max(1, Math.round(L / 0.55));
+      for (let j = 0; j < n; j++) {
+        const t = rnd(), x = lerp(ax, bx, t), z = lerp(az, bz, t), nx = -(bz - az) / L, nz = (bx - ax) / L, o = (rnd() - 0.5) * 30;
+        const px = x + nx * o, pz = z + nz * o, sd = pondSD(px, pz);
+        if (sd > -1.2 || sd < -16) continue;
+        if (!onIsle && inIsleBox(px, pz)) continue;
+        if (rnd() > 0.85 - 0.04 * -sd) continue;
+        pts.push([px, 0, pz]);
+      }
+    }
+  };
+  scatter(pondSegs, false);
+  // the island: scattered thinner, with a drift of leaves on the beach sand
+  const isl = []; ringSegs(ISLE.ring, isl); scatter(isl, true);
+  for (let k = 0; k < 160; k++) { const px = ISLE.beach[0] - ISLE.bdx * (2 + rnd() * 16) + (rnd() - 0.5) * 24, pz = ISLE.beach[1] - ISLE.bdz * (2 + rnd() * 16) + (rnd() - 0.5) * 24; if (pondSD(px, pz) < -1) pts.push([px, 0, pz]); }
+  // shuffle so any prefix is an even sample (quality tiers draw a fraction)
+  for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
+  const mat = new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1, side: THREE.DoubleSide });
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), c = new THREE.Color(), V = new THREE.Vector3(), S = new THREE.Vector3();
+  tiled(scene, geo, mat, pts, (im, i, p) => {
+    const y = heightAt(p[0], p[2]) + 0.04, s = 0.8 + rnd() * 0.9;
+    m4.compose(V.set(p[0], y, p[2]), q.setFromEuler(e.set((rnd() - 0.5) * 0.25, rnd() * 6.28, (rnd() - 0.5) * 0.25)), S.set(s, 1, s)); im.setMatrixAt(i, m4);
+    const b = LEAF_COLS[Math.floor(rnd() * LEAF_COLS.length)], j = 0.55 + rnd() * 0.35; im.setColorAt(i, c.setRGB(b[0] * j, b[1] * j, b[2] * j));
+  }, 'litter');
+  return pts.length;
 }
 
 // ---------- far mountains ring (St. Regis Mtn & friends, stylised) ----------
@@ -474,7 +585,7 @@ export function buildDock(scene, p, dirX, dirZ) {
 
 // ---------- island vegetation, boulders and the sword tree ----------
 export function buildIsland(scene) {
-  const SPR = [0.06, 0.18, 0.1], PIN = [0.1, 0.24, 0.13], white = [1, 1, 1], mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
+  const SPR = [0.06, 0.18, 0.1], PIN = [0.1, 0.24, 0.13], white = [1, 1, 1], mat = swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }), 30, 1.1);
   const spruce = mergeGeoms([
     { geo: new THREE.CylinderGeometry(0.22, 0.32, 2, 5), color: [0.22, 0.14, 0.08], y: 1 },
     { geo: cone(2.4, 4.2), color: SPR, y: 3.3 }, { geo: cone(1.9, 3.8), color: SPR, y: 5.6 },

@@ -61,6 +61,12 @@
   #bigmap .wrap { position:relative; }
   #bigC { display:block; border-radius:12px; border:1px solid var(--line); cursor:crosshair; box-shadow:0 10px 50px rgba(0,0,0,.5); }
   #bigmap .cap { margin-top:12px; font-size:14px; letter-spacing:.1em; opacity:.85; text-align:center; }
+  /* v0.4 letterbox (cinematic): thin bars to ~2.2:1, under the HUD */
+  body::before, body::after { content:''; position:fixed; left:0; right:0; height:0; background:#000; z-index:2; pointer-events:none; transition:height 1.2s ease; }
+  body::before { top:0; } body::after { bottom:0; }
+  body.box::before, body.box::after { height:max(0px, calc((100vh - 100vw / 2.2) / 2)); }
+  .panel .opts { max-width:420px; margin:12px auto 4px; }
+  .panel .opts button { letter-spacing:.06em; }
   #mapClose { position:absolute; top:10px; right:10px; font:inherit; font-size:18px; color:var(--ink); background:rgba(14,22,36,.7); border:1px solid var(--line); border-radius:50%; width:36px; height:36px; cursor:pointer; }
 </style>
 </head>
@@ -75,20 +81,20 @@
 <div id="hint" class="hud">W paddle &nbsp;·&nbsp; A / D steer &nbsp;·&nbsp; Shift paddle hard &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; 1–4 time of day &nbsp;·&nbsp; Esc pause</div>
 <div id="joy" class="hud"><i></i></div>
 <div id="title">
-  <div class="ver">v0.3.2</div>
+  <div class="ver">v0.4.0</div>
 </div>
 <div id="pause" class="overlay"><div class="panel">
   <h2>Paused</h2>
   <div class="menu">
     <button id="pResume">Resume</button>
     <button id="pMute">Sound on</button>
-    <button id="pMood">Mood filter on</button>
     <button id="pRestart">Restart at the launch</button>
     <button id="pMenu">Main menu</button>
   </div>
+  <div class="times opts"><button id="pMood">Mood filter on</button><button id="pCine">Cinematic 30 fps off</button><button id="pBox">Letterbox off</button><button id="pQual">Graphics: Auto</button></div>
   <div class="times"><button data-t="5.7">Dawn</button><button data-t="12">Day</button><button data-t="18.3">Dusk</button><button data-t="22.5">Night</button></div>
   <div class="keys">W paddle · A / D steer · S back-paddle · Shift paddle hard<br>Drag to look · N or tap minimap for the map · Esc pause · M mute</div>
-  <div class="ver">v0.3.2</div>
+  <div class="ver">v0.4.0</div>
 </div></div>
 <div id="bigmap" class="overlay"><div class="wrap"><canvas id="bigC"></canvas><button id="mapClose" title="Close (Esc)">×</button></div>
   <div class="cap">Tap anywhere on the water to paddle there</div></div>

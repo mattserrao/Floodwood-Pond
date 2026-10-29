@@ -2,6 +2,23 @@ import * as THREE from 'three';
 import { clamp, lerp, rnd, pondSD, inPond, NQ, glowTexture } from './world.js';
 
 const flat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, ...extra });
+/** v0.4: bake a set of static child meshes into one vertex-coloured mesh (one draw call instead of many) */
+function mergeStatic(parent, meshes, matOpts = {}) {
+  const P = [], N = [], C = [], m = new THREE.Matrix4(), inv = new THREE.Matrix4().copy(parent.matrixWorld).invert(), nm = new THREE.Matrix3(), v = new THREE.Vector3(), n = new THREE.Vector3();
+  parent.updateMatrixWorld(true);
+  inv.copy(parent.matrixWorld).invert();
+  let side = THREE.FrontSide;
+  for (const mesh of meshes) {
+    m.multiplyMatrices(inv, mesh.matrixWorld); nm.getNormalMatrix(m);
+    const g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone(); g.computeVertexNormals();
+    const p = g.attributes.position, nn = g.attributes.normal, col = mesh.material.color;
+    if (mesh.material.side === THREE.DoubleSide) side = THREE.DoubleSide;
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(m); n.fromBufferAttribute(nn, i).applyMatrix3(nm).normalize(); P.push(v.x, v.y, v.z); N.push(n.x, n.y, n.z); C.push(col.r, col.g, col.b); }
+    mesh.parent.remove(mesh);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  const out = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85, side, ...matOpts })); parent.add(out); return out;
+}
 
 // ------------------------------------------------------------------ canoe + paddler
 export function createCanoe() {
@@ -75,30 +92,42 @@ export function createCanoe() {
   const light = new THREE.PointLight(0xffb066, 0, 7, 2); light.position.y = -0.41; hang.add(light);
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffa95a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }));
   halo.scale.setScalar(1.1); halo.position.y = -0.41; hang.add(halo);
+  mergeStatic(body, body.children.filter((o) => o.isMesh && o !== mask));
   return { root, body, paddle, person, armL, armR, light, halo, lantern, hang, blade, mask };
 }
 
 // ------------------------------------------------------------------ ripples
+// v0.4: one instanced draw call for every ring on the pond (wildlife, drips and rain add a lot of them)
 export class Ripples {
-  constructor(scene, n = 40) {
+  constructor(scene, n = 160) {
     const geo = new THREE.RingGeometry(0.9, 1, 40); geo.rotateX(-Math.PI / 2);
-    this.items = []; this.i = 0;
-    for (let k = 0; k < n; k++) {
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
-      m.visible = false; m.renderOrder = 3; m.position.y = 0.06; scene.add(m); this.items.push({ m, t: 1, life: 1, r: 1, a: 0 });
-    }
+    this.fade = new THREE.InstancedBufferAttribute(new Float32Array(n), 1); geo.setAttribute('aFade', this.fade);
+    this.mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, uniforms: { uColor: { value: new THREE.Color(1, 1, 1) } },
+      vertexShader: `attribute float aFade; varying float vF; void main(){ vF = aFade; gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.); }`,
+      fragmentShader: `uniform vec3 uColor; varying float vF; void main(){ if (vF <= 0.001) discard; gl_FragColor = vec4(uColor, vF);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    });
+    this.mesh = new THREE.InstancedMesh(geo, this.mat, n); this.mesh.frustumCulled = false; this.mesh.renderOrder = 3; scene.add(this.mesh);
+    this.items = []; this.i = 0; this.m4 = new THREE.Matrix4();
+    for (let k = 0; k < n; k++) { this.items.push({ t: 1, life: 1, r: 1, a: 0, x: 0, z: 0, r0: 0.2 }); this.mesh.setMatrixAt(k, this.m4.makeScale(0, 0, 0)); }
   }
   spawn(x, z, r = 2.5, life = 2.4, a = 0.5, r0 = 0.2) {
-    const it = this.items[this.i++ % this.items.length]; it.t = 0; it.life = life; it.r = r; it.a = a; it.r0 = r0;
-    it.m.position.set(x, 0.06, z); it.m.visible = true;
+    const it = this.items[this.i++ % this.items.length]; it.t = 0; it.life = life; it.r = r; it.a = a; it.r0 = r0; it.x = x; it.z = z;
   }
   update(dt, tint) {
-    for (const it of this.items) {
-      if (it.t >= it.life) { it.m.visible = false; continue; }
+    const m = this.m4, f = this.fade.array;
+    this.mat.uniforms.uColor.value.copy(tint);
+    this.items.forEach((it, k) => {
+      if (it.t >= it.life) { if (f[k] !== 0) { f[k] = 0; m.makeScale(0, 0, 0); this.mesh.setMatrixAt(k, m); } return; }
       it.t += dt; const u = clamp(it.t / it.life, 0, 1);
-      const s = lerp(it.r0, it.r, 1 - Math.pow(1 - u, 2)); it.m.scale.set(s, 1, s);
-      it.m.material.opacity = it.a * (1 - u) * (1 - u); it.m.material.color.copy(tint);
-    }
+      const s = lerp(it.r0, it.r, 1 - Math.pow(1 - u, 2));
+      m.makeScale(s, 1, s); m.setPosition(it.x, 0.06, it.z); this.mesh.setMatrixAt(k, m);
+      f[k] = it.a * (1 - u) * (1 - u);
+    });
+    this.fade.needsUpdate = true; this.mesh.instanceMatrix.needsUpdate = true;
   }
 }
 
@@ -115,6 +144,13 @@ function makeLoon() {
   const eye2 = eye.clone(); eye2.position.x = -0.07; g.add(eye2);
   // checkered back
   for (let i = 0; i < 9; i++) { const d = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.08), white); d.position.set((i % 3 - 1) * 0.16, 0.22, -0.15 - Math.floor(i / 3) * 0.2); g.add(d); }
+  // v0.4: wings for the running take-off (folded flat against the back while swimming)
+  const wg = (s) => { const b = new THREE.BoxGeometry(0.75, 0.025, 0.34); b.translate(s * 0.375, 0, 0); return b; };
+  const wm = flat(0x15181c, { side: THREE.DoubleSide });
+  const wr = new THREE.Mesh(wg(1), wm), wl = new THREE.Mesh(wg(-1), wm); wr.position.set(0.22, 0.2, 0.05); wl.position.set(-0.22, 0.2, 0.05);
+  mergeStatic(g, g.children.filter((o) => o.isMesh));
+  g.add(wr, wl);
+  g.userData.wings = [wr, wl];
   return g;
 }
 export class Loons {
@@ -125,6 +161,30 @@ export class Loons {
       const l = { g, x: 0, z: 0, tx: 0, tz: 0, h: rnd() * 6, state: 'swim', timer: 5 + rnd() * 15, sink: 0 };
       this.place(l); this.list.push(l);
     }
+  }
+  /** running take-off, a wide circuit of the pond, and a skidding landing somewhere else */
+  air(l, dt, t, ripples, canoePos) {
+    const [wr, wl] = l.g.userData.wings; l.k += dt;
+    if (l.state === 'run') {
+      l.v = Math.min(13, l.v + dt * 1.9); const lift = clamp((l.v - 8) / 5, 0, 1);
+      if (pondSD(l.x + Math.sin(l.h) * 30, l.z + Math.cos(l.h) * 30) < 10) l.h += dt * 0.8;
+      l.x += Math.sin(l.h) * l.v * dt; l.z += Math.cos(l.h) * l.v * dt;
+      l.y = lift * 1.2; l.pat = (l.pat || 0) - dt;
+      if (l.pat < 0 && lift < 0.9) { l.pat = 0.11; ripples.spawn(l.x - Math.sin(l.h) * 0.4, l.z - Math.cos(l.h) * 0.4, 1.3, 1.5, 0.35, 0.1); }
+      const f = Math.sin(t * 13) * 0.9; wr.scale.x = wl.scale.x = 1; wr.rotation.z = f; wl.rotation.z = -f; l.g.rotation.x = -0.15;
+      if (lift >= 1) { l.state = 'fly'; l.k = 0; l.turn = rnd() < 0.5 ? 1 : -1; }
+    } else if (l.state === 'fly') {
+      l.h += l.turn * dt * 0.09; l.x += Math.sin(l.h) * 15 * dt; l.z += Math.cos(l.h) * 15 * dt;
+      l.y = Math.min(32, l.y + dt * 2.2); const f = Math.sin(t * 9) * 0.6; wr.rotation.z = f; wl.rotation.z = -f; l.g.rotation.x = 0;
+      if (l.k > 28 && pondSD(l.x, l.z) > 60) { l.state = 'land'; l.k = 0; }
+      if (l.k > 70) { l.k = 28; l.turn *= -1; }
+    } else {
+      l.x += Math.sin(l.h) * 12 * dt; l.z += Math.cos(l.h) * 12 * dt; l.y = Math.max(0, l.y - dt * 4.5);
+      const f = Math.sin(t * 7) * 0.35; wr.rotation.z = f; wl.rotation.z = -f; l.g.rotation.x = 0.12;
+      if (pondSD(l.x, l.z) < 25) l.h += l.turn * dt * 0.6;
+      if (l.y <= 0) { ripples.spawn(l.x, l.z, 5, 2.8, 0.55, 0.4); ripples.spawn(l.x + Math.sin(l.h) * 4, l.z + Math.cos(l.h) * 4, 3, 2.2, 0.4, 0.3); this.onLand && this.onLand(l); l.state = 'swim'; l.timer = 25 + rnd() * 30; [l.tx, l.tz] = this.randomWater(); }
+    }
+    l.g.position.set(l.x, -0.02 + l.y, l.z); l.g.rotation.y = l.h;
   }
   randomWater() { for (let k = 0; k < 400; k++) { const x = lerp(-1050, 1050, rnd()), z = lerp(-720, 720, rnd()); if (pondSD(x, z) > 40) return [x, z]; } return [0, 0]; }
   place(l) { const [x, z] = this.randomWater(); l.x = x; l.z = z; [l.tx, l.tz] = this.randomWater(); }
@@ -140,12 +200,19 @@ export class Loons {
         const nx = l.x + Math.sin(l.h) * sp * dt, nz = l.z + Math.cos(l.h) * sp * dt;
         if (pondSD(nx, nz) > 12) { l.x = nx; l.z = nz; } else [l.tx, l.tz] = this.randomWater();
         if (d < 8) [l.tx, l.tz] = this.randomWater();
-        if (l.timer < 0 || away < 14) { l.state = 'dive'; l.timer = 1.1; ripples.spawn(l.x, l.z, 3, 2.2, 0.45); onPlop && onPlop(l.x, l.z); }
+        if (l.timer < 0 || away < 14) {
+          // usually a dive; sometimes the long pattering run across the surface and away into the air
+          if (rnd() < 0.22 && pondSD(l.x + Math.sin(l.h) * 120, l.z + Math.cos(l.h) * 120) > 15) { l.state = 'run'; l.v = 0.8; l.k = 0; this.onRun && this.onRun(l); }
+          else { l.state = 'dive'; l.timer = 1.1; ripples.spawn(l.x, l.z, 3, 2.2, 0.45); onPlop && onPlop(l.x, l.z); }
+        }
         l.g.position.set(l.x, -0.02 + Math.sin(t * 1.3 + l.h) * 0.015, l.z);
         l.g.rotation.y = l.h; l.g.rotation.z = Math.sin(t * 1.1 + l.h) * 0.02;
+        l.g.userData.wings.forEach((w) => { w.rotation.z = 0; w.scale.x = 0.2; }); l.g.rotation.x = 0;
       } else if (l.state === 'dive') {
         l.sink = clamp(l.sink + dt * 1.3, 0, 1); l.g.position.y = -0.02 - l.sink * 0.9;
         if (l.timer < 0) { l.state = 'under'; l.timer = 7 + rnd() * 8; l.g.visible = false; }
+      } else if (l.state === 'run' || l.state === 'fly' || l.state === 'land') {
+        this.air(l, dt, t, ripples, canoePos);
       } else { // under: swim a bit
         l.x += Math.sin(l.h) * 2.2 * dt; l.z += Math.cos(l.h) * 2.2 * dt;
         if (pondSD(l.x, l.z) < 14) { l.h += Math.PI; }
@@ -219,7 +286,8 @@ export function createMist(scene) {
     q.userData = { v: [(rnd() - 0.5) * 0.6, (rnd() - 0.5) * 0.4], base: 0.5 + rnd() * 0.5 }; group.add(q); mats.push(m);
   }
   scene.add(group);
-  return { group, update(dt, level, color) { group.children.forEach((q) => { q.position.x += q.userData.v[0] * dt; q.position.z += q.userData.v[1] * dt; q.material.opacity = level * 0.32 * q.userData.base; q.material.color.copy(color); }); group.visible = level > 0.01; } };
+  // v0.4: a sheet fades out as the camera nears its height (seen edge-on it showed as a hard line across the view)
+  return { group, update(dt, level, color, camY = 99) { group.children.forEach((q) => { q.position.x += q.userData.v[0] * dt; q.position.z += q.userData.v[1] * dt; const k = Math.min(1, Math.max(0, (camY - q.position.y - 0.8) / 3)); q.material.opacity = level * 0.32 * q.userData.base * k * k; q.material.color.copy(color); }); group.visible = level > 0.01; } };
 }
 
 // ------------------------------------------------------------------ towed swimmer (easter egg)
