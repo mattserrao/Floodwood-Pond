@@ -21,6 +21,7 @@ export function createPost(renderer) {
     uGrade: { value: 1 }, uVignette: { value: 0.8 }, uGrain: { value: 0 }, uMist: { value: 1 }, uPaint: { value: 0 }, uRays: { value: 0 },
     tMist: { value: mistRT.texture }, uMistRes: { value: new THREE.Vector2(mistRT.width, mistRT.height) },
     uBlur: { value: 0 }, uPrevVP: { value: new THREE.Matrix4() }, uDim: { value: 0 },
+    uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
     uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
   };
   const mat = new THREE.ShaderMaterial({
@@ -28,7 +29,7 @@ export function createPost(renderer) {
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uPlayer; uniform vec2 uAway; uniform float uBehind; varying vec2 vUv;
       float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h2(i),h2(i+vec2(1,0)),f.x), mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x), f.y); }
       float fbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<4;i++){ s+=a*n2(p); p*=2.03; a*=.5; } return s; }
@@ -80,7 +81,7 @@ export function createPost(renderer) {
             float w = 1. / (.02 + abs(m.g - dist / 2000.) * 60.);
             fs += m.r * w; ws += w;
           }
-          col = mix(col, uMistCol, clamp(fs / ws, 0., .92));
+          col = mix(col, uMistCol, clamp(fs / ws, 0., .97));
         }
         // ---- god rays: radial blur of the bright sky toward the light
         if (uRays > 0. && uLightVis > 0.) {
@@ -126,7 +127,7 @@ export function createPost(renderer) {
   const mistMat = new THREE.ShaderMaterial({ uniforms: U, depthTest: false, depthWrite: false, vertexShader: mat.vertexShader,
     fragmentShader: `
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uPlayer; uniform vec2 uAway; uniform float uBehind; varying vec2 vUv;
       float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h2(i),h2(i+vec2(1,0)),f.x), mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x), f.y); }
       float fbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<4;i++){ s+=a*n2(p); p*=2.03; a*=.5; } return s; }
@@ -160,6 +161,18 @@ export function createPost(renderer) {
           }
           float density = acc / 6. * min(dist, 1600.) * .0042;
           float f = (1. - exp(-density * uMist)) * smoothstep(8., 70., dist); // keep the canoe crisp
+          // v0.5: the mist that follows you - a swirling wall over everything behind the canoe
+          if (uBehind > 0.) {
+            vec2 v = wp.xz - uPlayer.xz; float lv = length(v);
+            vec2 vd = sky ? normalize(dir.xz + vec2(1e-4)) : v / max(lv, 1e-3);
+            float behind = smoothstep(-0.15, 0.7, dot(vd, uAway));
+            float nearK = sky ? 1. : smoothstep(12., 75., lv);
+            vec2 sp = (sky ? uPlayer.xz + vd * 260. : wp.xz) * .018;
+            vec2 q = vec2(fbm(sp + vec2(uTime * .05, -uTime * .03)), fbm(sp + vec2(-uTime * .04, uTime * .06) + 3.7));
+            float sw = fbm(sp * 1.4 + q * 2.4 + vec2(uTime * .045));
+            float hgt = sky ? smoothstep(.55, .0, dir.y) : exp(-max(wp.y, 0.) / 45.);
+            f = max(f, clamp(behind * nearK * hgt * (.4 + .8 * sw) * uBehind * 1.15, 0., .97));
+          }
           gl_FragColor = vec4(f, dist / 2000., 0., 1.);
       }` });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); quad.frustumCulled = false;

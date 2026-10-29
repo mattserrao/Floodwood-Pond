@@ -10,6 +10,7 @@ import { Q } from './quality.js';
 import { WX } from './weather.js';
 import { createWildlife } from './wildlife.js';
 import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js';
+import { createStory } from './story.js';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -38,7 +39,7 @@ const sunLight = new THREE.DirectionalLight(0xffffff, 1), moonLight = new THREE.
 scene.add(hemi, sunLight, sunLight.target, moonLight, moonLight.target);
 
 // ------------------------------------------------------------------ build the world
-let world = {}, swimmer, canoe, ripples, loons, geese, flies, mist, sky, water, camps, wild, floatLeaves, fallLeaves, drips, rain, audio = new AmbientAudio();
+let world = {}, story = null, swimmer, canoe, ripples, loons, geese, flies, mist, sky, water, camps, wild, floatLeaves, fallLeaves, drips, rain, audio = new AmbientAudio();
 const launchInfo = {};
 function build() {
   const { depthTex } = buildTerrain(scene);
@@ -69,6 +70,8 @@ function build() {
   // things that must not show up in the mirrored treeline
   refl.hide.push(water, ripples.mesh, mist.group, rain.lines, drips.points, floatLeaves.mesh, canoe.mask, WORLD.pads);
   applyQuality();
+  // v0.5: the journey of memories (disable with ?free=1 for the old free-roam game)
+  if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag });
 }
 // ------------------------------------------------------------------ quality tiers
 function applyQuality() {
@@ -85,7 +88,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -352,17 +355,18 @@ function buildAutoPath() {
 function setAuto(on) {
   AUTO.on = on; $('auto').classList.toggle('on', on);
   if (!on) return;
-  if (!AUTO.path.length) buildAutoPath();
+  if (!AUTO.path.length && !story) buildAutoPath();
+  if (story) return;
   let bi = 0, bd = 1e18; AUTO.path.forEach((p, i) => { const d = (p[0] - P.x) ** 2 + (p[1] - P.z) ** 2; if (d < bd) { bd = d; bi = i; } });
   const N = AUTO.path.length, a = AUTO.path[bi], b = AUTO.path[(bi + 1) % N];
   AUTO.dir = Math.sin(P.psi) * (b[0] - a[0]) + Math.cos(P.psi) * (b[1] - a[1]) >= 0 ? 1 : -1; // keep going the way we face
   AUTO.idx = bi;
 }
 function autoPilot() {
-  const N = AUTO.path.length;
+  const N = Math.max(1, AUTO.path.length);
   // advance the waypoint once we're close to it, aim a few points ahead for smooth curves
-  for (let k = 0; k < 4; k++) { const p = AUTO.path[AUTO.idx]; if (Math.hypot(p[0] - P.x, p[1] - P.z) < 26) AUTO.idx = (AUTO.idx + AUTO.dir + N) % N; else break; }
-  const t = AUTO.path[AUTO.idx];
+  for (let k = 0; k < 4 && !story; k++) { const p = AUTO.path[AUTO.idx]; if (Math.hypot(p[0] - P.x, p[1] - P.z) < 26) AUTO.idx = (AUTO.idx + AUTO.dir + N) % N; else break; }
+  const st = story && story.autoTarget(); const t = st || AUTO.path[AUTO.idx];
   let want = Math.atan2(t[0] - P.x, t[1] - P.z);
   // steer around islands/points: pick the clear heading closest to the target direction
   const clear = (a, len) => { for (let d = 4; d <= len; d += 4) if (pondSD(P.x + Math.sin(a) * d, P.z + Math.cos(a) * d) < 5) return false; return true; };
@@ -376,7 +380,7 @@ function autoPilot() {
   }
   // unstick: if barely moving for a while, skip ahead
   AUTO.slow = Math.hypot(P.vx, P.vz) < 0.25 ? (AUTO.slow || 0) + 1 / 60 : 0;
-  if (AUTO.slow > 4) { AUTO.idx = (AUTO.idx + AUTO.dir * 3 + N) % N; AUTO.slow = 0; }
+  if (AUTO.slow > 4 && !story) { AUTO.idx = (AUTO.idx + AUTO.dir * 3 + N) % N; AUTO.slow = 0; }
   const diff = ((want - P.psi + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
   return { throttle: Math.abs(diff) > 1.4 ? 0.25 : 1, steer: clamp(diff * 1.6, -0.8, 0.8) };
 }
@@ -438,6 +442,7 @@ function poseCanoe(dt, t, speed) {
 // ------------------------------------------------------------------ camera
 function updateCamera(dt, t) {
   if (G.debugCam) { camera.position.set(...G.debugCam.pos); camera.lookAt(...G.debugCam.look); return; }
+  if (G.mode === 'intro' && story) { if (story.introCamera(dt)) { story.endIntro(); cam.pos.copy(camera.position); cam.heading = P.psi; G.mode = 'launch'; G.launchT = 0; document.body.classList.add('play'); } return; }
   let targetYaw = cam.yaw;
   if (G.mode === 'title') {
     cam.heading = launchInfo.psi; cam.yaw = 0.9 + Math.sin(t * 0.07) * 0.5; cam.pitch = 0.2; cam.dist = 15 + Math.sin(t * 0.05) * 2; targetYaw = cam.yaw;
@@ -447,12 +452,13 @@ function updateCamera(dt, t) {
     G.idle += dt; if (G.idle > 5 && !drag) { cam.yaw *= Math.exp(-dt * 0.45); cam.pitch = lerp(cam.pitch, 0.3, Math.min(1, dt * 0.3)); }
     cam.heading += (((P.psi - cam.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, dt * 1.6);
   }
-  const a = cam.heading + cam.yaw, cp = Math.cos(cam.pitch);
+  const a = cam.heading + cam.yaw + (story && G.mode !== 'title' ? story.glanceYaw : 0), cp = Math.cos(cam.pitch);
   tmpV.set(P.x - Math.sin(a) * cp * cam.dist, 0.9 + Math.sin(cam.pitch) * cam.dist, P.z - Math.cos(a) * cp * cam.dist);
   tmpV.y = Math.max(tmpV.y, Math.max(heightAt(tmpV.x, tmpV.z), 0) + 1.4);
   cam.pos.lerp(tmpV, G.mode === 'title' || G.snap ? 1 : Math.min(1, dt * 6)); G.snap = false;
   camera.position.copy(cam.pos);
-  cam.look.set(P.x + Math.sin(P.psi) * 3, 1.0, P.z + Math.cos(P.psi) * 3);
+  const lb = story ? Math.abs(story.glanceYaw) / Math.PI : 0; // while glancing back, look past the canoe into the mist
+  cam.look.set(P.x + Math.sin(P.psi) * 3 * (1 - 2.2 * lb), 1.0 + 1.5 * lb, P.z + Math.cos(P.psi) * 3 * (1 - 2.2 * lb));
   camera.lookAt(cam.look);
 }
 
@@ -491,6 +497,7 @@ function updateEnvironment(dt, t) {
   // v0.4: haze follows the day - thick at dawn and at night, clearest at midday - plus fog mornings and rain
   const dawnHaze = sstep(4.3, 5.6, h) * (1 - sstep(7.4, 10, h)), nightHaze = night * (1 - dawnHaze);
   pal.fogD *= (1 + 1.1 * dawnHaze + 0.7 * nightHaze) * (1 - 0.12 * day);
+  if (story) pal.fogD *= story.fogMul;
   pal.fogD += WX.fog * 0.0028 + cover * 0.00035 + WX.rain * 0.0011;
   if (WX.fog > 0.01 || WX.rain > 0.01) pal.fog.lerp(greyA.setRGB(0.62, 0.65, 0.68).multiplyScalar(0.25 + 0.75 * sstep(-0.2, 0.3, sunV.y)), clamp(WX.fog * 0.7 + WX.rain * 0.5, 0, 0.85));
   const fogTint = pal.fog.clone().lerp(tintC.setRGB(0.86, 0.88, 0.9), 0.25 + 0.45 * day).multiplyScalar(0.35 + 0.65 * Math.max(day, 0.25));
@@ -567,6 +574,12 @@ function updateCreek(dt) {
   }
 }
 
+function updateCreekFog(dt) {
+  const approach = creekSD(P.x, P.z) > -6 ? sstep(CREEK.L * 0.3, CREEK.L * 0.9, CQ.s) : 0;
+  G.fog = G.mode === 'ending' ? 1 : approach;
+  if (G.mode !== 'ending') $('veil').style.opacity = (approach * 0.5).toFixed(3);
+}
+
 // ------------------------------------------------------------------ main loop
 const clock = new THREE.Clock(); let started = false;
 let lastFrameMs = 0;
@@ -583,7 +596,8 @@ function frame(now) {
     if (G.launchT > 2.0 && !G.splashed) { G.splashed = true; ripples.spawn(launchInfo.q[0], launchInfo.q[1], 6, 3.4, 0.6, 0.5); audio.plop(0); audio.splash(0, 1.2); }
     if (k >= 1) { G.mode = 'play'; document.body.classList.add('play'); setTimeout(() => $('hint').classList.add('fade'), 14000); }
     info.speed = Math.hypot(P.vx, P.vz);
-  } else if (G.mode === 'play') { info = stepCanoe(dt, !G.transport); updateCreek(dt); }
+  } else if (G.mode === 'play') { info = stepCanoe(dt, !G.transport); if (story) { story.update(dt, G.time); updateCreekFog(dt); } else updateCreek(dt); }
+  else if (G.mode === 'ending') { info = stepCanoe(dt, false); P.vx *= Math.exp(-0.3 * dt); P.vz *= Math.exp(-0.3 * dt); updateCreekFog(dt); }
   else { /* title: canoe waits on the bank */ }
   poseCanoe(dt, G.time, info.speed);
   swimmer.update(dt, G.time, canoe.root, ripples);
@@ -591,6 +605,7 @@ function frame(now) {
   updateEnvironment(dt, G.time);
   updateDrips(dt);
   if (G.mode === 'play' || G.mode === 'launch') drawMini();
+  if (story && G.mode !== 'play' && G.mode !== 'ending') story.update(0, G.time);
   // cinematic mode: simulate every frame, but only render ~30 times a second (even on 60/120 Hz screens)
   const sinceDraw = CINE.lastDraw ? now - CINE.lastDraw : 1000;
   const calibrating = (G.mode === 'play' || G.mode === 'launch') && !G.paused && !document.hidden && Q.sample(Math.min(sinceDraw, 250));
@@ -620,12 +635,14 @@ function startGame() {
     return;
   }
   started = true;
-  G.mode = 'launch'; G.launchT = 0;
   $('title').classList.add('hide');
+  if (story) { G.mode = 'intro'; story.startIntro(); return; }
+  G.mode = 'launch'; G.launchT = 0;
   document.body.classList.add('play');
 }
 const onTitleGesture = (e) => { if (!$('title').classList.contains('hide')) { e.preventDefault(); startGame(); } };
 $('title').addEventListener('click', onTitleGesture);
+$('endcard').addEventListener('click', () => location.reload());
 $('title').addEventListener('touchend', onTitleGesture, { passive: false });
 addEventListener('keydown', (e) => { if ((!started || G.menu) && !['escape', 'm', 'p'].includes(e.key.toLowerCase())) onTitleGesture(e); });
 
@@ -634,7 +651,7 @@ setTimeout(() => {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap();
     cam.pos.set(P.x, 5, P.z - 12);
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
-    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') stepCanoe(dt, false); poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
+    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, false); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, story: () => story, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     ready = true; frame();
     if (pendingStart) startGame();

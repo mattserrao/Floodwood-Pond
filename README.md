@@ -4,6 +4,15 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.5.0 (test branch): Memories
+You wake in a tent on the north shore, climb out, look back, walk down to the canoe and push off.
+Ghost memories play alongside you and fade: a cantaloupe tossed in the water, a kayaker who tips over,
+two tandem kayaks of shouting young men, a canoe towing a picnic table to Big Island, boys playing on the
+island ("ah beef beef beef beef"), and a race that ends with a canoe shoved into a fallen tree.
+Mist closes in behind you and a slow current pulls you around Big Island and down the creek, where the
+journey ends in the fog. You can still paddle anywhere; auto paddle follows the journey.
+Add `?free=1` to the URL for the old free-roam game. Optional voice clips go in `audio/memories/`.
+
 ## Run it
 It's static files, but ES modules need a web server:
 
