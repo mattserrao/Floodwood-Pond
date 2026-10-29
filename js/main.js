@@ -71,6 +71,7 @@ function build() {
   refl.hide.push(water, ripples.mesh, mist.group, rain.lines, drips.points, floatLeaves.mesh, canoe.mask, WORLD.pads);
   applyQuality();
   // v0.5: the journey of memories (disable with ?free=1 for the old free-roam game)
+  if (!new URLSearchParams(location.search).has('free')) { document.body.classList.add('story'); $('pRestart').textContent = 'Begin again'; }
   if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag });
 }
 // ------------------------------------------------------------------ quality tiers
@@ -88,7 +89,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.5.1';
+const VERSION = '0.5.2';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -105,8 +106,8 @@ addEventListener('keydown', (e) => {
   if (k === 'm') { toggleMute(); return; }
   if (G.paused || G.mapOpen || G.menu) return;
   keys.add(k);
-  if (k >= '1' && k <= '4') jumpTo([5.7, 12, 18.3, 22.5][+k - 1]);
-  if (k === 'n' && G.mode === 'play') openMap();
+  if (k >= '1' && k <= '4' && !story) jumpTo([5.7, 12, 18.3, 22.5][+k - 1]);
+  if (k === 'n' && G.mode === 'play' && !story) openMap();
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 addEventListener('blur', () => keys.clear());
@@ -124,7 +125,7 @@ const endDrag = (e) => {
 // triple-tap the canoe: someone in a life vest grabs a tow rope (tap three times again to let go)
 const ray = new THREE.Raycaster(), taps = [];
 function tapCanoe(e) {
-  if (G.mode !== 'play' || G.paused || G.mapOpen || G.menu) return;
+  if (story || G.mode !== 'play' || G.paused || G.mapOpen || G.menu) return;
   const r = canvas.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
   const hit = ray.intersectObject(canoe.root, true).length > 0 || (swimmer.on && ray.intersectObject(swimmer.group, true).length > 0);
@@ -176,7 +177,9 @@ $('pCine').addEventListener('click', () => setCine(!CINE.on));
 $('pBox').addEventListener('click', () => setBox(!CINE.box));
 $('pQual').addEventListener('click', () => Q.cycle());
 try { const qs = new URLSearchParams(location.search); setCine(qs.has('cine') ? qs.get('cine') !== '0' : localStorage.getItem('fp-cine') === '1'); setBox(qs.has('box') ? qs.get('box') !== '0' : localStorage.getItem('fp-box') === '1'); } catch (e) {}
+$('pDrift').addEventListener('click', () => { G.drift = !G.drift; $('pDrift').textContent = G.drift ? 'Drift on its own: on' : 'Drift on its own: off'; if (!G.drift && AUTO.on) setAuto(false); });
 $('pRestart').addEventListener('click', () => {
+  if (story) { location.reload(); return; }
   resetPlayer(); G.mode = 'launch'; G.launchT = 0; G.splashed = false; G.snap = true; P.act = 0;
   setPaused(false);
 });
@@ -225,7 +228,7 @@ function drawMini() { mini.getContext('2d').drawImage(staticMap, 0, 0); drawCano
 const big = $('bigC');
 let bigXZ = null;
 function openMap() {
-  if (G.mode !== 'play' || G.paused || G.menu) return;
+  if (story || G.mode !== 'play' || G.paused || G.menu) return;
   const aspect = (MM.x1 - MM.x0) / (MM.z1 - MM.z0);
   let w = Math.min(innerWidth * 0.94, 1000), h = w / aspect;
   if (h > innerHeight * 0.78) { h = innerHeight * 0.78; w = h * aspect; }
@@ -272,7 +275,7 @@ function stepCanoe(dt, controllable) {
     // auto paddle: after a quiet spell, gently follow the shoreline around the pond
     const manual = Math.abs(throttle) > 0.05 || Math.abs(steer) > 0.05 || keys.size > 0;
     if (manual || G.transport) { G.quiet = 0; if (AUTO.on) setAuto(false); }
-    else { G.quiet = (G.quiet || 0) + dt; if (!AUTO.on && G.quiet > AUTO_DELAY) setAuto(true); }
+    else { G.quiet = (G.quiet || 0) + dt; if (!AUTO.on && G.quiet > AUTO_DELAY && (!story || G.drift)) setAuto(true); }
     if (AUTO.on) { const a = autoPilot(); throttle = a.throttle; steer = a.steer; }
   }
   const hard = controllable && (keys.has('shift') || keys.has(' ')) ? 1.6 : 1;
@@ -453,7 +456,7 @@ function updateCamera(dt, t) {
     const F = story && story.focus();
     if (F && !drag) {
       const to = Math.atan2(F.x - P.x, F.z - P.z), yT = clamp(((to - cam.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI, -2.7, 2.7);
-      cam.yaw = lerp(cam.yaw, yT * F.k, Math.min(1, dt * 1.6)); cam.pitch = lerp(cam.pitch, 0.22, Math.min(1, dt * 0.8)); G.idle = 0; G.focusK = F.k; G.focusP = F;
+      cam.yaw = lerp(cam.yaw, clamp(yT * 0.5, -1.15, 1.15) * F.k, Math.min(1, dt * 0.9)); G.idle = 0; G.focusK = F.k; G.focusP = F;
     } else { G.focusK = 0; if (F && drag) G.idle = 0; }
     G.idle += dt; if (G.idle > 5 && !drag) { cam.yaw *= Math.exp(-dt * 0.45); cam.pitch = lerp(cam.pitch, 0.3, Math.min(1, dt * 0.3)); }
     cam.heading += (((P.psi - cam.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, dt * 1.6);
@@ -465,7 +468,7 @@ function updateCamera(dt, t) {
   camera.position.copy(cam.pos);
   const lb = story ? Math.abs(story.glanceYaw) / Math.PI : 0; // while glancing back, look past the canoe into the mist
   cam.look.set(P.x + Math.sin(P.psi) * 3 * (1 - 2.2 * lb), 1.0 + 1.5 * lb, P.z + Math.cos(P.psi) * 3 * (1 - 2.2 * lb));
-  if (G.focusK > 0 && G.mode === 'play') { const k = G.focusK * 0.8, fp = G.focusP; cam.look.set(lerp(cam.look.x, fp.x, k), lerp(cam.look.y, 0.7, k), lerp(cam.look.z, fp.z, k)); }
+  if (G.focusK > 0 && G.mode === 'play') { const k = G.focusK * 0.35, fp = G.focusP; cam.look.set(lerp(cam.look.x, fp.x, k), lerp(cam.look.y, 0.7, k), lerp(cam.look.z, fp.z, k)); }
   camera.lookAt(cam.look);
 }
 
@@ -476,7 +479,8 @@ function updateEnvironment(dt, t) {
   if (G.jump) {
     G.jump.t += dt / 2.6; const k = clamp(G.jump.t, 0, 1), e = k * k * (3 - 2 * k);
     G.hour = (lerp(G.jump.from, G.jump.to, e)) % 24; if (k >= 1) G.jump = null;
-  } else if (G.mode !== 'title') G.hour = (G.hour + (dt * 24) / DAY_LEN) % 24;
+  } else if (story) { const hT = G.mode === 'intro' || G.mode === 'title' ? 6.35 : story.hour(); G.hour = G.mode === 'title' ? hT : lerp(G.hour, hT, Math.min(1, dt * 0.25)); }
+  else if (G.mode !== 'title') G.hour = (G.hour + (dt * 24) / DAY_LEN) % 24;
   const h = G.hour, pal = samplePalette(h);
   WX.update(G.mode !== 'title' ? dt : 0, h, DAY_LEN);
   updateWind(dt, t, WX.wind); SWAY.uTime.value = t;
@@ -510,7 +514,7 @@ function updateEnvironment(dt, t) {
   const fogTint = pal.fog.clone().lerp(tintC.setRGB(0.86, 0.88, 0.9), 0.25 + 0.45 * day).multiplyScalar(0.35 + 0.65 * Math.max(day, 0.25));
   const fogCol = pal.fog.clone().lerp(fogTint, fogA), fogD = lerp(pal.fogD, 0.05, Math.pow(fogA, 1.4));
   scene.fog.color.copy(fogCol); scene.fog.density = fogD; scene.background = null;
-  $('veil').style.background = '#' + fogTint.clone().convertLinearToSRGB().getHexString();
+  if (G.mode !== 'ending') $('veil').style.background = '#' + fogTint.clone().convertLinearToSRGB().getHexString();
   // sky
   const su = sky.material.uniforms; su.uTop.value.copy(pal.top); su.uMid.value.copy(pal.mid); su.uHor.value.copy(pal.hor);
   su.uSun.value.copy(sunV); su.uMoon.value.copy(moonV); su.uSunCol.value.copy(pal.sun.clone().multiplyScalar(0.9));

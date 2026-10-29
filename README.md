@@ -11,6 +11,8 @@ two tandem kayaks of shouting young men, a canoe towing a picnic table to Big Is
 island ("ah beef beef beef beef"), and a race that ends with a canoe shoved into a fallen tree.
 Mist closes in behind you and a slow current pulls you around Big Island and down the creek, where the
 journey ends in the fog. You can still paddle anywhere; auto paddle follows the journey.
+The light follows the journey (grey dawn at the tent, golden hour at Big Island, dusk in the creek), there is no HUD,
+and the ending surfaces a line of text in the fog. "Drift on its own" in the pause menu turns on auto paddle.
 Add `?free=1` to the URL for the old free-roam game. Optional voice clips go in `audio/memories/`.
 
 ## Run it

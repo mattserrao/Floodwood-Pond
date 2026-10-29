@@ -67,10 +67,20 @@ function buildRoute(start) {
 function routeAt(route, s) { const R = route.R; let lo = 0, hi = R.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R[m].s < s) lo = m; else hi = m; } const a = R[lo], b = R[hi], t = clamp((s - a.s) / Math.max(1e-6, b.s - a.s), 0, 1); return { x: lerp(a.x, b.x, t), z: lerp(a.z, b.z, t), dx: (b.x - a.x) / Math.max(1e-6, Math.hypot(b.x - a.x, b.z - a.z)), dz: (b.z - a.z) / Math.max(1e-6, Math.hypot(b.x - a.x, b.z - a.z)) }; }
 
 // ------------------------------------------------------------------ ghost models
-const GHOST = 0xdfe9f2;
-function G0() { const g = new THREE.Group(); g.userData.mats = []; g.userData.o = 0; g.visible = false; return g; }
-function gm(g, color = GHOST, k = 1) { const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false }); m.userData.k = k; g.userData.mats.push(m); return m; }
-function fadeGhost(g, o, t) { g.userData.o = o; g.visible = o > 0.004; g.userData.mats.forEach((m, i) => { m.opacity = o * m.userData.k * (0.84 + 0.16 * Math.sin(t * 2.3 + i * 1.7)); }); }
+const GHOST = 0xffb468; // memories glow warm against the cold grey present
+let HALO_TEX = null;
+function G0() {
+  const g = new THREE.Group(); g.userData.mats = []; g.userData.o = 0; g.visible = false;
+  HALO_TEX = HALO_TEX || glowTexture();
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: HALO_TEX, color: 0xffc98a, blending: THREE.AdditiveBlending, transparent: true, opacity: 0, depthWrite: false }));
+  halo.scale.set(8, 3.6, 1); halo.position.y = 0.7; halo.material.userData.k = 0.8; g.userData.mats.push(halo.material); g.add(halo);
+  return g;
+}
+function gm(g, color = GHOST, k = 1) { /* normal blend: additive vanishes against bright mist */ const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false }); m.userData.k = k; g.userData.mats.push(m); return m; }
+let MOTES = null;
+function fadeGhost(g, o, t) {
+  const prev = g.userData.o || 0; if (MOTES && o < prev - 1e-4 && prev > 0.02) MOTES.dissolve(g, (prev - o) * 900);   // fading out: it crumbles into drifting light
+  g.userData.o = o; g.visible = o > 0.004; g.userData.mats.forEach((m, i) => { m.opacity = o * m.userData.k * (0.84 + 0.16 * Math.sin(t * 2.3 + i * 1.7)); }); }
 function person(g, m) {
   const p = new THREE.Group();
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.32, 3, 8), m); torso.position.y = 0.48; p.add(torso);
@@ -123,12 +133,45 @@ function animatePaddles(g, t, rate = 1) {
 }
 
 // ------------------------------------------------------------------ the story controller
+function createMotes(scene) {
+  const N = 600, pos = new Float32Array(N * 3), alpha = new Float32Array(N), vel = new Float32Array(N * 3), life = new Float32Array(N), max = new Float32Array(N); let head = 0;
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('alpha', new THREE.BufferAttribute(alpha, 1));
+  const mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uTex: { value: glowTexture() }, uCol: { value: new THREE.Color(0xffd29a) } },
+    vertexShader: `attribute float alpha; varying float vA; void main(){ vA = alpha; vec4 mv = modelViewMatrix * vec4(position,1.); gl_PointSize = clamp(90. / -mv.z, 1.5, 14.); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D uTex; uniform vec3 uCol; varying float vA; void main(){ vec4 t = texture2D(uTex, gl_PointCoord); gl_FragColor = vec4(uCol * t.a * vA, t.a * vA); }` });
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = 6; scene.add(pts);
+  const v = new THREE.Vector3(), box = new THREE.Box3();
+  return {
+    emit(x, y, z, n = 1, spread = 1) {
+      for (let i = 0; i < n; i++) { const k = head++ % N; pos[k * 3] = x + rand(-spread, spread); pos[k * 3 + 1] = y + rand(0, spread); pos[k * 3 + 2] = z + rand(-spread, spread);
+        vel[k * 3] = rand(-0.25, 0.25); vel[k * 3 + 1] = rand(0.25, 0.7); vel[k * 3 + 2] = rand(-0.25, 0.25); max[k] = life[k] = rand(2.5, 5); }
+    },
+    /** emit specks over a ghost's body as it fades */
+    dissolve(g, n) {
+      const cnt = Math.min(12, Math.floor(n) + (Math.random() < n % 1 ? 1 : 0)); if (!cnt) return;
+      box.setFromObject(g); if (box.isEmpty()) return;
+      for (let i = 0; i < cnt; i++) { v.set(rand(box.min.x, box.max.x), rand(Math.max(box.min.y, 0), box.max.y), rand(box.min.z, box.max.z)); this.emit(v.x, v.y, v.z, 1, 0.15); }
+    },
+    update(dt) {
+      for (let k = 0; k < N; k++) {
+        if (life[k] <= 0) { alpha[k] = 0; continue; }
+        life[k] -= dt; const u = life[k] / max[k];
+        vel[k * 3] += rand(-0.3, 0.3) * dt; vel[k * 3 + 2] += rand(-0.3, 0.3) * dt;
+        pos[k * 3] += vel[k * 3] * dt; pos[k * 3 + 1] += vel[k * 3 + 1] * dt; pos[k * 3 + 2] += vel[k * 3 + 2] * dt;
+        alpha[k] = Math.min(1, (1 - u) * 6) * u * 0.9;
+      }
+      geo.attributes.position.needsUpdate = true; geo.attributes.alpha.needsUpdate = true;
+    },
+  };
+}
+
 export function createStory(C) {
   const { scene, camera, P, G, audio, ripples, canoe, launchInfo, post } = C;
   const voices = new Voices(audio);
   const $ = (id) => document.getElementById(id);
   const S = { active: true, glanceYaw: 0, fogMul: 1, events: [], ghosts: [], ended: false, playT: 0, sNow: 0, idx: 0 };
   const route = buildRoute(launchInfo.end);
+  MOTES = createMotes(scene); S.motes = MOTES;
   S.route = route;
 
   // ---------------- the tent, on the bank behind the canoe
@@ -231,7 +274,7 @@ export function createStory(C) {
   // ---------- attention: draw the camera to whatever memory is playing ----------
   const ATT = { fn: null, until: 0, k: 0, t: 0 };
   /** turn the player's view toward posFn() for `sec` seconds (eases in and out; manual dragging always wins) */
-  function attend(posFn, sec) { ATT.fn = posFn; ATT.until = S.playT + sec; }
+  function attend(posFn, sec, delay = 1.3) { ATT.fn = posFn; ATT.from = S.playT + delay; ATT.until = S.playT + delay + sec; }
   S.focus = () => (ATT.fn && ATT.k > 0.01 ? Object.assign({ k: ATT.k }, ATT.fn()) : null);
   const gpos = (g, y = 1) => ({ x: g.position.x, y, z: g.position.z });
   /** paddle splashes in time with a ghost boat's animated strokes */
@@ -262,7 +305,7 @@ export function createStory(C) {
       else {
         if (!splashed) { splashed = true; ripples.spawn(land[0], land[1], 3.5, 2.6, 0.6, 0.3); ripples.spawn(land[0], land[1], 1.6, 1.6, 0.5, 0.1); voices.bigSplash({ x: land[0], y: 0, z: land[1] }, 0.75); setTimeout(() => voices.laugh({ x: from.x, y: 1.6, z: from.z }, { vol: 0.85, n: 7 }), 700); }
         melon.position.x += vx * dt; melon.position.z += vz * dt; melon.position.y = -0.06 + Math.sin(T * 2.1) * 0.035; melon.rotation.y += dt * 0.2;
-        melon.material.opacity = 1 - sstep(5, 13, t);
+        melon.material.opacity = 1 - sstep(5, 13, t); if (t > 5 && Math.random() < dt * 6) MOTES.emit(melon.position.x, 0.1, melon.position.z, 1, 0.25);
         if (t > 1.5 && Math.random() < dt * 0.4) { ripples.spawn(melon.position.x, melon.position.z, 0.8, 1.5, 0.2, 0.2); if (bobbed++ < 6) audio.plop(0, { x: melon.position.x, y: 0, z: melon.position.z }); }
       }
       if (t > 10 && !S._mo1) { S._mo1 = true; voices.memoryOut({ x: melon.position.x, y: 0.5, z: melon.position.z }); }
@@ -300,7 +343,7 @@ export function createStory(C) {
   // 3. two tandem kayaks race past, young men shouting and laughing
   ev('tandems', () => S.sNow > 260 && S.playT > 40, () => {
     const F = playerFwd(), L = playerLeft();
-    const boats = [10, 15].map((off, i) => { const g = addGhost(kayak(true)); g.userData.start = [P.x + F[0] * 60 + L[0] * off, P.z + F[1] * 60 + L[1] * off]; g.userData.v = 2.9 + i * 0.25; return g; });
+    const boats = [6, 10].map((off, i) => { const g = addGhost(kayak(true)); g.userData.start = [P.x + F[0] * 55 + L[0] * off, P.z + F[1] * 55 + L[1] * off]; g.userData.v = 2.9 + i * 0.25; return g; });
     const dir = [-F[0], -F[1]]; let t = 0, outC = false;
     const mid = () => ({ x: (boats[0].position.x + boats[1].position.x) / 2, y: 1, z: (boats[0].position.z + boats[1].position.z) / 2 });
     voices.memoryIn({ x: boats[0].userData.start[0], y: 1, z: boats[0].userData.start[1] });
@@ -332,7 +375,7 @@ export function createStory(C) {
     const tgt = toWater(route.BIG.c[0], route.BIG.c[1] - 60, 10), L = playerLeft();
     const side = Math.sign((tgt[0] - P.x) * L[0] + (tgt[1] - P.z) * L[1]) || 1;
     // start closer, off to one side and ahead, crossing in front of you toward the island
-    const start = toWater(P.x + L[0] * 26 * -side + Math.sin(P.psi) * 22, P.z + L[1] * 26 * -side + Math.cos(P.psi) * 22, 12);
+    const start = toWater(P.x + L[0] * 15 * -side + Math.sin(P.psi) * 14, P.z + L[1] * 15 * -side + Math.cos(P.psi) * 14, 8);
     const dir = [tgt[0] - start[0], tgt[1] - start[1]]; const dl = Math.hypot(...dir); dir[0] /= dl; dir[1] /= dl;
     const rope = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: GHOST, transparent: true, opacity: 0 })); rope.material.userData.k = 0.7; g.userData.mats.push(rope.material); rope.renderOrder = 4; scene.add(rope);
     let t = 0, outC = false, nextCreak = 2, nextThunk = 3.5; const v = 1.5;
@@ -360,11 +403,15 @@ export function createStory(C) {
   // 5. Big Island: boys playing somewhere among the trees - "ah beef beef beef beef"
   const bigR = Math.max(...route.BIG.r.map((p) => Math.hypot(p[0] - route.BIG.c[0], p[1] - route.BIG.c[1])));
   ev('island', () => near(route.BIG.c[0], route.BIG.c[1], bigR + 150), () => {
-    const spots = route.BIG.r.filter((_, i) => i % 3 === 0).map((p) => ({ x: lerp(p[0], route.BIG.c[0], 0.2), y: 1.5, z: lerp(p[1], route.BIG.c[1], 0.2) }));
+    const spots = route.BIG.r.map((p) => ({ x: lerp(p[0], route.BIG.c[0], 0.04), y: 1.5, z: lerp(p[1], route.BIG.c[1], 0.04) }));
     const closest = () => spots.reduce((a, b) => (Math.hypot(a.x - P.x, a.z - P.z) < Math.hypot(b.x - P.x, b.z - P.z) ? a : b));
     // the boys are in one place (the shore facing you), and move a little along it as you pass
     let home = closest(); const spot = () => ({ x: home.x + rand(-8, 8), y: 1.5, z: home.z + rand(-8, 8) });
     let t = 0, bi = 0, next = 1; const beef = [5, 19];
+    const boys = G0(); const bm = gm(boys, GHOST, 0.9); boys.userData.kids = [];
+    for (let i = 0; i < 4; i++) { const p = person(boys, bm); p.scale.setScalar(rand(0.85, 1.05)); p.position.set(rand(-4, 4), 0, rand(-2, 2)); boys.add(p); boys.userData.kids.push({ p, ph: rand(0, 6), jump: null }); }
+    boys.scale.setScalar(1.7); addGhost(boys);   // larger than life: they're 60-100 m off, across the water
+    const shoreAt = (h) => { const [wx, wz] = toWater(h.x, h.z, 2); let x = wx, z = wz; for (let k = 0; k < 40 && pondSD(x, z) > -2; k++) { x += (h.x - wx) * 0.05; z += (h.z - wz) * 0.05; } return { x, z, wx, wz }; };
     voices.memoryIn(home);
     attend(() => home, 9);
     return (dt) => {
@@ -375,16 +422,26 @@ export function createStory(C) {
         voices.say('beef', 'ah beef beef beef beef', p, { rate: 1.35, pitch: 0.95, volume: 1 });
         setTimeout(() => voices.erupt(p, 3, 1.1), 1900);
       }
-      if (Math.random() < dt * 0.22) { const p = spot(); const [wx, wz] = toWater(p.x, p.z, 3); ripples.spawn(wx, wz, 4, 2.5, 0.5, 0.4); voices.bigSplash({ x: wx, y: 0, z: wz }, 0.9); setTimeout(() => voices.shout(p, 'woo', { vol: 1 }), 150); }
+      // the boys stand on the shore facing you, horsing around; now and then one leaps in
+      const sh = shoreAt(home), gy = Math.max(heightAt(sh.x, sh.z), 0.2);
+      boys.position.set(sh.x, gy, sh.z); boys.rotation.y = Math.atan2(P.x - sh.x, P.z - sh.z);
+      boys.userData.kids.forEach((kd, i) => {
+        if (kd.jump) { const u = (t - kd.jump.t0) / 1.1; kd.p.position.set(kd.jump.x, Math.sin(Math.min(u, 1) * Math.PI) * 1.6 - u * u * 0.9 * gy - (u > 1 ? (u - 1) * 3 : 0), kd.jump.z + u * 5);
+          if (u > 1 && !kd.jump.sp) { kd.jump.sp = true; boys.updateMatrixWorld(); const w = kd.p.getWorldPosition(new THREE.Vector3()); ripples.spawn(w.x, w.z, 4, 2.5, 0.6, 0.4); voices.bigSplash({ x: w.x, y: 0, z: w.z }, 0.9); setTimeout(() => voices.erupt({ x: sh.x, y: 1, z: sh.z }, 2.5, 0.9), 300); }
+          if (u > 3) { kd.jump = null; kd.p.position.set(rand(-4, 4), 0, rand(-2, 2)); } }
+        else { kd.p.position.y = Math.abs(Math.sin(t * 3 + kd.ph)) * 0.18; kd.p.rotation.y = Math.sin(t * 0.8 + kd.ph) * 0.8; }
+      });
+      if (Math.random() < dt * 0.13 && t < 30) { const kd = boys.userData.kids[Math.floor(Math.random() * 4)]; if (!kd.jump) { kd.jump = { t0: t, x: kd.p.position.x, z: kd.p.position.z }; voices.shout({ x: sh.x, y: 1, z: sh.z }, 'woo', { vol: 1.1 }); } }
+      fadeGhost(boys, sstep(0, 3, t) * (1 - sstep(30, 35, t)) * 0.9, t);
       if (t > 33 && !S._mo5) { S._mo5 = true; voices.memoryOut(home); }
-      if (t > 36) return true;
+      if (t > 36) { removeGhost(boys); return true; }
     };
   });
 
   // 6. rounding the island: a race - two tandem kayaks and a canoe - one is shoved into the fallen tree
   ev('race', () => S.sNow > sTree - 150 && S.sNow < sTree + 40, () => {
     const F = playerFwd(), L = playerLeft();
-    const boats = [kayak(true), kayak(true), ghostCanoe(2)].map((g, i) => { addGhost(g); g.userData.lane = [5, 10, 15][i]; g.userData.v = [4.3, 4.6, 4.2][i]; return g; });
+    const boats = [kayak(true), kayak(true), ghostCanoe(2)].map((g, i) => { addGhost(g); g.userData.lane = [5, 9, 13][i]; g.userData.v = [4.3, 4.6, 4.2][i]; return g; });
     const canoeG = boats[2];
     boats.forEach((g) => { g.userData.p = [P.x - F[0] * 32 + L[0] * g.userData.lane, P.z - F[1] * 32 + L[1] * g.userData.lane]; });
     let t = 0, beached = false, bt = 0, nextCall = 0.5, outC = false, shoved = false;
@@ -446,11 +503,13 @@ export function createStory(C) {
       p.sp.material.opacity = behind * 0.42 * (1 - Math.abs(p.a) / 1.6); p.sp.visible = p.sp.material.opacity > 0.003;
     });
     // attention ramps in when a memory starts and back out when it ends
-    const want = ATT.fn && S.playT < ATT.until ? 1 : 0; ATT.k = clamp(ATT.k + (want ? dt / 1.4 : -dt / 2), 0, 1); if (!want && ATT.k === 0) ATT.fn = null;
+    const want = ATT.fn && S.playT >= ATT.from && S.playT < ATT.until ? 1 : 0; ATT.k = clamp(ATT.k + (want ? dt / 2.2 : -dt / 2.5), 0, 1); if (!want && ATT.k === 0 && S.playT >= (ATT.from || 0)) ATT.fn = null;
     // glance back over the shoulder now and then to watch the mist (not while a memory is playing)
-    S.glanceT = (S.glanceT ?? 18) - dt;
-    if (S.glanceT < 0 && !C.dragging() && ATT.k < 0.05) { S.glance = { t: 0, side: Math.random() < 0.5 ? -1 : 1 }; S.glanceT = rand(38, 62); }
-    if (S.glance) { const g = S.glance; g.t += dt; const k = g.t < 1.8 ? ease(g.t / 1.8) : g.t < 4.6 ? 1 : 1 - ease((g.t - 4.6) / 1.9); S.glanceYaw = g.side * Math.PI * 0.86 * k; if (g.t > 6.5) { S.glance = null; S.glanceYaw = 0; } }
+    //   1) once the first memories are behind you, 2) as Big Island comes alongside, 3) at the mouth of the creek
+    S.glanceBeats = S.glanceBeats || [420, route.sVia - 40, (route.sCreek || route.L) - 25];
+    if (!S.glance && S.glanceBeats.length && S.sNow > S.glanceBeats[0] && !C.dragging() && ATT.k < 0.05) { S.glanceBeats.shift(); S.glance = { t: 0, side: Math.random() < 0.5 ? -1 : 1 }; }
+    if (S.glance) { const g = S.glance; g.t += dt; const k = g.t < 2.8 ? ease(g.t / 2.8) : g.t < 6 ? 1 : 1 - ease((g.t - 6) / 2.8); S.glanceYaw = g.side * Math.PI * 0.8 * k; if (g.t > 8.8) { S.glance = null; S.glanceYaw = 0; } }
+    MOTES.update(dt);
     // memories
     for (const e of S.events) {
       if (!e.fired && e.test()) { e.fired = true; e.live = e.run(); }
@@ -460,12 +519,22 @@ export function createStory(C) {
     if (inCreek && creekS > CREEK.L * 0.86 && !S.ended) end();
   };
   S.autoTarget = () => S.target ? [S.target.x, S.target.z] : null;
+  //   grey dawn at the tent -> morning -> midday on the open water -> golden hour at Big Island -> dusk in the creek
+  const HOURS = [[0, 6.35], [0.12, 7.6], [0.3, 10.5], [0.45, 13.5], [0.62, 16.6], [0.76, 17.9], [0.86, 18.7], [0.95, 19.4], [1, 19.9]];
+  S.hour = () => {
+    S.maxProg = Math.max(S.maxProg || 0, clamp(S.sNow / route.L, 0, 1)); const p = S.maxProg;
+    for (let i = 0; i < HOURS.length - 1; i++) { const [a, ha] = HOURS[i], [b, hb] = HOURS[i + 1]; if (p <= b) return lerp(ha, hb, (p - a) / (b - a)); }
+    return HOURS[HOURS.length - 1][1];
+  };
 
   function end() {
     S.ended = true; G.mode = 'ending'; audio.chime();
-    const veil = $('veil'); veil.style.transition = 'opacity 4s ease'; veil.style.opacity = 1;
-    setTimeout(() => { const b = $('blackout'); b.style.transition = 'opacity 5s ease'; b.style.opacity = 1; audio.setMuted && setTimeout(() => audio.master && audio.master.gain.setTargetAtTime(0, audio.ctx.currentTime, 2), 2000); }, 4500);
-    setTimeout(() => { $('endcard').classList.add('on'); }, 10000);
+    const veil = $('veil'); veil.style.transition = 'opacity 5s ease, background-color 5s ease'; veil.style.background = '#d9dbd8'; veil.style.opacity = 1;
+    const q = $('quote'); q.classList.add('on');
+    [...q.querySelectorAll('span')].forEach((el, i) => setTimeout(() => el.classList.add('on'), 5200 + i * 2300));
+    const hold = 5200 + q.querySelectorAll('span').length * 2300 + 7000;
+    setTimeout(() => { q.classList.add('out'); const b = $('blackout'); b.style.transition = 'opacity 6s ease'; b.style.opacity = 1; setTimeout(() => audio.master && audio.master.gain.setTargetAtTime(0, audio.ctx.currentTime, 2.5), 2500); }, hold);
+    setTimeout(() => { $('endcard').classList.add('on'); }, hold + 7000);
   }
   return S;
 }
