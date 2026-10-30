@@ -44,17 +44,47 @@ export class Voices {
     const T = this.bank.cues[cue].takes; let k = Math.floor(Math.random() * T.length);
     if (T.length > 1 && k === this.last[cue]) k = (k + 1) % T.length;
     if (o.take) { const j = T.findIndex((x) => x.take === o.take); if (j >= 0) k = j; } this.last[cue] = k;
-    const tk = T[k], v = this.pickVoice(o), s = this.ctx.createBufferSource(); s.buffer = v.buf;
-    s.playbackRate.value = rand(0.97, 1.03); s.connect(this.out(pos, (o.vol ?? 1) * 1.1));
-    s.start(this.ctx.currentTime + (o.delay || 0), tk.start, tk.dur + 0.05); return true;
+    const tk = T[k], v = this.pickVoice(o), ctx = this.ctx, when = ctx.currentTime + (o.delay || 0), dest = this.out(pos, o.vol ?? 1, o.delay || 0);
+    const play = (rate, cents, lag, d) => { const s = ctx.createBufferSource(); s.buffer = v.buf; s.playbackRate.value = rate;
+      if (s.detune) { s.detune.value = cents; const w = ctx.createOscillator(), wg = ctx.createGain(); w.frequency.value = rand(0.3, 0.6); wg.gain.value = 14; w.connect(wg); wg.connect(s.detune); w.start(when); w.stop(when + tk.dur + 1); }   // slow waver, like worn tape
+      s.connect(d); s.start(when + lag, tk.start, tk.dur + 0.05); };
+    const r = rand(0.97, 1.02); play(r, 0, 0, dest);
+    const ghost = ctx.createGain(); ghost.gain.value = 0.35; ghost.connect(this.haze); play(r, rand(10, 18) * (Math.random() < 0.5 ? -1 : 1), 0.045, ghost);   // a faint smeared double, only in the echoes
+    return true;
   }
   /** an optional spoken line: only plays if it was recorded (no robot-voice fallback) */
   line(name, pos, o = {}) { return this.ok() && this.clip(name, pos, o); }
 
-  /** a sound source at a world position, extra-wet so it sounds like a memory across the water */
-  out(pos, vol = 1) {
-    const g = this.audio.at(pos, { wet: 0.5, ref: 34, roll: 0.55, air: 520, echo: 0.2 });
-    const v = this.ctx.createGain(); v.gain.value = vol; v.connect(g); return v;
+  /** a sound source at a world position, heard as a memory: v0.6.10 — quiet, thin, far, and mostly echo.
+   *  dry: band-limited (no lows, no air) and pushed back in the mix; wet: the shared haze (long, wavering echoes
+   *  smeared into the reverb), so you hear more of the room it happened in than the voice itself. */
+  out(pos, vol = 1, start = 0) {
+    const ctx = this.ctx, H = this.haze || (this.haze = this.makeHaze());
+    const v = ctx.createGain(), t = ctx.currentTime + start; v.gain.setValueAtTime(0, t); v.gain.linearRampToValueAtTime(vol * 0.38, t + 0.12);   // soft onset: it surfaces, it doesn't start
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 340; hp.Q.value = 0.6;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; lp.Q.value = 0.4;
+    v.connect(hp); hp.connect(lp);
+    lp.connect(this.audio.at(pos, { wet: 1.5, ref: 30, roll: 0.6, air: 300, echo: 0.6 }));
+    const send = ctx.createGain(); send.gain.value = 1.3; lp.connect(send); send.connect(H);
+    return v;
+  }
+  /** shared haze: two cross-fed delays (0.43 s / 0.67 s) with slowly drifting times (a tape-like waver), darkening on
+   *  every repeat, spread left/right and fed into the reverb so the echoes blur into the pond */
+  makeHaze() {
+    const ctx = this.ctx, a = this.audio, inp = ctx.createGain(), pre = ctx.createDelay(1); pre.delayTime.value = 0.09; inp.connect(pre);
+    const out = ctx.createGain(); out.gain.value = 0.5; out.connect(a.natureBus);
+    const rv = ctx.createGain(); rv.gain.value = 0.9; out.connect(rv); rv.connect(a.send);
+    const taps = [[0.43, -0.7, 0.13], [0.67, 0.7, 0.09]].map(([dt, pan, rate]) => {
+      const d = ctx.createDelay(2); d.delayTime.value = dt;
+      const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = rate; lg.gain.value = 0.007; lfo.connect(lg); lg.connect(d.delayTime); lfo.start();
+      const dark = ctx.createBiquadFilter(); dark.type = 'lowpass'; dark.frequency.value = 1700;
+      const fb = ctx.createGain(); fb.gain.value = 0.52;
+      const pn = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain(); if (pn.pan) pn.pan.value = pan;
+      pre.connect(d); d.connect(dark); dark.connect(fb); dark.connect(pn); pn.connect(out);
+      return { d, fb };
+    });
+    taps[0].fb.connect(taps[1].d); taps[1].fb.connect(taps[0].d);                       // cross-feed: the echoes wander side to side
+    return inp;
   }
 
   /** one voiced syllable: sawtooth glottal source + aspiration through a formant bank */
@@ -83,7 +113,7 @@ export class Voices {
     const kind = o.big || (o.n || 0) >= 11 ? 'laugh_big' : (o.n && o.n <= 6) || o.small ? 'laugh_chuckle' : 'laugh';
     if (this.clip(kind, pos, o) || this.clip('laugh', pos, o)) return;
     if (this.tryClip(pick(['laugh1', 'laugh2', 'laugh3']), pos, o.vol)) return;
-    const t0 = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1);
+    const t0 = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1, o.delay || 0);
     const n = o.n || Math.floor(rand(5, 10)); let f = o.f0 || rand(150, 230), t = t0; const vow = pick(['a', 'a', 'e', 'o']);
     for (let i = 0; i < n; i++) { const len = rand(0.08, 0.15); this.syl(d, t, f * rand(0.96, 1.06), vow, len, 0.3 * (1 - i / (n + 4)), { h: 1.1, glide: rand(-0.12, 0.02) }); t += len + rand(0.04, 0.1); f *= rand(0.94, 0.995); }
     if (Math.random() < 0.5) this.syl(d, t + 0.05, f * 1.3, 'a', 0.35, 0.12, { h: 1.2, glide: -0.25 }); // trailing wheeze
@@ -93,7 +123,7 @@ export class Voices {
   shout(pos, word, o = {}) {
     if (!this.ok()) return; if (!word) word = pick(['hey', 'woo', 'go', 'yeah', 'dude', 'oh']);
     if (this.clip('shout_' + word, pos, (word === 'oh' || word === 'no') && !o.take ? { ...o, take: 1 } : o) || this.tryClip('shout_' + word, pos, o.vol)) return;
-    const t = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1), f = o.f0 || rand(170, 260);
+    const t = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1, o.delay || 0), f = o.f0 || rand(170, 260);
     const W = {
       hey: [['e', 0.32, 0.3]], woo: [['u', 0.6, 0.45]], go: [['o', 0.14, 0.05], ['o', 0.14, 0.05], ['o', 0.24, 0.12]],
       yeah: [['i', 0.12, 0.1], ['e', 0.16, 0.05], ['a', 0.38, -0.25]], dude: [['u', 0.42, -0.15]], oh: [['o', 0.55, -0.35]],

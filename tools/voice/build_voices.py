@@ -237,13 +237,24 @@ def write_preview(out, man, C):
     head = ''.join(f"<th>{v['id']}<br><small>x{v['pitch']}</small></th>" for v in man['voices'])
     html = f"""<!doctype html><meta charset=utf-8><title>Floodwood voices</title>
 <style>body{{font:14px system-ui;background:#111;color:#ddd;padding:12px}}table{{border-collapse:collapse}}td,th{{border:1px solid #333;padding:4px 6px;text-align:left}}button{{margin:1px;background:#2a3a33;color:#eee;border:0;padding:4px 8px;border-radius:4px}}small{{color:#888}}</style>
-<h3>Floodwood voices: tap to audition (dry, before the game's distance and reverb)</h3>
-<p><button id=crowd>play a crowd laugh (5 voices layered)</button></p>
+<h3>Floodwood voices: tap to audition</h3>
+<p><label><input type=checkbox id=mem checked> as a memory (quiet, far, echoing, like in the game)</label> &nbsp; <button id=crowd>play a crowd laugh (5 voices layered)</button></p>
 <table><tr><th>cue</th>{head}</tr>{rows}</table>
 <script>
 const M={json.dumps(man)};let ctx,bufs=[];
 async function init(){{if(ctx)return;ctx=new AudioContext();bufs=await Promise.all(M.voices.map(v=>fetch(v.file).then(r=>r.arrayBuffer()).then(b=>ctx.decodeAudioData(b))));}}
-function play(v,s,d,when=0,pan=0){{const src=ctx.createBufferSource();src.buffer=bufs[v];const p=ctx.createStereoPanner();p.pan.value=pan;src.connect(p);p.connect(ctx.destination);src.start(ctx.currentTime+when,s,d);}}
+let hazeIn=null;const memOn=()=>document.getElementById('mem').checked;
+function haze(){{if(hazeIn)return hazeIn;hazeIn=ctx.createGain();const out=ctx.createGain();out.gain.value=0.5;out.connect(ctx.destination);
+ const cv=ctx.createConvolver(),n=ctx.sampleRate*3.5,ir=ctx.createBuffer(2,n,ctx.sampleRate);for(let c=0;c<2;c++){{const d=ir.getChannelData(c);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3);}}cv.buffer=ir;const rv=ctx.createGain();rv.gain.value=0.9;out.connect(cv);cv.connect(rv);rv.connect(ctx.destination);
+ const pre=ctx.createDelay(1);pre.delayTime.value=0.09;hazeIn.connect(pre);
+ const T=[[0.43,-0.7,0.13],[0.67,0.7,0.09]].map(([dt,pan,r])=>{{const d=ctx.createDelay(2);d.delayTime.value=dt;const l=ctx.createOscillator(),lg=ctx.createGain();l.frequency.value=r;lg.gain.value=0.007;l.connect(lg);lg.connect(d.delayTime);l.start();
+ const k=ctx.createBiquadFilter();k.type='lowpass';k.frequency.value=1700;const fb=ctx.createGain();fb.gain.value=0.52;const pn=ctx.createStereoPanner();pn.pan.value=pan;pre.connect(d);d.connect(k);k.connect(fb);k.connect(pn);pn.connect(out);return {{d,fb}};}});
+ T[0].fb.connect(T[1].d);T[1].fb.connect(T[0].d);hazeIn.cv=cv;return hazeIn;}}
+function play(v,s,d,when=0,pan=0){{const src=ctx.createBufferSource();src.buffer=bufs[v];const p=ctx.createStereoPanner();p.pan.value=pan;src.connect(p);
+ if(!memOn()){{p.connect(ctx.destination);src.start(ctx.currentTime+when,s,d);return;}}
+ const H=haze(),g=ctx.createGain(),t=ctx.currentTime+when;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.38,t+0.12);const hp=ctx.createBiquadFilter();hp.type='highpass';hp.frequency.value=340;const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2400;
+ p.connect(g);g.connect(hp);hp.connect(lp);lp.connect(ctx.destination);const wet=ctx.createGain();wet.gain.value=1.0;lp.connect(H.cv);const snd=ctx.createGain();snd.gain.value=1.3;lp.connect(snd);snd.connect(H);
+ if(src.detune){{const w=ctx.createOscillator(),wg=ctx.createGain();w.frequency.value=0.45;wg.gain.value=14;w.connect(wg);wg.connect(src.detune);w.start(t);w.stop(t+d+1);}}src.start(t,s,d);}}
 document.querySelectorAll('td button').forEach(b=>b.onclick=async()=>{{await init();play(+b.dataset.v,+b.dataset.s,+b.dataset.d);}});
 crowd.onclick=async()=>{{await init();const L=[...(M.cues.laugh_big||{{takes:[]}}).takes,...(M.cues.laugh||{{takes:[]}}).takes];if(!L.length)return;
 for(let i=0;i<5;i++){{const t=L[Math.floor(Math.random()*L.length)];play(i%M.voices.length,t.start,t.dur,i*0.18+Math.random()*0.2,Math.random()*1.6-0.8);}}}};
