@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture } from './world.js';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js';
 import { Voices } from './voices.js';
 import { recolor } from './models.js';
 
@@ -187,11 +187,11 @@ export function createStory(C) {
   MOTES = createMotes(scene); S.motes = MOTES;
   S.route = route;
 
-  // ---------------- the tent, on the bank behind the canoe
-  const n = launchInfo.n, side = [n[1], -n[0]];
-  let tx = launchInfo.start[0] - n[0] * 13 + side[0] * 4.5, tz = launchInfo.start[1] - n[1] * 13 + side[1] * 4.5;
+  // ---------------- the tent, up on the bank above the launch dock (v0.6.7: twice the size)
+  const n = launchInfo.n, side = CAMP.side, TS2 = 2;
+  let tx = CAMP.tent[0], tz = CAMP.tent[1];
   const ty = heightAt(tx, tz);
-  const tent = new THREE.Group(); tent.position.set(tx, ty, tz); tent.rotation.y = Math.atan2(launchInfo.start[0] - tx, launchInfo.start[1] - tz); scene.add(tent);
+  const tent = new THREE.Group(); tent.position.set(tx, ty, tz); tent.rotation.y = Math.atan2(CAMP.walkEnd[0] - tx, CAMP.walkEnd[1] - tz); tent.scale.setScalar(TS2); scene.add(tent);
   if (M.tent) { const tm = M.tent.clone(true); tm.rotation.y = Math.PI; tent.add(tm); }   // Blender tent: door faces +Y in Blender = +Z after the loader flip; our door is at +Z
   else {
     const sh = new THREE.Shape(); sh.moveTo(-1.15, 0); sh.lineTo(0, 1.25); sh.lineTo(1.15, 0); sh.closePath();
@@ -205,15 +205,17 @@ export function createStory(C) {
     const pack = new THREE.Mesh(new THREE.IcosahedronGeometry(0.28, 1), new THREE.MeshStandardMaterial({ color: 0x7a3b22, flatShading: true })); pack.scale.set(1, 1.3, 0.8); pack.position.set(-1.0, 0.3, 1.5); tent.add(pack);
   }
   tent.updateMatrixWorld(true); S.tent = tent;
-  const tentFront = new THREE.Vector3(0, 0, 1.6).applyMatrix4(tent.matrixWorld);
+  const tentFront = new THREE.Vector3(0, 0, 1.6).applyMatrix4(tent.matrixWorld);   // local units, so this scales with the tent
 
-  // clear a little campsite: no trees, reeds or litter around the tent or on the walk down to the canoe
+  // clear a little campsite: no trees around the (big) tent or on the walk down to the dock; no reeds on the dock or round the canoe
   {
-    const a = new THREE.Vector2(tx, tz), b = new THREE.Vector2(launchInfo.start[0], launchInfo.start[1]), m4 = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+    const a = new THREE.Vector2(tx, tz), b = new THREE.Vector2(CAMP.walkEnd[0], CAMP.walkEnd[1]), m4 = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
     const segD = (x, z) => { const ab = b.clone().sub(a), t = clamp(((x - a.x) * ab.x + (z - a.y) * ab.y) / ab.lengthSq(), 0, 1); return Math.hypot(x - (a.x + ab.x * t), z - (a.y + ab.y * t)); };
+    const st = launchInfo.start, inBoat = (x, z) => { const dx = x - st[0], dz = z - st[1], al = dx * n[0] + dz * n[1], ac = dx * side[0] + dz * side[1]; return Math.abs(al) < 3.6 && Math.abs(ac) < 1.3; };
+    const kill = { tree: (x, z) => Math.hypot(x - tx, z - tz) < 10 || segD(x, z) < 3, reed: (x, z) => onDock(x, z, 0.5) !== null || inBoat(x, z) || segD(x, z) < 1.2 };
     scene.traverse((o) => {
-      if (!o.isInstancedMesh || o.count > 200000 || o.userData.tag !== 'tree') return; let touched = false;
-      for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); pos.setFromMatrixPosition(m4); if (Math.hypot(pos.x - tx, pos.z - tz) < 7 || segD(pos.x, pos.z) < 3) { m4.decompose(pos, q, sc); m4.compose(pos, q, sc.set(0, 0, 0)); o.setMatrixAt(i, m4); touched = true; } }
+      const f = o.isInstancedMesh && o.count <= 200000 && kill[o.userData.tag]; if (!f) return; let touched = false;
+      for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); pos.setFromMatrixPosition(m4); if (f(pos.x, pos.z)) { m4.decompose(pos, q, sc); m4.compose(pos, q, sc.set(0, 0, 0)); o.setMatrixAt(i, m4); touched = true; } }
       if (touched) o.instanceMatrix.needsUpdate = true;
     });
   }
@@ -250,28 +252,40 @@ export function createStory(C) {
   const I = { t: 0, phase: 0, steps: 0, cam: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, done: false }; S.I = I;
   const seat = () => new THREE.Vector3(launchInfo.start[0] - Math.sin(launchInfo.psi) * 0.6, 0, launchInfo.start[1] - Math.cos(launchInfo.psi) * 0.6);
   S.startIntro = () => {
-    I.t = 0; I.done = false; S.ended = false; canoe.person.visible = false; canoe.paddle.visible = false;
+    I.t = 0; I.done = false; I.steps = 0; I.sat = false; I.yawW = undefined; S.ended = false; canoe.person.visible = false; canoe.paddle.visible = false;
     $('blackout').style.transition = 'none'; $('blackout').style.opacity = 1;
     voices.unzip();
     setTimeout(() => { $('blackout').style.transition = 'opacity 2.6s ease'; $('blackout').style.opacity = 0; }, 1700);
   };
-  // timeline (s): 0-1.7 black + unzip | 1.7-4.2 crawl out & stand | 4.2-6.6 turn back to the tent | 6.6-8.4 hold | 8.4-10.6 turn to the water | walk | sit | hand off
-  const toCanoe = () => { const s = seat(); return Math.atan2(s.x - tentFront.x, s.z - tentFront.z); };
+  // timeline (s): 0-1.7 black + unzip | 1.7-4.2 crawl out & stand | 4.2-6.6 turn back to the tent | 6.6-8.4 hold | 8.4-10.6 turn to the water
+  //   | walk down to the dock and out along it | step down into the canoe | hand off
+  const D = CAMP.dock, toDock = () => Math.atan2(D.root[0] - tentFront.x, D.root[1] - tentFront.z);
+  const floorY = (x, z) => { const d = onDock(x, z, 0.05); return d !== null ? d : Math.max(heightAt(x, z), 0.1); };
+  const lookAhead = (pts, cum, d) => { d = Math.min(d, cum[cum.length - 1]); let i = 1; while (i < cum.length - 1 && cum[i] < d) i++; const k = (d - cum[i - 1]) / (cum[i] - cum[i - 1] || 1); return pts[i - 1].clone().lerp(pts[i], k); };
   S.introCamera = (dt) => {
-    I.t += dt; const t = I.t, s = seat(), face = toCanoe();
-    const out = tentFront.clone().add(new THREE.Vector3(Math.sin(face) * 2.4, 0, Math.cos(face) * 2.4));
-    const walkLen = Math.hypot(s.x - out.x, s.z - out.z), walkT = walkLen / 1.15, tWalk0 = 10.6, tWalk1 = tWalk0 + walkT, tSit1 = tWalk1 + 2.2;
-    let pos = new THREE.Vector3(), yaw = face, pitch = -0.08, eye = 1.62, bob = 0;
+    I.t += dt; const t = I.t, s = seat(), face = toDock();
+    const out = tentFront.clone().add(new THREE.Vector3(Math.sin(face) * 2.4 * TS2 / 1.6, 0, Math.cos(face) * 2.4 * TS2 / 1.6));
+    // walk: out of camp -> foot of the dock -> along the deck to beside the seat
+    const sa = (s.x - D.root[0]) * n[0] + (s.z - D.root[1]) * n[1];
+    const foot = new THREE.Vector3(D.root[0] - n[0] * 0.6, 0, D.root[1] - n[1] * 0.6), on = new THREE.Vector3(D.root[0] + n[0] * 0.6, 0, D.root[1] + n[1] * 0.6);
+    const edge = new THREE.Vector3(D.root[0] + n[0] * sa - side[0] * 0.55, 0, D.root[1] + n[1] * sa - side[1] * 0.55);
+    const pts = [out, foot, on, edge], cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
+    const walkLen = cum[cum.length - 1], walkT = walkLen / 1.3, tWalk0 = 10.6, tWalk1 = tWalk0 + walkT, tSit1 = tWalk1 + 2.4;
+    let pos = new THREE.Vector3(), yaw = face, pitch = -0.08, eye = 1.62, bob = 0, absY = null;
     if (t < 4.2) { const k = ease(clamp((t - 1.7) / 2.5, 0, 1)); pos.lerpVectors(tentFront.clone().add(new THREE.Vector3(-Math.sin(face) * 0.6, 0, -Math.cos(face) * 0.6)), out, k); eye = lerp(0.55, 1.62, ease(clamp((t - 2.6) / 1.6, 0, 1))); pitch = lerp(-0.25, -0.06, k); }
     else if (t < tWalk0) { pos.copy(out); const back = face + Math.PI * 0.94;
       yaw = t < 6.6 ? lerp(face, back, ease((t - 4.2) / 2.4)) : t < 8.4 ? back : lerp(back, face + Math.PI * 2, ease((t - 8.4) / 2.2)); pitch = t < 8.4 ? -0.16 : -0.07; }
-    else if (t < tWalk1) { const k = (t - tWalk0) / walkT; pos.lerpVectors(out, s, k); bob = Math.abs(Math.sin(k * walkLen * 1.6)) * 0.05; pitch = -0.1 - 0.12 * k;
-      const stepN = Math.floor(k * walkLen / 0.72); if (stepN > I.steps) { I.steps = stepN; voices.step(stepN % 2 ? 0.25 : -0.25, 0.9); } }
-    else if (t < tSit1) { const k = ease((t - tWalk1) / 2.2); pos.copy(s); eye = lerp(1.62, 1.05, k); yaw = lerp(face, launchInfo.psi, k); pitch = lerp(-0.22, -0.05, k); if (!I.sat && k > 0.5) { I.sat = true; audio.knock(0.22); audio.hullSlap && audio.hullSlap(0.6); } }
-    else { pos.copy(s); eye = 1.05; yaw = launchInfo.psi; I.done = true; }
-    const gy = Math.max(heightAt(pos.x, pos.z), 0.1);
-    camera.position.set(pos.x, gy + eye + bob, pos.z);
-    camera.lookAt(pos.x + Math.sin(yaw) * Math.cos(pitch) * 10, gy + eye + bob + Math.sin(pitch) * 10, pos.z + Math.cos(yaw) * Math.cos(pitch) * 10);
+    else if (t < tWalk1) { const d = (t - tWalk0) / walkT * walkLen; pos.copy(lookAhead(pts, cum, d)); const ah = lookAhead(pts, cum, d + 2.2); if (ah.distanceTo(pos) > 0.05) yaw = Math.atan2(ah.x - pos.x, ah.z - pos.z);
+      bob = Math.abs(Math.sin(d * 1.6)) * 0.05; pitch = -0.1 - 0.1 * clamp(d / walkLen, 0, 1);
+      if (I.yawW !== undefined) { let dy = yaw - I.yawW; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); yaw = I.yawW + dy * Math.min(1, dt * 4); } I.yawW = yaw;
+      const stepN = Math.floor(d / 0.72); if (stepN > I.steps) { I.steps = stepN; const deck = onDock(pos.x, pos.z, 0.05) !== null; if (deck) { voices.thunk({ x: pos.x, y: D.deck, z: pos.z }, 0.35); voices.step(stepN % 2 ? 0.2 : -0.2, 0.35); } else voices.step(stepN % 2 ? 0.25 : -0.25, 0.9); } }
+    else if (t < tSit1) { const k = ease((t - tWalk1) / 2.4), y0 = I.yawW ?? face; let dy = launchInfo.psi - y0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      pos.lerpVectors(edge, s, ease(clamp((t - tWalk1) / 1.4, 0, 1))); absY = lerp(D.deck + 1.62, 0.1 + 1.05, k) - Math.sin(clamp((t - tWalk1) / 1.4, 0, 1) * Math.PI) * 0.12;
+      yaw = y0 + dy * k; pitch = lerp(-0.35, -0.05, k); if (!I.sat && k > 0.5) { I.sat = true; audio.knock(0.22); audio.hullSlap && audio.hullSlap(0.6); ripples.spawn(s.x, s.z, 3, 1.8, 0.35, 0.3); } }
+    else { pos.copy(s); eye = 1.05; yaw = launchInfo.psi; absY = 0.1 + 1.05; I.done = true; }
+    const y = absY !== null ? absY : floorY(pos.x, pos.z) + eye + bob;
+    camera.position.set(pos.x, y, pos.z);
+    camera.lookAt(pos.x + Math.sin(yaw) * Math.cos(pitch) * 10, y + Math.sin(pitch) * 10, pos.z + Math.cos(yaw) * Math.cos(pitch) * 10);
     return I.done;
   };
   S.endIntro = () => { canoe.person.visible = true; canoe.paddle.visible = true; };

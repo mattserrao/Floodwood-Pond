@@ -34,7 +34,7 @@ export function buildCamp(scene, treePositions = []) {
   for (let i = 0; i < 2600; i++) {
     const a = rnd() * 6.283, r = Math.sqrt(rnd()) * R, x = T[0] + Math.cos(a) * r, z = T[1] + Math.sin(a) * r;
     if (!inCamp(x, z)) continue;
-    const path = campPath(x, z), pad = 1 - sstep(1.6, 3.0, near(x, z));
+    const path = campPath(x, z), pad = 1 - sstep(3.0, 4.8, near(x, z));
     if (rnd() < Math.max(path, pad) * 0.92) continue;                        // worn bare where people walk and sleep
     const woods = sstep(0.4, 0.7, fbm(x * 0.25 + 4, z * 0.25)) * 0.6 + 0.4;  // clumps under the trees
     if (rnd() > woods) continue;
@@ -49,7 +49,7 @@ export function buildCamp(scene, treePositions = []) {
   instanced(scene, leafGeo, leafMat, leaves); instanced(scene, needleGeo, leafMat, needles); instanced(scene, coneGeo, flat(0xffffff), cones); instanced(scene, twigGeo, flat(0xffffff), twigs);
 
   // ---- fire ring: blackened stones, ash, a half-burnt log, between the tent and the water ----
-  const fire = [T[0] + n[0] * 5.5 - side[0] * 3.2, T[1] + n[1] * 5.5 - side[1] * 3.2]; const fy = onGround(...fire);
+  const fire = [T[0] + n[0] * 7.2 - side[0] * 3.4, T[1] + n[1] * 7.2 - side[1] * 3.4]; const fy = onGround(...fire);
   const stones = [];
   for (let i = 0; i < 11; i++) { const a = (i / 11) * 6.283 + rnd() * 0.3, r = 0.62 + rnd() * 0.08, s = 0.13 + rnd() * 0.1, g = 0.2 + rnd() * 0.12, k = rnd() < 0.5 ? 0.45 : 1; stones.push({ pos: V(fire[0] + Math.cos(a) * r, fy + s * 0.35, fire[1] + Math.sin(a) * r), rot: E(rnd(), rnd() * 6, rnd() * 0.5), scl: V(s * (1 + rnd() * 0.5), s * 0.75, s * (1 + rnd() * 0.4)), col: [g * k, g * k * 0.97, g * k * 0.92] }); }
   instanced(scene, new THREE.DodecahedronGeometry(1, 0), flat(0xffffff, { roughness: 0.9 }), stones);

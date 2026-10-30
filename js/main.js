@@ -60,9 +60,15 @@ function build() {
   const L = MAP.launch; pondSD(L[0], L[1]); const qx = NQ.x, qz = NQ.z;
   const e = 4, gx = pondSD(qx + e, qz) - pondSD(qx - e, qz), gz = pondSD(qx, qz + e) - pondSD(qx, qz - e), gl = Math.hypot(gx, gz) || 1;
   const nx = gx / gl, nz = gz / gl;
-  let far = 12; while (pondSD(qx + nx * far, qz + nz * far) < 7 && far < 40) far += 4;
-  Object.assign(launchInfo, { q: [qx, qz], n: [nx, nz], start: [qx - nx * 9, qz - nz * 9], end: [qx + nx * far, qz + nz * far], psi: Math.atan2(nx, nz) });
-  buildDock(scene, [qx - nx * 2.5, qz - nz * 2.5], nx, nz);
+  // v0.6.7: the canoe waits afloat beside the launch dock (CAMP.start) and pushes off from there
+  const st = CAMP.start, sd = CAMP.side; let far = 16; while (pondSD(st[0] + nx * far, st[1] + nz * far) < 7 && far < 44) far += 4;
+  Object.assign(launchInfo, { q: [qx, qz], n: [nx, nz], start: st.slice(), end: [st[0] + nx * far - sd[0] * 1.2, st[1] + nz * far - sd[1] * 1.2], psi: Math.atan2(nx, nz) });
+  world.dock = buildDock(scene, world.models.launchDock);
+  // a bow line from the dock cleat to the canoe, cast off when you push away
+  { const D = CAMP.dock, cl = new THREE.Vector3(-0.74, 0.07, 7.6).applyMatrix4(world.dock.updateMatrixWorld(true) || world.dock.matrixWorld);
+    const bow = new THREE.Vector3(st[0] + nx * 2.35, 0.42, st[1] + nz * 2.35), pts = [];
+    for (let i = 0; i <= 12; i++) { const k = i / 12, v = cl.clone().lerp(bow, k); v.y -= Math.sin(k * Math.PI) * 0.22; pts.push(v); }
+    world.bowLine = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.012, 4), new THREE.MeshStandardMaterial({ color: 0x8a7a58, roughness: 1 })); scene.add(world.bowLine); void D; }
   canoe = createCanoe(world.models); scene.add(canoe.root);
   // the canoe and paddler read as a silhouette against the water and sky (lantern still glows)
   canoe.sil = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.DoubleSide });
@@ -96,14 +102,14 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.6.6';
+const VERSION = '0.6.7';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
 
 function resetPlayer() {
   P.x = launchInfo.start[0]; P.z = launchInfo.start[1]; P.psi = launchInfo.psi; P.vx = P.vz = P.w = 0;
-  cam.heading = P.psi; cam.yaw = 0.9;
+  cam.heading = P.psi; cam.yaw = 0.9; if (world.bowLine) world.bowLine.visible = true;
 }
 
 // ------------------------------------------------------------------ input
@@ -667,9 +673,11 @@ function frame(now) {
   if (G.mode === 'launch') {
     G.launchT += dt; const k = clamp(G.launchT / 6.5, 0, 1), e = k * k * (3 - 2 * k);
     P.x = lerp(launchInfo.start[0], launchInfo.end[0], e); P.z = lerp(launchInfo.start[1], launchInfo.end[1], e); P.psi = launchInfo.psi;
+    { const push = sstep(0, 1.2, G.launchT) * 0.5; P.x -= CAMP.side[0] * push * (1 - e); P.z -= CAMP.side[1] * push * (1 - e); }   // a shove off the dock before the glide
+    if (world.bowLine) world.bowLine.visible = G.launchT < 0.4;
     P.vx = (launchInfo.end[0] - launchInfo.start[0]) * 6 * k * (1 - k) / 6.5; P.vz = (launchInfo.end[1] - launchInfo.start[1]) * 6 * k * (1 - k) / 6.5;
     P.act = lerp(P.act, 0, Math.min(1, dt * 3));
-    if (G.launchT > 2.0 && !G.splashed) { G.splashed = true; ripples.spawn(launchInfo.q[0], launchInfo.q[1], 6, 3.4, 0.6, 0.5); audio.plop(0); audio.splash(0, 1.2); }
+    if (G.launchT > 0.3 && !G.splashed) { G.splashed = true; ripples.spawn(P.x, P.z, 4, 2.4, 0.4, 0.4); audio.plop(0); audio.splash(0, 0.6); }
     if (k >= 1) { G.mode = 'play'; document.body.classList.add('play'); setTimeout(() => $('hint').classList.add('fade'), 14000); }
     info.speed = Math.hypot(P.vx, P.vz);
   } else if (G.mode === 'play') { info = stepCanoe(dt, !G.transport); if (story) { story.update(dt, G.time); updateCreekFog(dt); } else updateCreek(dt); }
@@ -722,7 +730,7 @@ $('endcard').addEventListener('click', () => location.reload());
 $('title').addEventListener('touchend', onTitleGesture, { passive: false });
 addEventListener('keydown', (e) => { if ((!started || G.menu) && !['escape', 'm', 'p'].includes(e.key.toLowerCase())) onTitleGesture(e); });
 
-loadModels(['tent', 'paddler', 'kayaker', 'boyStand', 'boyLeap', 'kayak1', 'kayak2', 'canoe', 'paddleDouble', 'paddleSingle', 'picnicTable', 'cantaloupe', 'rowboat', 'dock']).then((m) => { world.models = m; boot(); });
+loadModels(['tent', 'paddler', 'kayaker', 'boyStand', 'boyLeap', 'kayak1', 'kayak2', 'canoe', 'paddleDouble', 'paddleSingle', 'picnicTable', 'cantaloupe', 'rowboat', 'dock', 'launchDock']).then((m) => { world.models = m; boot(); });
 function boot() {
   try {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap(); buildTitleShots();

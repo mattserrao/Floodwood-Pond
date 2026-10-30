@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js';
 import { WIND, GUST_GLSL } from './wind.js';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -152,15 +153,21 @@ export const CAMP = (() => {
   const L = MAP.launch; const d = nearest(pondSegs, L[0], L[1]); const qx = NQ.x, qz = NQ.z;
   const e = 4, gx = pondSD(qx + e, qz) - pondSD(qx - e, qz), gz = pondSD(qx, qz + e) - pondSD(qx, qz - e), gl = Math.hypot(gx, gz) || 1;
   const nx = gx / gl, nz = gz / gl, side = [nz, -nx];
-  const start = [qx - nx * 9, qz - nz * 9];                                   // where the canoe waits (matches story/main)
-  const tent = [start[0] - nx * 13 + side[0] * 4.5, start[1] - nz * 13 + side[1] * 4.5];
+  // v0.6.7: a 9 m launch dock runs from the bank out over the water; the canoe waits afloat along its far side
+  const D0 = -2.6, DL = 9, DECK = 0.55, CB = 1.55, CS = 3.8;                   // dock start (m along n from the shoreline), length, deck height, canoe offset, canoe station
+  const dock = { root: [qx + nx * D0, qz + nz * D0], end: [qx + nx * (D0 + DL), qz + nz * (D0 + DL)], len: DL, half: 0.9, deck: DECK };
+  const start = [qx + nx * CS - side[0] * CB, qz + nz * CS - side[1] * CB];  // where the canoe waits (matches story/main)
+  const tent = [qx - nx * 22 + side[0] * 4.5, qz - nz * 22 + side[1] * 4.5];  // same spot as before, up on the bank
   const R = 26;
-  return { tent, start, n: [nx, nz], side, R, box: { x0: tent[0] - R - 6, x1: tent[0] + R + 6, z0: tent[1] - R - 6, z1: tent[1] + R + 6 } };
+  return { q: [qx, qz], tent, start, dock, walkEnd: dock.root, n: [nx, nz], side, R, box: { x0: tent[0] - R - 6, x1: tent[0] + R + 6, z0: tent[1] - R - 6, z1: tent[1] + R + 6 } };
 })();
+/** deck height if (x,z) is on the launch dock (with a little margin), else null */
+export function onDock(x, z, m = 0) { const D = CAMP.dock, n = CAMP.n, dx = x - D.root[0], dz = z - D.root[1], a = dx * n[0] + dz * n[1], b = dx * CAMP.side[0] + dz * CAMP.side[1];
+  return a > -m && a < D.len + m && Math.abs(b) < D.half + m ? D.deck : null; }
 export const inCampBox = (x, z) => x > CAMP.box.x0 && x < CAMP.box.x1 && z > CAMP.box.z0 && z < CAMP.box.z1;
 /** 0..1 how much (x,z) is on the worn path from the tent door to the canoe */
 export function campPath(x, z) {
-  const a = CAMP.tent, b = CAMP.start, abx = b[0] - a[0], abz = b[1] - a[1], l2 = abx * abx + abz * abz;
+  const a = CAMP.tent, b = CAMP.walkEnd, abx = b[0] - a[0], abz = b[1] - a[1], l2 = abx * abx + abz * abz;
   const t = clamp(((x - a[0]) * abx + (z - a[1]) * abz) / l2, 0, 1), px = a[0] + abx * t, pz = a[1] + abz * t;
   const wob = 0.6 * Math.sin(t * 9) ; const d = Math.hypot(x - px, z - pz) + wob * 0.3;
   return 1 - sstep(0.7, 1.9, d);
@@ -633,11 +640,20 @@ export function glowTexture() {
   x.fillStyle = g; x.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); return t;
 }
 
-export function buildDock(scene, p, dirX, dirZ) {
-  const g = new THREE.Group(), wood = new THREE.MeshStandardMaterial({ color: 0x6b5236, flatShading: true, roughness: 1 });
-  for (let i = 0; i < 6; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 0.45), wood); b.position.set(0, 0.12, -1.2 + i * 0.52); g.add(b); }
-  for (const s of [-1, 1]) { const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 3.1), wood); rail.position.set(s * 1.1, 0.04, 0.2); g.add(rail); }
-  g.position.set(p[0], Math.max(heightAt(p[0], p[1]), 0.1), p[1]); g.rotation.y = Math.atan2(dirX, dirZ); scene.add(g);
+/** v0.6.7: the launch dock (Blender model, merged per material so it costs a handful of draw calls); +Z of the model runs out over the water */
+export function buildDock(scene, model) {
+  const D = CAMP.dock, g = new THREE.Group();
+  g.position.set(D.root[0], D.deck, D.root[1]); g.rotation.y = Math.atan2(CAMP.n[0], CAMP.n[1]);
+  if (model) {
+    model.updateMatrixWorld(true); const by = new Map();
+    model.traverse((o) => { if (!o.isMesh) return; const k = o.material.name || o.material.uuid; if (!by.has(k)) by.set(k, { m: o.material, gs: [] }); const ge = o.geometry.clone(); ge.applyMatrix4(o.matrixWorld); for (const a of Object.keys(ge.attributes)) if (a !== 'position' && a !== 'normal') ge.deleteAttribute(a); by.get(k).gs.push(ge.index ? ge.toNonIndexed() : ge); });
+    for (const { m, gs } of by.values()) { const mesh = new THREE.Mesh(mergeGeometries(gs), m); m.color.multiplyScalar(0.8); g.add(mesh); }
+  } else {
+    const wood = new THREE.MeshStandardMaterial({ color: 0x6b5236, flatShading: true, roughness: 1 });
+    for (let z = 0.1; z < D.len; z += 0.2) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.045, 0.17), wood); b.position.set(0, -0.02, z); g.add(b); }
+    for (const z of [0.45, 3.3, 6.15, 8.85]) for (const x of [-0.98, 0.98]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 3.6, 7), wood); p.position.set(x, -1.6, z); g.add(p); }
+  }
+  scene.add(g); return g;
 }
 
 // ---------- island vegetation, boulders and the sword tree ----------
