@@ -348,11 +348,7 @@ export class AmbientAudio {
     if (!this.ctx) return; const t0 = this.ctx.currentTime, out = this.at(pos, { wet: 0.4 });
     for (let i = 0; i < 10 * k + 4; i++) this._noise(out, t0 + i * rand(0.07, 0.11), 0.06, 0.05 * k, rand(600, 900), 0.8, 'bandpass', this.pink);
   }
-  heron(pos) { // a hoarse, prehistoric croak
-    if (!this.ctx) return; const t = this.ctx.currentTime, out = this.at(pos, { echo: 0.5 });
-    const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = 1.6; bp.connect(out);
-    this._tone(bp, t, 170, 120, 0.55, 0.11, 'sawtooth', 25, 32); this._tone(bp, t + 0.7, 160, 115, 0.4, 0.07, 'sawtooth', 25, 30);
-  }
+  heron() { /* v0.7.2: the croak read as a bad frog - the heron now just lifts off on its wingbeats */ }
   eagle(pos) { // thin, high chittering
     if (!this.ctx) return; const t0 = this.ctx.currentTime, out = this.at(pos, { ref: 60, roll: 0.5, echo: 0.4 });
     for (let i = 0; i < 6; i++) { const f = rand(2600, 3200); this._tone(out, t0 + i * 0.12, f, f * 1.12, 0.09, 0.02); }
@@ -423,8 +419,8 @@ export class AmbientAudio {
     // Loon
     if (now > this.t.loon) {
       const lvl = s.dawn * 1 + s.dusk * 1 + s.night * 0.8 + s.day * 0.2;
-      if (Math.random() < lvl) this.loon(now + 0.05, this.loonPos ? this.loonPos() : null);
-      this.t.loon = now + rand(22, 55);
+      if (Math.random() < lvl * 0.55) this.loon(now + 0.05, this.loonPos ? this.loonPos() : null);
+      this.t.loon = now + rand(75, 160);   // v0.7.2: rarer - a loon now and then, far off
     }
     // Owl
     if (now > this.t.owl) {
@@ -507,24 +503,24 @@ export class AmbientAudio {
     }
   }
 
+  /** v0.7.2: a common loon's wail - a slow, breathy rise to a long held note, sometimes breaking up to a second higher
+   *  note, then falling away; distant and drowned in the pond's echo (no warbling tremolo, no bright harmonics) */
   loon(t, pos) {
-    const ctx = this.ctx, pan = rand(-0.8, 0.8);
-    let out;
-    if (pos && this.listenerPos) out = this.at(pos, { ref: 70, roll: 0.55, wet: 1.4, echo: 1.0 });
-    else { out = this.panner(pan); const dry = ctx.createGain(); dry.gain.value = 0.5; out.connect(dry); dry.connect(this.natureBus);
-      const wet = ctx.createGain(); wet.gain.value = 1.4; out.connect(wet); wet.connect(this.send); }
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2800; lp.connect(out);
+    const ctx = this.ctx, out = pos && this.listenerPos ? this.at(pos, { ref: 90, roll: 0.5, wet: 1.8, echo: 1.2 }) : this.at(null, { wet: 1.6, pan: rand(-0.8, 0.8) });
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.connect(out);
     const g = ctx.createGain(); g.connect(lp);
-    const tremolo = Math.random() < 0.4;
-    const dur = tremolo ? 1.9 : 2.0;
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.1, t + 0.2); g.gain.setValueAtTime(0.1, t + dur - 0.6); g.gain.linearRampToValueAtTime(0, t + dur);
-    [[1, 1], [2, 0.32], [3, 0.12]].forEach(([m, a]) => {
-      const o = this.osc('sine', 600 * m), og = ctx.createGain(); og.gain.value = a;
-      if (tremolo) { for (let i = 0; i < 16; i++) o.frequency.setValueAtTime((i % 2 ? 980 : 720) * m, t + i * 0.1); }
-      else { o.frequency.setValueAtTime(480 * m, t); o.frequency.exponentialRampToValueAtTime(900 * m, t + 0.5); o.frequency.linearRampToValueAtTime(800 * m, t + dur); }
-      const l = this.osc('sine', 6), lg = ctx.createGain(); lg.gain.value = 18 * m; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + dur + 0.1);
+    const two = Math.random() < 0.45, f0 = rand(560, 640), L1 = rand(2.2, 2.8), L2 = two ? rand(1.6, 2.2) : 0, dur = L1 + L2 + 0.6;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.045, t + 0.7); g.gain.setValueAtTime(0.045, t + dur - 1.0); g.gain.linearRampToValueAtTime(0, t + dur);
+    [[1, 1], [2, 0.12]].forEach(([m, a]) => {
+      const o = this.osc('sine', f0 * m), og = ctx.createGain(); og.gain.value = a;
+      o.frequency.setValueAtTime(f0 * m, t); o.frequency.exponentialRampToValueAtTime(f0 * 1.45 * m, t + 0.9);               // the slow swoop up
+      if (two) { o.frequency.setValueAtTime(f0 * 1.45 * m, t + L1); o.frequency.exponentialRampToValueAtTime(f0 * 1.9 * m, t + L1 + 0.35); o.frequency.setValueAtTime(f0 * 1.9 * m, t + L1 + L2 - 0.2); }
+      o.frequency.exponentialRampToValueAtTime(f0 * 1.25 * m, t + dur);
+      const l = this.osc('sine', rand(3.5, 4.5)), lg = ctx.createGain(); lg.gain.value = 5 * m; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + dur + 0.1);   // a faint, slow waver
       o.connect(og); og.connect(g); o.start(t); o.stop(t + dur + 0.1);
     });
+    const n = ctx.createBufferSource(); n.buffer = this.pink; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f0 * 1.4; bp.Q.value = 3;   // breath
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.012, t + 0.8); ng.gain.linearRampToValueAtTime(0, t + dur); n.connect(bp); bp.connect(ng); ng.connect(lp); n.start(t, Math.random() * 2, dur + 0.1);
   }
 
   owl(t, pos) {

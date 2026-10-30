@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.7.1';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.7.1';
-import { Voices } from './voices.js?v=0.7.1';
-import { recolor } from './models.js?v=0.7.1';
+import { MAP } from './mapdata.js?v=0.7.2';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.7.2';
+import { Voices } from './voices.js?v=0.7.2';
+import { recolor } from './models.js?v=0.7.2';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};
@@ -87,7 +87,8 @@ function fadeGhost(g, o, t) {
   const prev = g.userData.o || 0; if (MOTES && o < prev - 1e-4 && prev > 0.02) MOTES.dissolve(g, (prev - o) * 900);   // fading out: it crumbles into drifting light
   g.userData.o = o; g.visible = o > 0.004; g.userData.mats.forEach((m, i) => { m.opacity = o * m.userData.k * (0.84 + 0.16 * Math.sin(t * 2.3 + i * 1.7)); }); }
 function person(g, m, kind = 'kayaker') {
-  const src = M[kind]; if (src) { const w = new THREE.Group(); w.add(recolor(src.clone(true), m)); return w; }   // wrapped: callers may rotate it freely without undoing the loader's turn-round
+  const src = M[kind]; if (src) { const w = new THREE.Group(), fig = recolor(src.clone(true), m); w.add(fig); w.userData.uarms = []; w.userData.arms = [];   // wrapped: callers may rotate it freely without undoing the loader's turn-round
+    fig.traverse((o) => { if (o.isMesh && /_uarm/i.test(o.name)) w.userData.uarms.push(o); if (o.isMesh && /_(u|l)arm/i.test(o.name)) w.userData.arms.push(o); }); return w; }
   const p = new THREE.Group();
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.32, 3, 8), m); torso.position.y = 0.48; p.add(torso);
   const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 1), m); head.position.y = 0.88; p.add(head);
@@ -106,7 +107,7 @@ function kayak(tandem) {
     if (M.paddleDouble) { const pd = recolor(M.paddleDouble.clone(true), body); pd.rotation.z = Math.PI / 2; pd.position.x = 1.1; pad.add(pd); }   // shaft 0..2.2 along Y -> -2.2..0 along X; centre it
     else { const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 2.2, 5), body); shaft.rotation.z = Math.PI / 2; pad.add(shaft);
       [-1, 1].forEach((s) => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.02), body); b.position.x = s * 1.1; b.rotation.x = s * 0.6; pad.add(b); }); }
-    g.userData.paddles.push({ pad, ph: i * 0.7 });
+    const ent = { pad, ph: i * 0.7 }; rigArms(g, body, pp, ent, [[-0.36, 0, 0], [0.36, 0, 0]]); g.userData.paddles.push(ent);
   });
   g.userData.roll = roll; return g;
 }
@@ -123,7 +124,7 @@ function ghostCanoe(n = 2) {
     if (M.paddleSingle) { const pd = recolor(M.paddleSingle.clone(true), body); pd.position.y = 0.33 - 1.51; pad.add(pd); }   // grip at the hands, blade hanging down
     else { const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.4, 5), body); shaft.position.y = -0.4; pad.add(shaft);
       const b = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.02), body); b.position.y = -1.15; pad.add(b); }
-    g.userData.paddles.push({ pad, ph: i * 0.5, single: true, side: i ? -1 : 1 });
+    const ent = { pad, ph: i * 0.5, single: true, side: i ? -1 : 1 }; rigArms(g, body, pp, ent, [[0, 0.02, 0], [0, -0.6, 0]]); g.userData.paddles.push(ent);
   });
   g.userData.roll = roll; return g;
 }
@@ -137,11 +138,30 @@ function picnicTable(g) {
   });
   return t;
 }
+/** v0.7.2: give a ghost paddler real arms that follow the paddle - the model's baked arms are hidden and two simple
+ *  arm segments run from each shoulder to a grip on the shaft every frame */
+const _ARM = new THREE.CylinderGeometry(0.05, 0.042, 1, 5), _V1 = new THREE.Vector3(), _V2 = new THREE.Vector3(), _V3 = new THREE.Vector3(), _UP = new THREE.Vector3(0, 1, 0), _Q = new THREE.Quaternion();
+function rigArms(g, mat, who, entry, hands) {
+  if (!who.userData.uarms || who.userData.uarms.length < 2) return;
+  who.userData.arms.forEach((o) => { o.visible = false; });
+  entry.rig = { who, hands: hands.map((h) => new THREE.Vector3(...h)), arms: [0, 1].map(() => { const a = new THREE.Mesh(_ARM, mat); a.renderOrder = 4; g.add(a); return a; }) };
+  updateArms(g, entry);
+}
+function updateArms(g, p) {
+  const r = p.rig; if (!r) return; g.updateMatrixWorld(true);
+  const sh = r.who.userData.uarms.map((o) => o.getWorldPosition(new THREE.Vector3()).add(_V3.set(0, 0.11, 0)));
+  const hd = r.hands.map((h) => p.pad.localToWorld(h.clone()));
+  const swap = sh[0].distanceTo(hd[0]) + sh[1].distanceTo(hd[1]) > sh[0].distanceTo(hd[1]) + sh[1].distanceTo(hd[0]);
+  r.arms.forEach((a, i) => { _V1.copy(sh[i]); _V2.copy(hd[swap ? 1 - i : i]); g.worldToLocal(_V1); g.worldToLocal(_V2);
+    const d = _V2.clone().sub(_V1), L = d.length(); a.position.copy(_V1).addScaledVector(d, 0.5); a.quaternion.copy(_Q.setFromUnitVectors(_UP, d.divideScalar(L || 1))); a.scale.set(1, L, 1); });
+}
 function animatePaddles(g, t, rate = 1) {
   (g.userData.paddles || []).forEach((p) => {
     const ph = t * 2.4 * rate + p.ph;
     if (p.single) { p.pad.rotation.set(-0.05 - 0.6 * Math.cos(ph), 0, p.side * (0.3 + 0.4 * Math.max(0, -Math.sin(ph)))); }
     else { p.pad.rotation.z = Math.sin(ph) * 0.55; p.pad.rotation.y = Math.cos(ph) * 0.35; }
+    if (p.rig) p.rig.who.rotation.y = (p.single ? p.side * 0.15 : 0) + Math.sin(ph) * (p.single ? 0.12 : 0.22);   // the torso turns into each stroke
+    updateArms(g, p);
   });
 }
 
@@ -718,7 +738,9 @@ export function createStory(C) {
     OBJ.t += dt;
     if (OBJ.stage === 0 && S.playT > 1.2) { OBJ.stage = 1; say('paddle to the island'); }
     const dIsl = Math.hypot(P.x - route.BIG.c[0], P.z - route.BIG.c[1]);
-    if (OBJ.stage === 1 && (dIsl < bigR + 70 || S.sNow > route.sVia)) { OBJ.stage = 2; OBJ.reachedT = S.playT; if (S.nightT0 === undefined) { S.nightT0 = S.playT; S.sReach = S.sNow; } }   // v0.7.0: night falls at Big Island
+    // v0.7.2: 'reached' means actually alongside the island (within ~45 m of its shore), not just inside its bounding circle
+    let dShore = 1e9; if (OBJ.stage === 1) for (const q of route.BIG.r) { const d = (q[0] - P.x) ** 2 + (q[1] - P.z) ** 2; if (d < dShore) dShore = d; } dShore = Math.sqrt(dShore);
+    if (OBJ.stage === 1 && ((dShore < 90 && S.sNow > route.sVia * 0.6) || S.sNow > route.sVia)) { OBJ.stage = 2; OBJ.reachedT = S.playT; if (S.nightT0 === undefined) { S.nightT0 = S.playT; S.sReach = S.sNow; } }   // v0.7.0: night falls at Big Island
     if (OBJ.stage === 2 && S.playT > OBJ.reachedT + 22) { OBJ.stage = 3; say('paddle to the creek'); }
     const want = OBJ.stage === 1 ? 0.22 * sstep(bigR + 40, bigR + 260, dIsl) : 0;
     glow.material.opacity = lerp(glow.material.opacity, want * (0.85 + 0.15 * Math.sin(T * 0.8)), Math.min(1, dt * 0.8));
@@ -738,7 +760,7 @@ export function createStory(C) {
     let dx = tgt.x - P.x, dz = tgt.z - P.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     // the pull: a slow current along the journey, and a gentle weathervane toward it when you rest the paddle
     const inCreek = creekSD(P.x, P.z) > -2, creekS = CQ.s;
-    const pullA = 0.05 * sstep(4, 20, S.playT) * (inCreek ? 1.6 : 1);
+    const pullA = 0.05 * sstep(4, 20, S.playT) * (inCreek ? 1.6 : 1) * (1 + 1.4 * NIGHT.dark);   // v0.7.2: the darkness pushes you on
     P.vx += dx * pullA * dt; P.vz += dz * pullA * dt;
     P.w += angDiff(Math.atan2(dx, dz), P.psi) * 0.06 * (1 - P.act) * dt;
     // mist crowds in behind
@@ -812,7 +834,7 @@ export function createStory(C) {
     if (evName) { const e = S.events.find((x) => x.name === evName); if (e) { e.fired = true; e.live = e.run(); } }
     OBJ.stage = sAt > route.sVia ? 3 : sAt > 0 ? 1 : 0; OBJ.reachedT = S.playT;
     const islandS = (S.skips.find((k) => k[0] === 'island') || [0, 0, route.sVia])[2];
-    if (sAt > islandS + 20) { S.nightT0 = S.playT - 40; S.sReach = islandS; G.hour = 22.6; } else { S.nightT0 = undefined; S.sReach = undefined; NIGHT.dark = 0; NIGHT.swell = 0; NIGHT.crest = false; G.hour = S.hour(); }
+    if (sAt > islandS + 20) { S.nightT0 = S.playT - 40; S.sReach = islandS; G.hour = 21.5; } else { S.nightT0 = undefined; S.sReach = undefined; NIGHT.dark = 0; NIGHT.swell = 0; NIGHT.crest = false; G.hour = S.hour(); }
     return true;
   };
   // ---------- v0.7.0: the night crossing - Big Island to the creek ----------
@@ -856,7 +878,7 @@ export function createStory(C) {
     return HOURS[HOURS.length - 1][1];
   };
   // v0.7.0: once you reach Big Island the day drains away into night over ~25 s, and stays night to the creek
-  S.hour = () => { const h = dayHour(); if (S.nightT0 === undefined) return h; return lerp(h, 22.6, ease(clamp((S.playT - S.nightT0) / 25, 0, 1))); };
+  S.hour = () => { const h = dayHour(); if (S.nightT0 === undefined) return h; return lerp(h, 21.5, ease(clamp((S.playT - S.nightT0) / 25, 0, 1))); };   // blue-black night: dark, but the sky still glows enough to see the darkness come
 
   function end() {
     S.ended = true; G.mode = 'ending'; audio.chime();

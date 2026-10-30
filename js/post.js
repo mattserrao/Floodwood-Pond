@@ -113,6 +113,22 @@ export function createPost(renderer) {
           }
           col = mix(col, mcol, mk);
         }
+        // ---- v0.7.2: darkness consuming the pond behind you - swirling fingers that reach toward the canoe from the black
+        if (uDark > 0. && uBehind > 0.) {
+          vec2 rel = wp.xz - uPlayer.xz; float lv = max(length(rel), 1e-3);
+          float along = dot(rel, uAway), across = dot(rel, vec2(-uAway.y, uAway.x));
+          vec2 fp = vec2(across * .05, along * .011 + uTime * .05);
+          float warp = fbm(fp * 1.6 + vec2(uTime * .02, -uTime * .035));
+          float fn = fbm(fp + vec2(warp * 1.8, warp * .6));
+          float fingers = smoothstep(.42, .72, fn);
+          float reach = mix(95., 16., fingers);                                   // fingers creep in much closer than the main body
+          float mass = smoothstep(reach, reach + 28., along) * smoothstep(-.35, .45, rel.x * 0. + dot(rel / lv, uAway));
+          float h = sky ? smoothstep(.42, .02, normalize(wp - uCamPos).y) : 1.;
+          float dk = clamp(mass * h * uDark * min(1., uBehind * 1.3), 0., 1.);
+          float swirl = .5 + .5 * sin(fn * 18. - uTime * .9);
+          float edge = smoothstep(.0, .35, dk) * (1. - smoothstep(.35, .9, dk));                // a faint cold sheen where the dark meets the water
+          col = mix(col, vec3(.004, .004, .008) + vec3(.01, .008, .016) * swirl, dk * .97) + vec3(.05, .055, .09) * edge * uDark * (sky ? 0. : 1.);
+        }
         // ---- god rays: radial blur of the bright sky toward the light
         if (uRays > 0. && uLightVis > 0.) {
           vec2 delta = (uv - uLightPos) / 48.; vec2 p = uv; float decay = 1., acc = 0.;

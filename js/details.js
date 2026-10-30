@@ -1,8 +1,8 @@
 // v0.4 close-up detail: floating leaves, leaves shaken loose by gusts, paddle drips and rain streaks.
 // All of it lives in a small radius around the canoe, is instanced (one draw call each) and recycled.
 import * as THREE from 'three';
-import { clamp, lerp, rnd, pondSD, gridSD, heightAt, WORLD, LEAF_COLS, leafGeometry } from './world.js?v=0.7.1';
-import { WIND, gustAt } from './wind.js?v=0.7.1';
+import { clamp, lerp, rnd, pondSD, gridSD, heightAt, WORLD, LEAF_COLS, leafGeometry } from './world.js?v=0.7.2';
+import { WIND, gustAt } from './wind.js?v=0.7.2';
 
 const leafMat = () => new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.9, side: THREE.DoubleSide });
 const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), V = new THREE.Vector3(), S = new THREE.Vector3(), c = new THREE.Color();

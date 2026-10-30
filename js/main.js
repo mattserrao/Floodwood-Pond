@@ -1,20 +1,20 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.7.1';
-import { AmbientAudio } from './audio.js?v=0.7.1';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD } from './world.js?v=0.7.1';
-import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.7.1';
-import { createPost } from './post.js?v=0.7.1';
-import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.7.1';
-import { WIND, gustAt, updateWind } from './wind.js?v=0.7.1';
-import { Q } from './quality.js?v=0.7.1';
-import { WX } from './weather.js?v=0.7.1';
-import { createWildlife } from './wildlife.js?v=0.7.1';
-import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.7.1';
-import { createStory } from './story.js?v=0.7.1';
-import { buildShore } from './shore.js?v=0.7.1';
-import { loadModels } from './models.js?v=0.7.1';
-import { buildCamp } from './camp.js?v=0.7.1';
-import { setModels } from './story.js?v=0.7.1';
+import { MAP } from './mapdata.js?v=0.7.2';
+import { AmbientAudio } from './audio.js?v=0.7.2';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD } from './world.js?v=0.7.2';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.7.2';
+import { createPost } from './post.js?v=0.7.2';
+import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.7.2';
+import { WIND, gustAt, updateWind } from './wind.js?v=0.7.2';
+import { Q } from './quality.js?v=0.7.2';
+import { WX } from './weather.js?v=0.7.2';
+import { createWildlife } from './wildlife.js?v=0.7.2';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.7.2';
+import { createStory } from './story.js?v=0.7.2';
+import { buildShore } from './shore.js?v=0.7.2';
+import { loadModels } from './models.js?v=0.7.2';
+import { buildCamp } from './camp.js?v=0.7.2';
+import { setModels } from './story.js?v=0.7.2';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -74,7 +74,7 @@ function build() {
   canoe.sil = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.DoubleSide });
   canoe.body.traverse((o) => { if (o.isMesh && o !== canoe.lantern && o.material.colorWrite !== false) o.material = canoe.sil; });
   ripples = new Ripples(scene, 160); swimmer = createSwimmer(scene); loons = new Loons(scene, 3); geese = new Geese(scene); flies = createFireflies(scene); mist = createMist(scene);
-  loons.onRun = (l) => { audio.wings({ x: l.x, y: 0.5, z: l.z }, 1.2); if (rnd() < 0.6 && audio.ctx) audio.loon(audio.ctx.currentTime + 0.3, { x: l.x, y: 1, z: l.z }); };
+  loons.onRun = (l) => { audio.wings({ x: l.x, y: 0.5, z: l.z }, 1.2); if (rnd() < 0.12 && audio.ctx) audio.loon(audio.ctx.currentTime + 0.3, { x: l.x, y: 1, z: l.z }); };
   loons.onLand = (l) => audio.splash(0, 0.9, { x: l.x, y: 0, z: l.z });
   audio.loonPos = () => { const v = loons.list.filter((l) => l.g.visible); const l = v.length ? v[Math.floor(rnd() * v.length)] : null; return l ? { x: l.x, y: 1, z: l.z } : audio.woods(150, 500, 1); };
   wild = createWildlife(scene, Q.s.wildlife);
@@ -102,7 +102,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.7.1';
+const VERSION = '0.7.2';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
