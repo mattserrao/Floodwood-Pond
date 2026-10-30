@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js';
 import { AmbientAudio } from './audio.js';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD } from './world.js';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD } from './world.js';
 import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js';
 import { createPost } from './post.js';
 import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js';
@@ -96,7 +96,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.6.2';
+const VERSION = '0.6.3';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -449,9 +449,55 @@ function poseCanoe(dt, t, speed) {
   c.person.rotation.x = 0.1 * pitch * a; c.person.rotation.z = -s * 0.04 * a;
 }
 
+// ------------------------------------------------------------------ title screen: 5-second shots around the pond
+const TITLE = { shots: [], order: [], i: -1, t: 0, LEN: 5, FADE: 0.7 };
+function buildTitleShots() {
+  const S = [], gy = (x, z) => Math.max(heightAt(x, z), 0);
+  const shot = (name, from, to, drift, y0 = 2.2, ly = 1.2) => S.push({ name, from, to, drift, y0, ly });
+  const dir = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
+  // 1. low over open water toward Big Island, slow push in
+  const big = MAP.pond.slice(1).sort((a, b) => b.length - a.length)[0];
+  const bc = [big.reduce((s, p) => s + p[0], 0) / big.length, big.reduce((s, p) => s + p[1], 0) / big.length];
+  { let p = [bc[0] + 30, bc[1] - 230]; for (let k = 0; k < 40 && pondSD(p[0], p[1]) < 20; k++) p[1] -= 6; const d = dir(p, bc); shot('island', p, bc, [d[0] * 14, d[1] * 14], 1.6, 6); }
+  // 2. the campsite at first light: tent, fire ring and the canoe on the bank
+  { // from just off the bank, looking up at the tent; slide sideways until no trunk blocks the view
+    const t = CAMP.tent, trees = WORLD.treePos || [];
+    const blocked = (p) => trees.some((tr) => { const ax = t[0] - p[0], az = t[1] - p[1], l2 = ax * ax + az * az, u = clamp(((tr[0] - p[0]) * ax + (tr[1] - p[1]) * az) / l2, 0.05, 0.92); return Math.hypot(tr[0] - (p[0] + ax * u), tr[1] - (p[1] + az * u)) < 2.4; });
+    let p = null; for (const off of [0, 5, -5, 10, -10, 15, -15, 20, -20]) { const q = [CAMP.start[0] + CAMP.n[0] * 22 + CAMP.side[0] * off, CAMP.start[1] + CAMP.n[1] * 22 + CAMP.side[1] * off]; if (!blocked(q)) { p = q; break; } }
+    p = p || [CAMP.start[0] + CAMP.n[0] * 22, CAMP.start[1] + CAMP.n[1] * 22];
+    shot('camp', p, [t[0], t[1]], [-CAMP.n[0] * 5, -CAMP.n[1] * 5], gy(p[0], p[1]) + 1.5, 1.0); }
+  // 3. along a shoreline of snags and boulders, gliding sideways
+  { let best = null; for (let k = 0; k < 400; k++) { const r = MAP.pond[0][Math.floor(rnd() * MAP.pond[0].length)]; const d0 = Math.hypot(r[0] - CAMP.tent[0], r[1] - CAMP.tent[1]); if (d0 > 300 && d0 < 900) { best = r; break; } }
+    best = best || MAP.pond[0][40]; pondSD(best[0], best[1]); const e = 3, gx = pondSD(best[0] + e, best[1]) - pondSD(best[0] - e, best[1]), gz = pondSD(best[0], best[1] + e) - pondSD(best[0], best[1] - e), gl = Math.hypot(gx, gz) || 1;
+    const n = [gx / gl, gz / gl], along = [n[1], -n[0]], p = [best[0] + n[0] * 26 - along[0] * 10, best[1] + n[1] * 26 - along[1] * 10];
+    shot('shore', p, [best[0] + along[0] * 25, best[1] + along[1] * 25], [along[0] * 9, along[1] * 9], 1.1, 3); }
+  // 4. the sword island and its beach, from the water
+  { const b = ISLE.beach, p = [b[0] + ISLE.bdx * 45 + ISLE.bdz * 15, b[1] + ISLE.bdz * 45 - ISLE.bdx * 15]; shot('sword', p, [ISLE.cx, ISLE.cz], [-ISLE.bdx * 10, -ISLE.bdz * 10], 1.8, 8); }
+  // 5. the mouth of the creek, disappearing into the mist
+  { const c0 = CREEK.pts[0], c3 = CREEK.pts[Math.min(5, CREEK.pts.length - 1)], d = dir(c0, c3), p = [c0[0] - d[0] * 40, c0[1] - d[1] * 40]; shot('creek', p, [c3[0], c3[1]], [d[0] * 12, d[1] * 12], 1.4, 2); }
+  TITLE.shots = S.filter((sh) => pondSD(sh.from[0], sh.from[1]) > -40);
+}
+function nextTitleShot() {
+  if (!TITLE.order.length) { TITLE.order = TITLE.shots.map((_, i) => i).sort(() => Math.random() - 0.5); if (TITLE.order[0] === TITLE.i && TITLE.order.length > 1) TITLE.order.push(TITLE.order.shift()); }
+  TITLE.i = TITLE.order.shift(); TITLE.t = 0;
+}
+function titleCamera(dt) {
+  if (TITLE.i < 0) nextTitleShot();
+  TITLE.t += Math.max(dt, 1 / 60);
+  if (TITLE.t > TITLE.LEN) nextTitleShot();
+  const sh = TITLE.shots[TITLE.i], k = TITLE.t / TITLE.LEN, e = k * k * (3 - 2 * k) * 0.5 + k * 0.5;
+  const x = sh.from[0] + sh.drift[0] * e, z = sh.from[1] + sh.drift[1] * e, y = Math.max(sh.y0 + 0.4 * k, Math.max(heightAt(x, z), 0) + 1.2);
+  camera.position.set(x, y, z); camera.lookAt(sh.to[0] + sh.drift[0] * e * 0.3, sh.ly, sh.to[1] + sh.drift[1] * e * 0.3);
+  cam.pos.copy(camera.position);
+  // dip through black between shots
+  const f = TITLE.FADE, o = Math.max(1 - TITLE.t / f, 1 - (TITLE.LEN - TITLE.t) / f, 0);
+  $('cut').style.opacity = clamp(o, 0, 1).toFixed(3);
+}
+
 // ------------------------------------------------------------------ camera
 function updateCamera(dt, t) {
   if (G.debugCam) { camera.position.set(...G.debugCam.pos); camera.lookAt(...G.debugCam.look); return; }
+  if (G.mode === 'title' && TITLE.shots.length) { titleCamera(dt); return; }
   if (G.mode === 'intro' && story) { if (story.introCamera(dt)) { story.endIntro(); cam.pos.copy(camera.position); cam.heading = P.psi; G.mode = 'launch'; G.launchT = 0; document.body.classList.add('play'); } return; }
   let targetYaw = cam.yaw;
   if (G.mode === 'title') {
@@ -661,7 +707,7 @@ function startGame() {
     return;
   }
   started = true;
-  $('title').classList.add('hide');
+  $('title').classList.add('hide'); $('cut').style.opacity = 0;
   if (story) { G.mode = 'intro'; story.startIntro(); return; }
   G.mode = 'launch'; G.launchT = 0;
   document.body.classList.add('play');
@@ -675,10 +721,10 @@ addEventListener('keydown', (e) => { if ((!started || G.menu) && !['escape', 'm'
 loadModels(['tent', 'paddler', 'kayaker', 'boyStand', 'boyLeap', 'kayak1', 'kayak2', 'canoe', 'paddleDouble', 'paddleSingle', 'picnicTable', 'cantaloupe', 'rowboat', 'dock']).then((m) => { world.models = m; boot(); });
 function boot() {
   try {
-    const t0 = performance.now(); build(); resetPlayer(); drawStaticMap();
+    const t0 = performance.now(); build(); resetPlayer(); drawStaticMap(); buildTitleShots();
     cam.pos.set(P.x, 5, P.z - 12);
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
-    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, false); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
+    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, false); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, TITLE, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     ready = true; frame();
     if (pendingStart) startGame();
