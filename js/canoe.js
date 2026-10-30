@@ -355,8 +355,10 @@ function createCanoeFromModels(root, body, M) {
   const person = M.paddler.clone(true); person.position.set(0, 0.1, -0.75); body.add(person);
   const armL = new THREE.Group(), armR = new THREE.Group(); person.add(armL, armR);   // real arms are baked into the model
   const paddle = new THREE.Group(); body.add(paddle);
-  const pd = M.paddleSingle.clone(true); pd.rotation.z = Math.PI; pd.position.y = 0.35; paddle.add(pd);
-  const blade = new THREE.Object3D(); blade.position.y = -1.25; paddle.add(blade);
+  // model: blade spans y -0.48..0, shaft 0..1.45, T-grip at 1.51 (Blender Z-up -> Y-up). The pivot is the upper hand,
+  // so hang the paddle with the grip just above it and the blade down in the water (same proportions as the old primitive)
+  const pd = M.paddleSingle.clone(true); pd.position.y = 0.33 - 1.51; paddle.add(pd);
+  const blade = new THREE.Object3D(); blade.position.y = 0.33 - 1.51 - 0.24; paddle.add(blade);   // blade centre, for splashes/drips
   // waterline mask (same as the primitive canoe)
   const L = 2.5, wl = [], NS = 24;
   for (let i = 0; i <= NS; i++) { const s = -0.7 + (1.4 * i) / NS, w = 0.45 * Math.pow(Math.max(1 - Math.pow(Math.abs(s), 2.4), 0), 0.5); wl.push([s * L, 0.8 * w * Math.sqrt(Math.max(1 - Math.pow(s / 0.72, 2), 0))]); }

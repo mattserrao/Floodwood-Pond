@@ -103,7 +103,7 @@ function kayak(tandem) {
   seats.forEach((z, i) => {
     const pp = person(g, body, 'kayaker'); pp.position.set(0, src ? 0.0 : 0.0, z - (src ? 0.25 : 0)); roll.add(pp);
     const pad = new THREE.Group(); pad.position.set(0, 0.62, z + 0.25); roll.add(pad);
-    if (M.paddleDouble) { const pd = recolor(M.paddleDouble.clone(true), body); pd.rotation.z = Math.PI / 2; pd.position.x = -1.1; pad.add(pd); }
+    if (M.paddleDouble) { const pd = recolor(M.paddleDouble.clone(true), body); pd.rotation.z = Math.PI / 2; pd.position.x = 1.1; pad.add(pd); }   // shaft 0..2.2 along Y -> -2.2..0 along X; centre it
     else { const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 2.2, 5), body); shaft.rotation.z = Math.PI / 2; pad.add(shaft);
       [-1, 1].forEach((s) => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.02), body); b.position.x = s * 1.1; b.rotation.x = s * 0.6; pad.add(b); }); }
     g.userData.paddles.push({ pad, ph: i * 0.7 });
@@ -120,7 +120,7 @@ function ghostCanoe(n = 2) {
   [1.6, -1.75].slice(0, Math.min(n, 2)).forEach((z, i) => {
     const pp = person(g, body, 'paddler'); pp.position.set(0, 0.08, z - 0.2); roll.add(pp);
     const pad = new THREE.Group(); pad.position.set(i ? -0.42 : 0.42, 0.75, z + 0.2); roll.add(pad);
-    if (M.paddleSingle) { const pd = recolor(M.paddleSingle.clone(true), body); pd.rotation.z = Math.PI; pd.position.y = 0.35; pad.add(pd); } // model is built along +Y with the blade at the origin: flip so the blade hangs down
+    if (M.paddleSingle) { const pd = recolor(M.paddleSingle.clone(true), body); pd.position.y = 0.33 - 1.51; pad.add(pd); }   // grip at the hands, blade hanging down
     else { const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.4, 5), body); shaft.position.y = -0.4; pad.add(shaft);
       const b = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.02), body); b.position.y = -1.15; pad.add(b); }
     g.userData.paddles.push({ pad, ph: i * 0.5, single: true, side: i ? -1 : 1 });

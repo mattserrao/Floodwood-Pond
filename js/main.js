@@ -96,7 +96,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.6.5';
+const VERSION = '0.6.6';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -443,7 +443,9 @@ function poseCanoe(dt, t, speed) {
   const ph = u * Math.PI * 2, lift = Math.pow(Math.max(0, -Math.sin(ph)), 1.6);
   const pitch = -0.05 - 0.65 * Math.cos(ph), roll = 0.3 + 0.55 * lift;
   const ae = a * a * (3 - 2 * a);
-  c.paddle.position.set(lerp(0, s * 0.42, ae), lerp(0.32, 0.95, ae) + 0.08 * lift * ae, lerp(-0.1, -0.45, ae));
+  // drive: press the blade a little deeper; recovery: lift it clear of the water (tip ~25 cm up) as it swings forward
+  const press = Math.max(0, Math.sin(ph)) * 0.1;
+  c.paddle.position.set(lerp(0, s * 0.42, ae), lerp(0.32, 0.95, ae) + (0.4 * lift - press) * ae, lerp(-0.1, -0.45, ae));
   c.paddle.rotation.set(pitch * ae, 0.25 * lift * s * ae, lerp(Math.PI / 2, s * roll, ae));
   c.armL.position.set(0.27, 0.58, 0.14); c.armR.position.set(-0.27, 0.58, 0.14);
   c.armL.rotation.set(-0.8 - pitch * 0.4 * a, 0, -0.15 * a * (s > 0 ? 1.8 : 0.5));
@@ -726,7 +728,7 @@ function boot() {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap(); buildTitleShots();
     cam.pos.set(P.x, 5, P.z - 12);
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
-    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, false); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, TITLE, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
+    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05, ctl = false) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, ctl); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, TITLE, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     ready = true; frame();
     if (pendingStart) startGame();
