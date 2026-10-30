@@ -24,6 +24,13 @@ Add `?free=1` to the URL for the old free-roam game. Optional voice clips go in 
 - **Performance**: a third tree level (flat cards) beyond ~1.1 km; the water mirror renders only the near 420 m at
   quarter/third resolution and the far treeline is a dark band; shore props are tiled and culled with the forest.
 
+## v0.6.1: Blender-built models
+`models/*.glb` are hand-built low-poly models (source: `floodwood_assets.blend`, built with Blender via MCP): a dome tent
+with poles, guy lines and gear; a seated paddler with hat; a kayaker in a PFD; standing and leaping boys; a 3.4 m sea
+kayak and a 4.8 m tandem with real cockpits; a 5 m canoe with gunwales, thwarts and cane seats; single and double
+paddles; a picnic table; a netted cantaloupe; an aluminium rowboat; a dock with cleat and ladder. `js/models.js` loads
+them; if a file is missing the game falls back to the old primitives.
+
 ## Run it
 It's static files, but ES modules need a web server:
 

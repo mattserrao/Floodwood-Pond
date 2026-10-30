@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { MAP } from './mapdata.js';
 import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture } from './world.js';
 import { Voices } from './voices.js';
+import { recolor } from './models.js';
+
+// v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
+let M = {};
+export function setModels(m) { M = m || {}; }
 
 // =====================================================================================================
 // v0.5 "memories": wake in the tent, walk to the canoe, and paddle a drifting journey of ghost memories.
@@ -81,22 +86,26 @@ let MOTES = null;
 function fadeGhost(g, o, t) {
   const prev = g.userData.o || 0; if (MOTES && o < prev - 1e-4 && prev > 0.02) MOTES.dissolve(g, (prev - o) * 900);   // fading out: it crumbles into drifting light
   g.userData.o = o; g.visible = o > 0.004; g.userData.mats.forEach((m, i) => { m.opacity = o * m.userData.k * (0.84 + 0.16 * Math.sin(t * 2.3 + i * 1.7)); }); }
-function person(g, m) {
+function person(g, m, kind = 'kayaker') {
+  const src = M[kind]; if (src) { const p = recolor(src.clone(true), m); return p; }
   const p = new THREE.Group();
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.32, 3, 8), m); torso.position.y = 0.48; p.add(torso);
   const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 1), m); head.position.y = 0.88; p.add(head);
   return p;
 }
 function kayak(tandem) {
-  const g = G0(), hull = gm(g, GHOST, 0.75), body = gm(g, GHOST, 0.9), L = tandem ? 4.6 : 3.4;
-  const h = new THREE.Mesh(new THREE.CapsuleGeometry(0.33, L - 0.66, 4, 10), hull); h.rotation.x = Math.PI / 2; h.scale.set(1, 1, 0.42); h.position.y = 0.06; g.add(h);
-  const roll = new THREE.Group(); g.add(roll); roll.add(h);
-  const seats = tandem ? [0.9, -0.9] : [0]; g.userData.paddles = [];
+  const g = G0(), hull = gm(g, GHOST, 0.75), body = gm(g, GHOST, 0.9), L = tandem ? 4.8 : 3.4;
+  const roll = new THREE.Group(); g.add(roll);
+  const src = M[tandem ? 'kayak2' : 'kayak1'];
+  if (src) { const h = recolor(src.clone(true), hull); h.position.y = 0.3; roll.add(h); }
+  else { const h = new THREE.Mesh(new THREE.CapsuleGeometry(0.33, L - 0.66, 4, 10), hull); h.rotation.x = Math.PI / 2; h.scale.set(1, 1, 0.42); h.position.y = 0.06; roll.add(h); }
+  const seats = tandem ? [0.75, -0.75] : [0.1]; g.userData.paddles = [];
   seats.forEach((z, i) => {
-    const pp = person(g, body); pp.position.set(0, 0.0, z); roll.add(pp);
+    const pp = person(g, body, 'kayaker'); pp.position.set(0, src ? 0.0 : 0.0, z - (src ? 0.25 : 0)); roll.add(pp);
     const pad = new THREE.Group(); pad.position.set(0, 0.62, z + 0.25); roll.add(pad);
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 2.2, 5), body); shaft.rotation.z = Math.PI / 2; pad.add(shaft);
-    [-1, 1].forEach((s) => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.02), body); b.position.x = s * 1.1; b.rotation.x = s * 0.6; pad.add(b); });
+    if (M.paddleDouble) { const pd = recolor(M.paddleDouble.clone(true), body); pd.rotation.z = Math.PI / 2; pd.position.x = -1.1; pad.add(pd); }
+    else { const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 2.2, 5), body); shaft.rotation.z = Math.PI / 2; pad.add(shaft);
+      [-1, 1].forEach((s) => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.02), body); b.position.x = s * 1.1; b.rotation.x = s * 0.6; pad.add(b); }); }
     g.userData.paddles.push({ pad, ph: i * 0.7 });
   });
   g.userData.roll = roll; return g;
@@ -104,19 +113,22 @@ function kayak(tandem) {
 function ghostCanoe(n = 2) {
   const g = G0(), hull = gm(g, GHOST, 0.75), body = gm(g, GHOST, 0.9);
   const roll = new THREE.Group(); g.add(roll);
-  const h = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 4.0, 4, 10), hull); h.rotation.x = Math.PI / 2; h.scale.set(1, 1, 0.5); h.position.y = 0.12; roll.add(h);
+  if (M.canoe) { const h = recolor(M.canoe.clone(true), hull); h.position.y = 0.34; roll.add(h); }
+  else { const h = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 4.0, 4, 10), hull); h.rotation.x = Math.PI / 2; h.scale.set(1, 1, 0.5); h.position.y = 0.12; roll.add(h); }
   g.userData.paddles = [];
-  [1.3, -1.4].slice(0, n).forEach((z, i) => {
-    const pp = person(g, body); pp.position.set(0, 0.05, z); roll.add(pp);
+  [1.6, -1.75].slice(0, n).forEach((z, i) => {
+    const pp = person(g, body, 'paddler'); pp.position.set(0, 0.08, z - 0.2); roll.add(pp);
     const pad = new THREE.Group(); pad.position.set(i ? -0.42 : 0.42, 0.75, z + 0.2); roll.add(pad);
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.4, 5), body); shaft.position.y = -0.4; pad.add(shaft);
-    const b = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.02), body); b.position.y = -1.15; pad.add(b);
+    if (M.paddleSingle) { const pd = recolor(M.paddleSingle.clone(true), body); pd.rotation.z = Math.PI; pd.position.y = 0.35; pad.add(pd); } // model is built along +Y with the blade at the origin: flip so the blade hangs down
+    else { const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.4, 5), body); shaft.position.y = -0.4; pad.add(shaft);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.02), body); b.position.y = -1.15; pad.add(b); }
     g.userData.paddles.push({ pad, ph: i * 0.5, single: true, side: i ? -1 : 1 });
   });
   g.userData.roll = roll; return g;
 }
 function picnicTable(g) {
   const m = gm(g, 0xe6ddd0, 0.85), t = new THREE.Group();
+  if (M.picnicTable) { const pt = recolor(M.picnicTable.clone(true), m); pt.rotation.y = Math.PI / 2; pt.position.y = -0.3; t.add(pt); return t; }
   const top = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.06, 1.9), m); top.position.y = 0.42; t.add(top);
   [-1, 1].forEach((s) => {
     const bench = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 1.9), m); bench.position.set(s * 0.6, 0.05, 0); t.add(bench);
@@ -179,7 +191,8 @@ export function createStory(C) {
   let tx = launchInfo.start[0] - n[0] * 13 + side[0] * 4.5, tz = launchInfo.start[1] - n[1] * 13 + side[1] * 4.5;
   const ty = heightAt(tx, tz);
   const tent = new THREE.Group(); tent.position.set(tx, ty, tz); tent.rotation.y = Math.atan2(launchInfo.start[0] - tx, launchInfo.start[1] - tz); scene.add(tent);
-  {
+  if (M.tent) { const tm = M.tent.clone(true); tm.rotation.y = Math.PI; tent.add(tm); }   // Blender tent: door faces +Y in Blender = +Z after the loader flip; our door is at +Z
+  else {
     const sh = new THREE.Shape(); sh.moveTo(-1.15, 0); sh.lineTo(0, 1.25); sh.lineTo(1.15, 0); sh.closePath();
     const body = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 2.3, bevelEnabled: false }), new THREE.MeshStandardMaterial({ color: 0x5d6b3e, flatShading: true, roughness: 0.9, side: THREE.DoubleSide }));
     body.position.z = -1.15; tent.add(body);
@@ -292,7 +305,9 @@ export function createStory(C) {
     const geo = new THREE.IcosahedronGeometry(0.17, 2), col = []; const p = geo.attributes.position;
     for (let i = 0; i < p.count; i++) { const v = Math.sin(p.getX(i) * 60) * Math.sin(p.getY(i) * 55) * Math.sin(p.getZ(i) * 58); const k = v > 0.25 ? 0.82 : 1; col.push(0.8 * k, 0.69 * k, 0.48 * k * (1 + 0.12 * Math.sin(p.getY(i) * 20))); }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    const melon = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, transparent: true, opacity: 1 })); melon.scale.set(1.6, 1.45, 1.6); melon.renderOrder = 4; scene.add(melon);
+    let melon;
+    if (M.cantaloupe) { melon = M.cantaloupe.clone(true); melon.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.renderOrder = 4; } }); melon.scale.setScalar(1.8); scene.add(melon); Object.defineProperty(melon, 'material', { value: { set opacity(v) { melon.traverse((o) => { if (o.isMesh) o.material.opacity = v; }); } } }); }
+    else { melon = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, transparent: true, opacity: 1 })); melon.scale.set(1.6, 1.45, 1.6); melon.renderOrder = 4; scene.add(melon); }
     let t = 0, splashed = false, bobbed = 0; const vx = rand(-0.08, 0.08), vz = rand(-0.08, 0.08);
     const at = () => ({ x: melon.position.x, z: melon.position.z });
     voices.memoryIn({ x: land[0], y: 1, z: land[1] });
@@ -409,7 +424,7 @@ export function createStory(C) {
     let home = closest(); const spot = () => ({ x: home.x + rand(-8, 8), y: 1.5, z: home.z + rand(-8, 8) });
     let t = 0, bi = 0, next = 1; const beef = [5, 19];
     const boys = G0(); const bm = gm(boys, GHOST, 0.9); boys.userData.kids = [];
-    for (let i = 0; i < 4; i++) { const p = person(boys, bm); p.scale.setScalar(rand(0.85, 1.05)); p.position.set(rand(-4, 4), 0, rand(-2, 2)); boys.add(p); boys.userData.kids.push({ p, ph: rand(0, 6), jump: null }); }
+    for (let i = 0; i < 4; i++) { const p = person(boys, bm, i === 1 ? 'boyLeap' : 'boyStand'); p.scale.setScalar(rand(0.85, 1.05)); p.position.set(rand(-4, 4), 0, rand(-2, 2)); boys.add(p); boys.userData.kids.push({ p, ph: rand(0, 6), jump: null }); }
     boys.scale.setScalar(1.7); addGhost(boys);   // larger than life: they're 60-100 m off, across the water
     const shoreAt = (h) => { const [wx, wz] = toWater(h.x, h.z, 2); let x = wx, z = wz; for (let k = 0; k < 40 && pondSD(x, z) > -2; k++) { x += (h.x - wx) * 0.05; z += (h.z - wz) * 0.05; } return { x, z, wx, wz }; };
     voices.memoryIn(home);

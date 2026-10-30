@@ -21,8 +21,9 @@ function mergeStatic(parent, meshes, matOpts = {}) {
 }
 
 // ------------------------------------------------------------------ canoe + paddler
-export function createCanoe() {
+export function createCanoe(M = {}) {
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  if (M.canoe && M.paddler) return createCanoeFromModels(root, body, M);
   const L = 2.75, N = 13;
   const sections = [];
   for (let i = 0; i < N; i++) {
@@ -345,4 +346,35 @@ export function createSwimmer(scene) {
     },
   };
   return api;
+}
+
+/** v0.6.1: the player's canoe built from the Blender canoe + paddler + single paddle, keeping the same hooks main.js animates */
+function createCanoeFromModels(root, body, M) {
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a5f30, flatShading: true, roughness: 0.85 });
+  const hull = M.canoe.clone(true); hull.position.y = 0.34; body.add(hull);
+  const person = M.paddler.clone(true); person.position.set(0, 0.1, -0.75); body.add(person);
+  const armL = new THREE.Group(), armR = new THREE.Group(); person.add(armL, armR);   // real arms are baked into the model
+  const paddle = new THREE.Group(); body.add(paddle);
+  const pd = M.paddleSingle.clone(true); pd.rotation.z = Math.PI; pd.position.y = 0.35; paddle.add(pd);
+  const blade = new THREE.Object3D(); blade.position.y = -1.25; paddle.add(blade);
+  // waterline mask (same as the primitive canoe)
+  const L = 2.5, wl = [], NS = 24;
+  for (let i = 0; i <= NS; i++) { const s = -0.7 + (1.4 * i) / NS, w = 0.45 * Math.pow(Math.max(1 - Math.pow(Math.abs(s), 2.4), 0), 0.5); wl.push([s * L, 0.8 * w * Math.sqrt(Math.max(1 - Math.pow(s / 0.72, 2), 0))]); }
+  const shape = new THREE.Shape(); wl.forEach(([z, w], i) => (i ? shape.lineTo(w, z) : shape.moveTo(w, z))); for (let i = wl.length - 1; i >= 0; i--) shape.lineTo(-wl[i][1], wl[i][0]);
+  const maskGeo = new THREE.ShapeGeometry(shape); maskGeo.rotateX(Math.PI / 2);
+  const mask = new THREE.Mesh(maskGeo, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide })); mask.renderOrder = 0.5; mask.frustumCulled = false; body.add(mask);
+  // lantern pole + hanging lantern (unchanged)
+  const poleCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.3, 1.95), new THREE.Vector3(0, 1.05, 2.25), new THREE.Vector3(0, 1.6, 2.75), new THREE.Vector3(0, 1.82, 3.25), new THREE.Vector3(0, 1.8, 3.55)]);
+  body.add(new THREE.Mesh(new THREE.TubeGeometry(poleCurve, 20, 0.022, 5), wood));
+  const hang = new THREE.Group(); hang.position.set(0, 1.78, 3.55); body.add(hang);
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.26, 4), wood); cord.position.y = -0.13; hang.add(cord);
+  const cage = new THREE.MeshStandardMaterial({ color: 0x2a2620, flatShading: true });
+  const capTop = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.07, 6), cage); capTop.position.y = -0.29; hang.add(capTop);
+  const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.07, 0.03, 6), cage); lampBase.position.y = -0.5; hang.add(lampBase);
+  for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + Math.PI / 4, bar = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.19, 0.01), cage); bar.position.set(Math.cos(a) * 0.06, -0.41, Math.sin(a) * 0.06); hang.add(bar); }
+  const lantern = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.17, 8), new THREE.MeshBasicMaterial({ color: 0xffc27a })); lantern.position.y = -0.41; hang.add(lantern);
+  const light = new THREE.PointLight(0xffb066, 0, 7, 2); light.position.y = -0.41; hang.add(light);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffa95a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }));
+  halo.scale.setScalar(1.1); halo.position.y = -0.41; hang.add(halo);
+  return { root, body, paddle, person, armL, armR, light, halo, lantern, hang, blade, mask };
 }

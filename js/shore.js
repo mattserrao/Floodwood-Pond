@@ -29,7 +29,7 @@ function instanced(scene, geo, mat, items, tag = 'shore') {
   scene.add(im); TILES.push(im); return im;
 }
 
-export function buildShore(scene) {
+export function buildShore(scene, M = {}) {
   const skip = (x, z) => inIsleBox(x, z) && beachFactor(x, z) > 0.2;
   const pts = shorePoints(6);
   const E = (x, y, z) => new THREE.Euler(x, y, z), V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -91,6 +91,8 @@ export function buildShore(scene) {
   const wood = flat(0x6b5236);
   docks.forEach((d) => {
     const g = new THREE.Group(); g.position.set(d.x - d.nx * 1.5, Math.max(heightAt(d.x - d.nx * 1.5, d.z - d.nz * 1.5), 0.15), d.z - d.nz * 1.5); g.rotation.y = Math.atan2(d.nx, d.nz);
+    if (M.dock) { const dk = M.dock.clone(true); dk.rotation.y = Math.PI; dk.position.set(0, -0.3, 0); g.add(dk);
+      if (d.boat && M.rowboat) { const rb = M.rowboat.clone(true); rb.position.set(2.6, 0.0, -0.3); rb.rotation.y = 0.4; g.add(rb); } scene.add(g); return; }
     for (let i = 0; i < 9; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 0.4), wood); b.position.set(0, 0.35, i * 0.5); g.add(b); }
     for (const s of [-1, 1]) for (const z of [0.3, 2.2, 4.1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.4, 0.14), wood); p.position.set(s * 0.85, -0.3, z); g.add(p); }
     if (d.boat) { const boat = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 2.6, 3, 7), flat(0x8b9a9f, { metalness: 0.25, roughness: 0.6 })); boat.rotation.x = Math.PI / 2; boat.rotation.z = Math.PI; boat.scale.set(1, 1, 0.45); boat.position.set(2.6, 0.32, -0.5); boat.rotation.y = 0.4; g.add(boat); }
