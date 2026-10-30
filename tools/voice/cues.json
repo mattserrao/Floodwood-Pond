@@ -1,0 +1,36 @@
+{
+  "about": "Every voice snippet in Floodwood. Record them in this order, one take per numbered item, with ~2 s of silence between items. build_voices.py finds each take in the recording and makes the layered voices.",
+  "voices": [
+    { "id": "v1", "pitch": 0.84, "formant": 0.95, "note": "lower, broad-chested" },
+    { "id": "v2", "pitch": 0.94, "formant": 0.98, "note": "a touch lower" },
+    { "id": "v3", "pitch": 1.00, "formant": 1.00, "note": "you, as recorded" },
+    { "id": "v4", "pitch": 1.12, "formant": 1.03, "note": "brighter" },
+    { "id": "v5", "pitch": 1.24, "formant": 1.06, "note": "younger" },
+    { "id": "v6", "pitch": 1.36, "formant": 1.09, "note": "youngest / most excitable" }
+  ],
+  "cues": [
+    { "id": "laugh_chuckle", "kind": "laugh", "takes": 3, "say": "(chuckle)", "how": "Short chuckle under your breath, like 'heh heh heh'. About 1 second. Make each take a little different.", "used": "picnic-table tow, quiet moments" },
+    { "id": "laugh", "kind": "laugh", "takes": 4, "say": "(laugh)", "how": "A genuine laugh at a friend's dumb move. About 2 seconds. Vary them: one 'ha ha ha', one 'heh-heh', one through the nose, one that starts with a snort.", "used": "most memories; layered into the crowd" },
+    { "id": "laugh_big", "kind": "laugh", "takes": 3, "say": "(crack up)", "how": "Cracking up: big, breathless, 3-4 seconds, trailing off into a wheeze. These get stacked 4-5 deep for the group eruptions.", "used": "kayaker flip, island boys, race" },
+
+    { "id": "shout_hey", "kind": "shout", "takes": 2, "say": "Hey!", "how": "a) calling across the water to a friend.  b) surprised, quick.", "used": "cantaloupe, tandems, island, binoculars" },
+    { "id": "shout_woo", "kind": "shout", "takes": 2, "say": "Woooo!", "how": "a) a whoop as someone jumps in.  b) shorter 'woo!'.", "used": "island jumpers, flotilla, tandems" },
+    { "id": "shout_go", "kind": "shout", "takes": 2, "say": "Go go go!", "how": "a) egging someone on in a race.  b) one sharp 'Go!'.", "used": "race, flotilla, picnic" },
+    { "id": "shout_yeah", "kind": "shout", "takes": 2, "say": "Yeahhh!", "how": "a) celebrating.  b) agreeing loudly, 'Yeah!'.", "used": "tandems, picnic, flotilla" },
+    { "id": "shout_dude", "kind": "shout", "takes": 2, "say": "Dude!", "how": "a) 'Dude!' in disbelief.  b) drawn out 'Duuude...'.", "used": "tandems, binoculars, island" },
+    { "id": "shout_oh", "kind": "shout", "takes": 2, "say": "Oh!", "how": "a) startled 'Oh!' (kayak wobbling).  b) a long falling groan 'Ohhhh...' (something lost overboard).", "used": "kayaker, binoculars, eruptions" },
+    { "id": "shout_no", "kind": "shout", "takes": 2, "say": "No!", "how": "a) sharp 'No!'.  b) pleading 'Nooo...'.", "used": "kayaker, race, binoculars" },
+    { "id": "shout_wait", "kind": "shout", "takes": 2, "say": "Wait!", "how": "a) 'Wait!' calling ahead.  b) 'Wait wait wait!'.", "used": "tandems, race, binoculars" },
+    { "id": "shout_come", "kind": "shout", "takes": 2, "say": "Come on!", "how": "a) 'Come on!' urging.  b) 'C'mon, c'mon!'.", "used": "picnic, race, island" },
+
+    { "id": "beef", "kind": "line", "takes": 2, "say": "Ah, beef beef beef beef!", "how": "The island chant, shouted across the water. Two takes with different rhythm.", "used": "Big Island boys" },
+    { "id": "line_headsup", "kind": "line", "takes": 1, "say": "Heads up!", "how": "Calling from the bank as the cantaloupe flies.", "used": "cantaloupe (replaces 'Hey!')" },
+    { "id": "line_whoa", "kind": "line", "takes": 1, "say": "Whoa, whoa, whoa!", "how": "Losing balance in a kayak.", "used": "kayaker wobble" },
+    { "id": "line_race", "kind": "line", "takes": 1, "say": "Race you to the island!", "how": "Cocky, across the water.", "used": "tandem kayaks" },
+    { "id": "line_pull", "kind": "line", "takes": 1, "say": "Keep pulling, it floats!", "how": "Laughing, out of breath.", "used": "picnic-table tow" },
+    { "id": "line_stuck", "kind": "line", "takes": 1, "say": "I'm stuck! I'm stuck!", "how": "Half laughing, half panicking.", "used": "race, beached on the tree" },
+    { "id": "line_faster", "kind": "line", "takes": 1, "say": "Faster! Faster!", "how": "Being towed, loving it.", "used": "flotilla swimmer" },
+    { "id": "line_binos", "kind": "line", "takes": 1, "say": "The binoculars!", "how": "Horrified, as they slip.", "used": "binoculars drop" },
+    { "id": "line_dad", "kind": "line", "takes": 1, "say": "Those were my dad's...", "how": "Quiet, deflated.", "used": "after the binoculars sink" }
+  ]
+}

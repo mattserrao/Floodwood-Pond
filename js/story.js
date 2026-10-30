@@ -183,6 +183,7 @@ export function createStory(C) {
   const voices = new Voices(audio);
   const $ = (id) => document.getElementById(id);
   const S = { active: true, glanceYaw: 0, fogMul: 1, events: [], ghosts: [], ended: false, playT: 0, sNow: 0, idx: 0 };
+  S.voices = voices;
   const route = buildRoute(launchInfo.end);
   MOTES = createMotes(scene); S.motes = MOTES;
   S.route = route;
@@ -326,7 +327,7 @@ export function createStory(C) {
     let t = 0, splashed = false, bobbed = 0; const vx = rand(-0.08, 0.08), vz = rand(-0.08, 0.08);
     const at = () => ({ x: melon.position.x, z: melon.position.z });
     voices.memoryIn({ x: land[0], y: 1, z: land[1] });
-    voices.shout({ x: from.x, y: 1.6, z: from.z }, 'hey', { vol: 0.9, delay: 0.1 });       // "heads up!" from the bank
+    voices.line('line_headsup', { x: from.x, y: 1.6, z: from.z }, { vol: 0.9, delay: 0.1 }) || voices.shout({ x: from.x, y: 1.6, z: from.z }, 'hey', { vol: 0.9, delay: 0.1 });       // "heads up!" from the bank
     voices.whoosh({ x: land[0], y: 2, z: land[1] }, 1.2);
     attend(at, 7);
     return (dt, T) => {
@@ -360,7 +361,7 @@ export function createStory(C) {
       // each lurch gets a slap of the hull and a nervous yelp, louder as it gets worse
       const lurch = Math.floor(Math.max(0, t - 2.5) * 3.2 / Math.PI);
       if (t > 2.5 && t < 7.2 && lurch > yelp) { yelp = lurch; audio.knock(0.06 + lurch * 0.03); voices.paddle(gpos(g, 0), 0.6 + lurch * 0.15);
-        if (lurch === 2) voices.shout(gpos(g), 'oh', { vol: 0.8, f0: 210 }); if (lurch === 4) voices.shout(gpos(g), 'no', { vol: 1, f0: 240 }); }
+        if (lurch === 2) voices.line('line_whoa', gpos(g), { vol: 0.85, f0: 210 }) || voices.shout(gpos(g), 'oh', { vol: 0.8, f0: 210 }); if (lurch === 4) voices.shout(gpos(g), 'no', { vol: 1, f0: 240 }); }
       if (t > 7.45 && !flipped) { flipped = true; voices.bigSplash(gpos(g, 0), 1.3); ripples.spawn(g.position.x, g.position.z, 5, 3, 0.7, 0.6); ripples.spawn(g.position.x, g.position.z, 2.5, 2, 0.6, 0.3);
         setTimeout(() => voices.erupt({ x: P.x - R[0] * 25 + F[0] * 6, y: 1, z: P.z - R[1] * 25 + F[1] * 6 }, 3, 0.8), 800); }
       if (t < 7.2) { animatePaddles(g, T, 0.6); strokeSounds(g, T, 0.6, 0.7); }
@@ -381,6 +382,7 @@ export function createStory(C) {
     // a back-and-forth: one boat calls, the other answers, both crack up; it swells as they pass and trails off
     const call = (i, delay, word) => setTimeout(() => { const b = boats[i]; if (b.visible) voices.shout(gpos(b), word, { vol: 1.15 }); }, delay * 1000);
     const lol = (i, delay, v = 1) => setTimeout(() => { const b = boats[i]; if (b.visible) voices.laugh(gpos(b), { vol: v, n: Math.floor(rand(7, 12)) }); }, delay * 1000);
+    setTimeout(() => boats[0].visible && voices.line('line_race', gpos(boats[0]), { vol: 1.15, f0: 230 }), 1200);
     [[0, 2.2, 'hey'], [1, 3.0, 'yeah'], [0, 5.5, 'go'], [1, 6.4, 'dude'], [0, 9.5, 'come'], [1, 10.4, 'woo'], [0, 15, 'go'], [1, 19, 'wait']].forEach(([i, d, w]) => call(i, d, w));
     [[1, 4, 1], [0, 7.2, 1.1], [1, 7.6, 1], [0, 11.5, 1.1], [1, 12.2, 1.1], [0, 16.5, 0.9], [1, 21, 0.7], [0, 24, 0.5]].forEach(([i, d, v]) => lol(i, d, v));
     setTimeout(() => voices.erupt(mid(), 3, 1.1), 8200);
@@ -415,6 +417,7 @@ export function createStory(C) {
     // quieter, determined: grunts of effort, a few chuckles at the absurdity
     [[3, 'come'], [9, 'go'], [15, 'yeah']].forEach(([d, w]) => setTimeout(() => g.visible && voices.shout(gpos(g), w, { vol: 0.75, f0: rand(150, 190) }), d * 1000));
     [5.5, 11, 17.5].forEach((d) => setTimeout(() => g.visible && voices.laugh(gpos(g), { vol: 0.7, n: 6 }), d * 1000));
+    setTimeout(() => g.visible && voices.line('line_pull', gpos(g), { vol: 0.8, f0: 170 }), 7000);
     return (dt, T) => {
       t += dt; const d = Math.min(v * t, dl - 20);
       g.position.set(start[0] + dir[0] * d, Math.sin(T * 1.2) * 0.03, start[1] + dir[1] * d); g.rotation.y = Math.atan2(dir[0], dir[1]); animatePaddles(g, T, 0.8); strokeSounds(g, T, 0.8, 0.8);
@@ -490,7 +493,7 @@ export function createStory(C) {
         if (g === canoeG && !shoved && d < 14) { shoved = true; audio.knock(0.25); voices.shout(gpos(g), 'no', { vol: 1.3, f0: 260 }); voices.shout(gpos(boats[1]), 'go', { vol: 1.2, delay: 0.25 }); }
         let v = g.userData.v * (g === canoeG && beached ? 0 : 1);
         if (g === canoeG && d < 2.5 && !beached) { beached = true; bt = t; voices.scrape({ x: p[0], y: 0.3, z: p[1] }); voices.bigSplash({ x: p[0], y: 0, z: p[1] }, 0.8); ripples.spawn(p[0], p[1], 5, 3, 0.6, 0.6);
-          setTimeout(() => voices.erupt({ x: p[0], y: 1, z: p[1] }, 5, 1.3), 450); setTimeout(() => voices.erupt(pack(), 4, 1.1), 1400); }
+          setTimeout(() => voices.erupt({ x: p[0], y: 1, z: p[1] }, 5, 1.3), 450); setTimeout(() => voices.line('line_stuck', { x: p[0], y: 1, z: p[1] }, { vol: 1.2, f0: 260 }), 2600); setTimeout(() => voices.erupt(pack(), 4, 1.1), 1400); }
         if (beached && g !== canoeG) v *= Math.max(0, 1 - (t - bt) / 2.5);                     // the others pull up, laughing
         if (d > 0.5 && v > 0) { p[0] += (dx / d) * v * dt; p[1] += (dz / d) * v * dt; g.rotation.y = lerp(g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt * 3)); }
         g.position.set(p[0], Math.sin(T * 1.6 + i) * 0.03, p[1]);
@@ -521,6 +524,7 @@ export function createStory(C) {
     // the swimmer whoops and sputters; the paddlers egg each other on to go faster
     [[2.5, 'woo'], [6, 'go'], [9.5, 'yeah'], [13, 'woo'], [17, 'go']].forEach(([d, w], i) => setTimeout(() => { const b = i % 2 ? swim : boats[i % 3]; b.visible && voices.shout(gpos(b), w, { vol: 1.1, f0: rand(180, 260) }); }, d * 1000));
     [4, 8, 11.5, 15, 19].forEach((d) => setTimeout(() => boats[0].visible && voices.laugh(gpos(boats[Math.floor(rand(0, 3))]), { vol: 1 }), d * 1000));
+    setTimeout(() => swim.visible && voices.line('line_faster', gpos(swim, 0.3), { vol: 1.1, f0: 270 }), 7500);
     return (dt, T) => {
       t += dt; let done = true;
       boats.forEach((g, i) => {
@@ -569,14 +573,15 @@ export function createStory(C) {
       if (t > 7.6 && !dropped) {
         dropped = true; bino.getWorldPosition(vb); (mid || g).remove(bino); scene.add(bino); bino.position.copy(vb); bino.renderOrder = 4;
         drop = { x: vb.x, y: vb.y, z: vb.z, vx: Math.sin(g.rotation.y + side * Math.PI / 2) * 1.2, vz: Math.cos(g.rotation.y + side * Math.PI / 2) * 1.2, vy: 0.8 };
-        voices.shout(gpos(g), 'no', { vol: 1.4, f0: 270 }); voices.shout(gpos(g), 'no', { vol: 1.2, f0: 190, delay: 0.25 });
+        voices.line('line_binos', gpos(g), { vol: 1.4, f0: 270 }) || voices.shout(gpos(g), 'no', { vol: 1.4, f0: 270 }); voices.shout(gpos(g), 'no', { vol: 1.2, f0: 190, delay: 0.5 });
       }
       if (drop) {
         if (drop.y > 0 || !splashed) { drop.vy -= 9.8 * dt; drop.x += drop.vx * dt; drop.z += drop.vz * dt; drop.y += drop.vy * dt; bino.position.set(drop.x, drop.y, drop.z); bino.rotation.x += dt * 8; bino.rotation.z += dt * 5; }
         if (drop.y <= 0 && !splashed) { splashed = true; audio.plop(0, { x: drop.x, y: 0, z: drop.z }); ripples.spawn(drop.x, drop.z, 1.8, 2.4, 0.6, 0.1); ripples.spawn(drop.x, drop.z, 3.2, 3.2, 0.4, 0.2);
           // everyone is distraught: a long falling groan, a "no no no", a hand to the head; then silence
-          setTimeout(() => voices.shout(gpos(g), 'oh', { vol: 1.3, f0: 210 }), 250); setTimeout(() => voices.shout(gpos(g), 'oh', { vol: 1.1, f0: 150 }), 500);
-          setTimeout(() => { voices.shout(gpos(g), 'no', { vol: 1, f0: 200 }); voices.shout(gpos(g), 'no', { vol: 0.9, f0: 200, delay: 0.35 }); voices.shout(gpos(g), 'no', { vol: 0.8, f0: 190, delay: 0.7 }); }, 1400);
+          setTimeout(() => voices.shout(gpos(g), 'oh', { vol: 1.3, f0: 210, take: 2 }), 250); setTimeout(() => voices.shout(gpos(g), 'oh', { vol: 1.1, f0: 150, take: 2 }), 500);
+          setTimeout(() => { voices.shout(gpos(g), 'no', { vol: 1, f0: 200, take: 2 }); voices.shout(gpos(g), 'no', { vol: 0.9, f0: 200, delay: 0.35 }); voices.shout(gpos(g), 'no', { vol: 0.8, f0: 190, delay: 0.7 }); }, 1400);
+          setTimeout(() => voices.line('line_dad', gpos(g), { vol: 0.9, f0: 190 }), 6200);
           setTimeout(() => voices.shout(gpos(g), 'dude', { vol: 1.1, f0: 170 }), 3200); setTimeout(() => voices.shout(gpos(g), 'wait', { vol: 0.8, f0: 160 }), 4600); }
         if (splashed) { drop.y -= dt * 0.6; bino.position.y = drop.y; if (Math.random() < dt * 3 && drop.y > -1.5) ripples.spawn(drop.x, drop.z, 0.6, 1.2, 0.3, 0.05); }   // sinks, trailing bubbles
       }
@@ -593,6 +598,7 @@ export function createStory(C) {
     // the stretch of island shore the route passes closest to (before the turn), so it is seen from ~30-40 m
     let best = route.BIG.r[0], bd = 1e9, target = route.R[0];
     route.R.forEach((r) => { if (r.s < route.sVia * 0.5 || r.s > route.sVia + 40) return; route.BIG.r.forEach((p) => { const d = Math.hypot(p[0] - r.x, p[1] - r.z); if (d < bd) { bd = d; best = p; target = r; } }); });
+    S.campS = target.s;
     const inX = lerp(best[0], route.BIG.c[0], 0.07), inZ = lerp(best[1], route.BIG.c[1], 0.07), gy = Math.max(heightAt(inX, inZ), 0.3);
     const camp = G0(); camp.position.set(inX, gy, inZ); camp.rotation.y = Math.atan2(target.x - inX, target.z - inZ);
     const cm = gm(camp, GHOST, 0.9), cm2 = gm(camp, GHOST, 1.0); cm.fog = cm2.fog = false; cm.depthWrite = cm2.depthWrite = true; cm.color.set(0xffc27e); cm2.color.set(0xffd09a);   // write depth so the mist pass sees them at their real distance, not the sky behind   // warm and un-fogged so it reads across the water
@@ -675,6 +681,46 @@ export function createStory(C) {
     }
     // the end: deep in the creek fog
     if (inCreek && creekS > CREEK.L * 0.86 && !S.ended) end();
+  };
+  // ---------- v0.6.8 test build: skip-ahead points (pause menu "Skip to", or ?at=<name> on the URL) ----------
+  // each point puts the canoe on the route just before a memory, marks earlier memories as played, and starts that one now
+  const firstS = (f) => { for (const r of route.R) if (f(r)) return r.s; return route.L; };
+  const creekAt = (k) => firstS((r) => { creekSD(r.x, r.z); return creekSD(r.x, r.z) > -2 && CQ.s > CREEK.L * k; });
+  S.skips = [
+    ['start', 'On the water', 0, null],
+    ['cantaloupe', 'Cantaloupe', 0, 'cantaloupe'],
+    ['kayaker', 'Kayaker flips', 60, 'kayaker'],
+    ['flotilla', 'Flotilla + tow', 175, 'flotilla'],
+    ['tandems', 'Tandem kayaks', 335, 'tandems'],
+    ['picnic', 'Picnic table tow', route.sVia * 0.6, 'picnic'],
+    ['island', 'Island boys / beef', firstS((r) => Math.hypot(r.x - route.BIG.c[0], r.z - route.BIG.c[1]) < bigR + 140), 'island'],
+    ['camp', 'Ghost campsite', Math.max(0, (S.campS || route.sVia * 0.8) - 70), null],
+    ['race', 'Race to the tree', sTree - 145, 'race'],
+    ['binoculars', 'Binoculars', sBino - 35, 'binoculars'],
+    ['creek', 'Creek mouth', (route.sCreek || route.L) - 30, null],
+    ['ending', 'Ending', creekAt(0.8), null],
+  ];
+  S.skips.sort((a, b) => a[2] - b[2]);
+  S.skipTo = (name) => {
+    const sk = S.skips.find((k) => k[0] === name); if (!sk) return false;
+    const [, , sAt, evName] = sk, r = routeAt(route, clamp(sAt, 0, route.L)), ahead = routeAt(route, clamp(sAt + 8, 0, route.L));
+    if (G.mode === 'intro' || G.mode === 'title' || G.mode === 'launch') { S.endIntro(); G.mode = 'play'; document.body.classList.add('play'); }
+    // wind up whatever memories are still playing (silently), so the jump starts clean
+    voices.silent = true;
+    S.events.forEach((e) => { for (let i = 0; e.live && i < 400; i++) if (e.live(0.25, S.playT + i * 0.25)) e.live = null; e.live = null; });
+    [...S.ghosts].forEach(removeGhost); voices.silent = false; ATT.fn = null; ATT.k = 0;
+    $('blackout').style.transition = 'none'; $('blackout').style.opacity = 0;
+    const p = sAt <= 0 ? { x: launchInfo.end[0], z: launchInfo.end[1] } : r;
+    P.x = p.x; P.z = p.z; P.psi = Math.atan2(ahead.x - r.x, ahead.z - r.z); if (sAt <= 0) P.psi = launchInfo.psi; P.vx = P.vz = P.w = 0;
+    let bi = 0, bd = 1e18; route.R.forEach((q, k) => { const d = (q.x - P.x) ** 2 + (q.z - P.z) ** 2; if (d < bd) { bd = d; bi = k; } }); S.idx = bi; S.sNow = route.R[bi].s;
+    S.maxProg = clamp(S.sNow / route.L, 0, 1); S.playT = Math.max(S.playT, sAt <= 0 ? 0 : 60); G.manualHour = null; G.snap = true; G.hour = S.hour();
+    // memories before this point count as played; the chosen one starts right away
+    const order = ['cantaloupe', 'kayaker', 'flotilla', 'tandems', 'picnic', 'island', 'race', 'binoculars'];
+    const upto = evName ? order.indexOf(evName) : sAt <= 0 ? 0 : order.findIndex((n) => (S.skips.find((k) => k[3] === n) || [0, 0, 1e9])[2] > sAt);
+    S.events.forEach((e) => { const i = order.indexOf(e.name); if (i >= 0 && (upto < 0 || i < upto)) e.fired = true; else if (!e.live) e.fired = false; });
+    if (evName) { const e = S.events.find((x) => x.name === evName); if (e) { e.fired = true; e.live = e.run(); } }
+    OBJ.stage = sAt > route.sVia ? 3 : sAt > 0 ? 1 : 0; OBJ.reachedT = S.playT;
+    return true;
   };
   S.autoTarget = () => S.target ? [S.target.x, S.target.z] : null;
   //   grey dawn at the tent -> morning -> midday on the open water -> golden hour at Big Island -> dusk in the creek
