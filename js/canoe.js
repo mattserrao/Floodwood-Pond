@@ -352,7 +352,8 @@ export function createSwimmer(scene) {
 function createCanoeFromModels(root, body, M) {
   const wood = new THREE.MeshStandardMaterial({ color: 0x8a5f30, flatShading: true, roughness: 0.85 });
   const hull = M.canoe.clone(true); hull.position.y = 0.34; body.add(hull);
-  const person = M.paddler.clone(true); person.position.set(0, 0.1, -0.75); body.add(person);
+  // v0.6.11: the player is a cloaked shadow figure (Blender rower.glb); ghosts keep the hatted paddler
+  const person = (M.rower || M.paddler).clone(true); person.position.set(0, 0.1, -0.75); body.add(person);
   const armL = new THREE.Group(), armR = new THREE.Group(); person.add(armL, armR);   // real arms are baked into the model
   const paddle = new THREE.Group(); body.add(paddle);
   // model: blade spans y -0.48..0, shaft 0..1.45, T-grip at 1.51 (Blender Z-up -> Y-up). The pivot is the upper hand,

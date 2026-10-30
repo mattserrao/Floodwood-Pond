@@ -1,11 +1,8 @@
-// Ghostly voices for the memory scenes, spatialised through the game's 3D audio.
-// v0.6.8: recorded voices first. tools/voice/build_voices.py turns one recording of the script (tools/voice/cues.json)
-// into audio/voice/: six re-voiced "people" (pitch + formants moved), each packed in one mp3 sprite, + manifest.json.
-// A call's f0 picks the person (low f0 -> deeper voice), so crowds stay layered with different voices.
-// Missing cues fall back to the old procedural formant synthesis (and audio/memories/<name>.mp3 overrides).
+// Ghostly voices for the memory scenes. Procedural formant "voices" (laughs, shouts, whoops) spatialised through
+// the game's 3D audio, plus optional recorded clips: drop files into audio/memories/<name>.mp3 (e.g. beef.mp3,
+// laugh1.mp3) and they are used in place of the synthesis. Spoken lines fall back to the browser's speech voice.
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
-const clampI = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // formant tables [frequency, bandwidth, gain]
 const V = {
@@ -17,74 +14,16 @@ const V = {
 };
 
 export class Voices {
-  constructor(audio) { this.audio = audio; this.clips = {}; this.loading = {}; this.bank = null; this.last = {}; }
+  constructor(audio) { this.audio = audio; this.clips = {}; this.loading = {}; }
   get ctx() { return this.audio.ctx; }
-  ok() { if (this.ctx && !this.bank) this.loadBank(); return this.ctx && !this.silent && !this.audio.muted && !this.audio.paused; }
+  ok() { return this.ctx && !this.silent && !this.audio.muted && !this.audio.paused; }
+  /** v0.6.11: recorded voices reverted to the original synthesized ones; optional recorded lines stay off */
+  line() { return false; }
 
-  /** fetch audio/voice/manifest.json and decode the per-voice sprites (once, in the background) */
-  loadBank() {
-    this.bank = { ready: false };
-    fetch('audio/voice/manifest.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : Promise.reject())).then((m) =>
-      Promise.all(m.voices.map((v) => fetch('audio/voice/' + v.file).then((r) => r.arrayBuffer()).then((b) => this.ctx.decodeAudioData(b)))).then((bufs) => {
-        this.bank = { ready: true, cues: m.cues, voices: m.voices.map((v, i) => ({ id: v.id, pitch: v.pitch, buf: bufs[i] })) };
-      })).catch(() => { this.bank = { ready: false, none: true }; });
-  }
-  has(cue) { return !!(this.bank && this.bank.ready && this.bank.cues[cue]); }
-  /** which recorded person speaks: f0 ~205 Hz is the middle voice; lower f0 -> deeper voice; no f0 -> anyone */
-  pickVoice(o) {
-    const V = this.bank.voices; if (o.voice !== undefined) return V[o.voice % V.length];
-    if (!o.f0) return pick(V);
-    const r = o.f0 / 205; let best = 0; V.forEach((v, i) => { if (Math.abs(v.pitch - r) < Math.abs(V[best].pitch - r)) best = i; });
-    if (Math.random() < 0.3) best = clampI(best + (Math.random() < 0.5 ? -1 : 1), 0, V.length - 1);
-    return V[best];
-  }
-  /** play a recorded cue at a world position; returns false if we have no recording of it */
-  clip(cue, pos, o = {}) {
-    if (!this.has(cue)) return false;
-    const T = this.bank.cues[cue].takes; let k = Math.floor(Math.random() * T.length);
-    if (T.length > 1 && k === this.last[cue]) k = (k + 1) % T.length;
-    if (o.take) { const j = T.findIndex((x) => x.take === o.take); if (j >= 0) k = j; } this.last[cue] = k;
-    const tk = T[k], v = this.pickVoice(o), ctx = this.ctx, when = ctx.currentTime + (o.delay || 0), dest = this.out(pos, o.vol ?? 1, o.delay || 0);
-    const play = (rate, cents, lag, d) => { const s = ctx.createBufferSource(); s.buffer = v.buf; s.playbackRate.value = rate;
-      if (s.detune) { s.detune.value = cents; const w = ctx.createOscillator(), wg = ctx.createGain(); w.frequency.value = rand(0.3, 0.6); wg.gain.value = 14; w.connect(wg); wg.connect(s.detune); w.start(when); w.stop(when + tk.dur + 1); }   // slow waver, like worn tape
-      s.connect(d); s.start(when + lag, tk.start, tk.dur + 0.05); };
-    const r = rand(0.97, 1.02); play(r, 0, 0, dest);
-    const ghost = ctx.createGain(); ghost.gain.value = 0.35; ghost.connect(this.haze); play(r, rand(10, 18) * (Math.random() < 0.5 ? -1 : 1), 0.045, ghost);   // a faint smeared double, only in the echoes
-    return true;
-  }
-  /** an optional spoken line: only plays if it was recorded (no robot-voice fallback) */
-  line(name, pos, o = {}) { return this.ok() && this.clip(name, pos, o); }
-
-  /** a sound source at a world position, heard as a memory: v0.6.10 — quiet, thin, far, and mostly echo.
-   *  dry: band-limited (no lows, no air) and pushed back in the mix; wet: the shared haze (long, wavering echoes
-   *  smeared into the reverb), so you hear more of the room it happened in than the voice itself. */
-  out(pos, vol = 1, start = 0) {
-    const ctx = this.ctx, H = this.haze || (this.haze = this.makeHaze());
-    const v = ctx.createGain(), t = ctx.currentTime + start; v.gain.setValueAtTime(0, t); v.gain.linearRampToValueAtTime(vol * 0.38, t + 0.12);   // soft onset: it surfaces, it doesn't start
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 340; hp.Q.value = 0.6;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; lp.Q.value = 0.4;
-    v.connect(hp); hp.connect(lp);
-    lp.connect(this.audio.at(pos, { wet: 1.5, ref: 30, roll: 0.6, air: 300, echo: 0.6 }));
-    const send = ctx.createGain(); send.gain.value = 1.3; lp.connect(send); send.connect(H);
-    return v;
-  }
-  /** shared haze: two cross-fed delays (0.43 s / 0.67 s) with slowly drifting times (a tape-like waver), darkening on
-   *  every repeat, spread left/right and fed into the reverb so the echoes blur into the pond */
-  makeHaze() {
-    const ctx = this.ctx, a = this.audio, inp = ctx.createGain(), pre = ctx.createDelay(1); pre.delayTime.value = 0.09; inp.connect(pre);
-    const out = ctx.createGain(); out.gain.value = 0.5; out.connect(a.natureBus);
-    const rv = ctx.createGain(); rv.gain.value = 0.9; out.connect(rv); rv.connect(a.send);
-    const taps = [[0.43, -0.7, 0.13], [0.67, 0.7, 0.09]].map(([dt, pan, rate]) => {
-      const d = ctx.createDelay(2); d.delayTime.value = dt;
-      const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = rate; lg.gain.value = 0.007; lfo.connect(lg); lg.connect(d.delayTime); lfo.start();
-      const dark = ctx.createBiquadFilter(); dark.type = 'lowpass'; dark.frequency.value = 1700;
-      const fb = ctx.createGain(); fb.gain.value = 0.52;
-      const pn = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain(); if (pn.pan) pn.pan.value = pan;
-      pre.connect(d); d.connect(dark); dark.connect(fb); dark.connect(pn); pn.connect(out);
-      return { d, fb };
-    });
-    taps[0].fb.connect(taps[1].d); taps[1].fb.connect(taps[0].d);                       // cross-feed: the echoes wander side to side
-    return inp;
+  /** a sound source at a world position, extra-wet so it sounds like a memory across the water */
+  out(pos, vol = 1) {
+    const g = this.audio.at(pos, { wet: 0.5, ref: 34, roll: 0.55, air: 520, echo: 0.2 });
+    const v = this.ctx.createGain(); v.gain.value = vol; v.connect(g); return v;
   }
 
   /** one voiced syllable: sawtooth glottal source + aspiration through a formant bank */
@@ -109,11 +48,8 @@ export class Voices {
 
   /** "ha-ha-ha" - pitch falls through the burst */
   laugh(pos, o = {}) {
-    if (!this.ok()) return;
-    const kind = o.big || (o.n || 0) >= 11 ? 'laugh_big' : (o.n && o.n <= 6) || o.small ? 'laugh_chuckle' : 'laugh';
-    if (this.clip(kind, pos, o) || this.clip('laugh', pos, o)) return;
-    if (this.tryClip(pick(['laugh1', 'laugh2', 'laugh3']), pos, o.vol)) return;
-    const t0 = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1, o.delay || 0);
+    if (!this.ok()) return; if (this.tryClip(pick(['laugh1', 'laugh2', 'laugh3']), pos, o.vol)) return;
+    const t0 = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1);
     const n = o.n || Math.floor(rand(5, 10)); let f = o.f0 || rand(150, 230), t = t0; const vow = pick(['a', 'a', 'e', 'o']);
     for (let i = 0; i < n; i++) { const len = rand(0.08, 0.15); this.syl(d, t, f * rand(0.96, 1.06), vow, len, 0.3 * (1 - i / (n + 4)), { h: 1.1, glide: rand(-0.12, 0.02) }); t += len + rand(0.04, 0.1); f *= rand(0.94, 0.995); }
     if (Math.random() < 0.5) this.syl(d, t + 0.05, f * 1.3, 'a', 0.35, 0.12, { h: 1.2, glide: -0.25 }); // trailing wheeze
@@ -121,9 +57,8 @@ export class Voices {
 
   /** excited shouts: "hey!", "woo!", "go go go!", "yeahhh", "dude!", "ohhh!" */
   shout(pos, word, o = {}) {
-    if (!this.ok()) return; if (!word) word = pick(['hey', 'woo', 'go', 'yeah', 'dude', 'oh']);
-    if (this.clip('shout_' + word, pos, (word === 'oh' || word === 'no') && !o.take ? { ...o, take: 1 } : o) || this.tryClip('shout_' + word, pos, o.vol)) return;
-    const t = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1, o.delay || 0), f = o.f0 || rand(170, 260);
+    if (!this.ok()) return; if (this.tryClip('shout_' + (word || 'any'), pos, o.vol)) return;
+    const t = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1), f = o.f0 || rand(170, 260);
     const W = {
       hey: [['e', 0.32, 0.3]], woo: [['u', 0.6, 0.45]], go: [['o', 0.14, 0.05], ['o', 0.14, 0.05], ['o', 0.24, 0.12]],
       yeah: [['i', 0.12, 0.1], ['e', 0.16, 0.05], ['a', 0.38, -0.25]], dude: [['u', 0.42, -0.15]], oh: [['o', 0.55, -0.35]],
@@ -146,7 +81,7 @@ export class Voices {
   /** spoken line: recorded clip if present, else the browser's speech voice (not spatialised) */
   say(name, text, pos, o = {}) {
     if (!this.ok()) return;
-    if (this.clip(name, pos, { vol: o.volume ?? 1, voice: o.voice, f0: o.f0 }) || this.tryClip(name, pos, o.vol)) return;
+    if (this.tryClip(name, pos, o.vol)) return;
     if (!window.speechSynthesis) { this.shout(pos, 'hey'); return; }
     const u = new SpeechSynthesisUtterance(text);
     const vs = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
@@ -263,7 +198,7 @@ export class Voices {
   erupt(pos, sec = 4, vol = 1) {
     if (!this.ok()) return;
     for (let i = 0; i < 5; i++) { const p = { x: pos.x + rand(-3, 3), y: 1, z: pos.z + rand(-3, 3) };
-      this.laugh(p, { delay: rand(0, 0.5) + i * 0.15, n: Math.floor(rand(8, 14)), big: i < 3, f0: 120 + i * 32 + rand(-10, 10), vol: vol * rand(0.7, 1) });
+      this.laugh(p, { delay: rand(0, 0.5) + i * 0.15, n: Math.floor(rand(8, 14)), f0: rand(130, 240), vol: vol * rand(0.7, 1) });
       if (sec > 2.5) this.laugh(p, { delay: rand(1.5, sec - 1), n: Math.floor(rand(5, 9)), f0: rand(140, 230), vol: vol * rand(0.5, 0.8) }); }
     this.shout(pos, 'oh', { vol, delay: 0.1, f0: 210 }); this.shout(pos, 'dude', { vol: vol * 0.9, delay: rand(0.8, 1.6) });
   }
