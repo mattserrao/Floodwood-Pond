@@ -1,20 +1,20 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.7.2';
-import { AmbientAudio } from './audio.js?v=0.7.2';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD } from './world.js?v=0.7.2';
-import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.7.2';
-import { createPost } from './post.js?v=0.7.2';
-import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.7.2';
-import { WIND, gustAt, updateWind } from './wind.js?v=0.7.2';
-import { Q } from './quality.js?v=0.7.2';
-import { WX } from './weather.js?v=0.7.2';
-import { createWildlife } from './wildlife.js?v=0.7.2';
-import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.7.2';
-import { createStory } from './story.js?v=0.7.2';
-import { buildShore } from './shore.js?v=0.7.2';
-import { loadModels } from './models.js?v=0.7.2';
-import { buildCamp } from './camp.js?v=0.7.2';
-import { setModels } from './story.js?v=0.7.2';
+import { MAP } from './mapdata.js?v=0.8.0';
+import { AmbientAudio } from './audio.js?v=0.8.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD } from './world.js?v=0.8.0';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.8.0';
+import { createPost } from './post.js?v=0.8.0';
+import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.8.0';
+import { WIND, gustAt, updateWind } from './wind.js?v=0.8.0';
+import { Q } from './quality.js?v=0.8.0';
+import { WX } from './weather.js?v=0.8.0';
+import { createWildlife } from './wildlife.js?v=0.8.0';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.8.0';
+import { createStory } from './story.js?v=0.8.0';
+import { buildShore } from './shore.js?v=0.8.0';
+import { loadModels } from './models.js?v=0.8.0';
+import { buildCamp } from './camp.js?v=0.8.0';
+import { setModels } from './story.js?v=0.8.0';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -102,7 +102,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.7.2';
+const VERSION = '0.8.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -567,12 +567,12 @@ function updateEnvironment(dt, t) {
   sunLight.color.copy(pal.sun); sunLight.intensity = 3.2 * sunI; sunLight.position.set(P.x + sunV.x * 300, sunV.y * 300 + 20, P.z + sunV.z * 300); sunLight.target.position.set(P.x, 0, P.z);
   moonLight.intensity = 0.8 * moonVis * (0.2 + 0.8 * moonFrac); moonLight.position.set(P.x + moonV.x * 300, moonV.y * 300 + 20, P.z + moonV.z * 300); moonLight.target.position.set(P.x, 0, P.z);
   hemi.color.copy(pal.hemiS); hemi.groundColor.copy(pal.hemiG); hemi.intensity = pal.hemiI * 1.15;
-  const lift = story && story.fogLift ? story.fogLift() : 0, WXF = WX.fog * (1 - lift);   // v0.7.1: the morning fog lifts after a minute on the water
+  const lift = story && story.fogLift ? story.fogLift() : 0, WXF = WX.fog * (1 - lift); WX.clearK = 1 - lift;   // v0.8.0: weather fog and grey cover burn off with it   // v0.7.1: the morning fog lifts after a minute on the water
   const fogA = clamp(G.fog, 0, 1);
   // v0.4: haze follows the day - thick at dawn and at night, clearest at midday - plus fog mornings and rain
   const dawnHaze = sstep(4.3, 5.6, h) * (1 - sstep(7.4, 10, h)), nightHaze = night * (1 - dawnHaze);
   pal.fogD *= (1 + 1.1 * dawnHaze + 0.7 * nightHaze) * (1 - 0.12 * day);
-  if (story) pal.fogD *= story.fogMul * (1 - 0.55 * lift);
+  if (story) pal.fogD *= story.fogMul * (1 - 0.7 * lift);
   pal.fogD += WXF * 0.0028 + cover * 0.00035 + WX.rain * 0.0011;
   if (WXF > 0.01 || WX.rain > 0.01) pal.fog.lerp(greyA.setRGB(0.62, 0.65, 0.68).multiplyScalar(0.25 + 0.75 * sstep(-0.2, 0.3, sunV.y)), clamp(WXF * 0.7 + WX.rain * 0.5, 0, 0.85));
   const fogTint = pal.fog.clone().lerp(tintC.setRGB(0.86, 0.88, 0.9), 0.25 + 0.45 * day).multiplyScalar(0.35 + 0.65 * Math.max(day, 0.25));
@@ -591,7 +591,7 @@ function updateEnvironment(dt, t) {
   wu.uFog.value.copy(fogCol); wu.uFogD.value = fogD; wu.uRain.value = WX.rain; wu.uCover.value = cover;
   wu.uTreeCol.value.setRGB(0.04, 0.08, 0.05).multiplyScalar(0.3 + 0.7 * clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y), 0, 1)).lerp(fogCol, clamp(1 - Math.exp(-Math.pow(450 * fogD, 2)), 0, 1));
   wu.tRefl.value = refl.rt.texture; wu.uReflRes.value.set(refl.rt.width, refl.rt.height); wu.uTexMat.value = refl.texMat; // same object: refl.render() updates it just before the main pass
-  post.uniforms.uMist.value = (1 + WXF * 0.8 + WX.wet * 0.6) * (1 - 0.6 * lift); post.uniforms.uDim.value = cover * 0.6 + WX.rain * 0.4;
+  post.uniforms.uMist.value = (1 + WXF * 0.8 + WX.wet * 0.6) * (1 - 0.85 * lift); post.uniforms.uDim.value = cover * 0.6 + WX.rain * 0.4;
   // v0.6 layered atmosphere: fog pools in bays and lifts as the sun climbs; aerial haze toward the sky colour, warmed sunward
   { const U = post.uniforms; U.tShelter.value = WORLD.shelterTex; U.uExt.value.set(EXT.minX, EXT.minZ, EXT.W, EXT.D);
     U.uLift.value = Math.max(0.85 * sstep(0.12, 0.5, sunV.y) * (1 - WXF), 0.9 * lift); U.uBay.value = 1;
@@ -612,7 +612,7 @@ function updateEnvironment(dt, t) {
   // wildlife & atmosphere
   const bothTw = twilight;
   flies.update(P, t, clamp((night * 0.9 + bothTw * 0.6) * (h > 17 || h < 5 ? 1 : 0.2), 0, 0.95));
-  const mistLevel = (sstep(4.6, 5.6, h) * (1 - sstep(7.2, 9.6, h)) * 1.0 + 0.12 * twilight + WXF * 0.6 + WX.wet * 0.5) * (1 - 0.9 * lift);
+  const mistLevel = (sstep(4.6, 5.6, h) * (1 - sstep(7.2, 9.6, h)) * 1.0 + 0.12 * twilight + WXF * 0.6 + WX.wet * 0.5) * (1 - lift);
   mist.update(dt, clamp(mistLevel + fogA, 0, 1), tintC.copy(pal.fog).lerp(greyB.setRGB(1, 1, 1), 0.35), camera.position.y);
   ripples.update(dt, tintC.copy(pal.hor).lerp(new THREE.Color(1, 1, 1), 0.35 * day + 0.1));
   loons.update(dt, t, P, ripples, (x, z) => audio.plop(clamp((x - P.x) / 200, -1, 1)));

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp, sstep, rnd, fbm, pondSD, heightAt, CAMP, campPath, LEAF_COLS, leafGeometry, glowTexture } from './world.js?v=0.7.2';
+import { clamp, lerp, sstep, rnd, fbm, pondSD, heightAt, CAMP, campPath, LEAF_COLS, leafGeometry, glowTexture } from './world.js?v=0.8.0';
 
 // v0.6.2: the campsite at the start of the game - leaf litter and needle duff with a worn path, pine cones, twigs,
 // a fire ring with cold ash and a half-burnt log, split firewood, a camp chair, ferns and blueberry along the tree line,

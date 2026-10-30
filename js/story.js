@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.7.2';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.7.2';
-import { Voices } from './voices.js?v=0.7.2';
-import { recolor } from './models.js?v=0.7.2';
+import { MAP } from './mapdata.js?v=0.8.0';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.8.0';
+import { Voices } from './voices.js?v=0.8.0';
+import { recolor } from './models.js?v=0.8.0';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};
@@ -733,6 +733,8 @@ export function createStory(C) {
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd7a0, blending: THREE.AdditiveBlending, transparent: true, opacity: 0, depthWrite: false, fog: false }));
   glow.scale.set(150, 90, 1); glow.position.set(route.BIG.c[0], 24, route.BIG.c[1]); glow.renderOrder = 6; scene.add(glow);
   const OBJ = { stage: 0, t: 0 };
+  // the island's boundary: 70 m off its shore, or wider if the paddling route never comes that close (it passes ~100 m off)
+  const ISL_R = (() => { let m = 1e9; route.R.forEach((r) => { if (r.s > route.sVia + 60) return; route.BIG.r.forEach((q) => { m = Math.min(m, Math.hypot(q[0] - r.x, q[1] - r.z)); }); }); return Math.max(70, m + 30); })(); S.islandR = ISL_R;
   function say(text) { const el = $('objective'); if (!el) return; el.textContent = text; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); clearTimeout(OBJ.h); OBJ.h = setTimeout(() => el.classList.remove('on'), 6500); }
   S.updateObjective = (dt, T) => {
     OBJ.t += dt;
@@ -740,7 +742,8 @@ export function createStory(C) {
     const dIsl = Math.hypot(P.x - route.BIG.c[0], P.z - route.BIG.c[1]);
     // v0.7.2: 'reached' means actually alongside the island (within ~45 m of its shore), not just inside its bounding circle
     let dShore = 1e9; if (OBJ.stage === 1) for (const q of route.BIG.r) { const d = (q[0] - P.x) ** 2 + (q[1] - P.z) ** 2; if (d < dShore) dShore = d; } dShore = Math.sqrt(dShore);
-    if (OBJ.stage === 1 && ((dShore < 90 && S.sNow > route.sVia * 0.6) || S.sNow > route.sVia)) { OBJ.stage = 2; OBJ.reachedT = S.playT; if (S.nightT0 === undefined) { S.nightT0 = S.playT; S.sReach = S.sNow; } }   // v0.7.0: night falls at Big Island
+    // v0.8.0 draft: freeplay until you cross the island's boundary (within 70 m of its shore) - then the story takes over
+    if (OBJ.stage === 1 && dShore < ISL_R) { OBJ.stage = 2; OBJ.reachedT = S.playT; if (S.nightT0 === undefined) { S.nightT0 = S.playT; S.sReach = S.sNow; } }   // v0.7.0: night falls at Big Island
     if (OBJ.stage === 2 && S.playT > OBJ.reachedT + 22) { OBJ.stage = 3; say('paddle to the creek'); }
     const want = OBJ.stage === 1 ? 0.22 * sstep(bigR + 40, bigR + 260, dIsl) : 0;
     glow.material.opacity = lerp(glow.material.opacity, want * (0.85 + 0.15 * Math.sin(T * 0.8)), Math.min(1, dt * 0.8));
@@ -760,11 +763,12 @@ export function createStory(C) {
     let dx = tgt.x - P.x, dz = tgt.z - P.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
     // the pull: a slow current along the journey, and a gentle weathervane toward it when you rest the paddle
     const inCreek = creekSD(P.x, P.z) > -2, creekS = CQ.s;
-    const pullA = 0.05 * sstep(4, 20, S.playT) * (inCreek ? 1.6 : 1) * (1 + 1.4 * NIGHT.dark);   // v0.7.2: the darkness pushes you on
+    const story = S.nightT0 !== undefined, sinceIsl = story ? S.playT - S.nightT0 : 0;   // v0.8.0: no current, no mist, no nudging until the island
+    const pullA = story ? 0.05 * sstep(0, 12, sinceIsl) * (inCreek ? 1.6 : 1) * (1 + 1.4 * NIGHT.dark) : 0;   // v0.7.2: the darkness pushes you on
     P.vx += dx * pullA * dt; P.vz += dz * pullA * dt;
-    P.w += angDiff(Math.atan2(dx, dz), P.psi) * 0.06 * (1 - P.act) * dt;
+    if (story) P.w += angDiff(Math.atan2(dx, dz), P.psi) * 0.06 * (1 - P.act) * dt;
     // mist crowds in behind
-    const prog = clamp(S.sNow / route.L, 0, 1), behind = sstep(6, 70, S.playT) * (0.55 + 0.45 * prog);
+    const prog = clamp(S.sNow / route.L, 0, 1), behind = story ? sstep(2, 25, sinceIsl) * (0.55 + 0.45 * prog) : 0;
     S.away = [-dx, -dz]; S.behind = behind; S.fogMul = 1 + 0.5 * prog;
     const U = post.uniforms; if (U.uBehind) { U.uBehind.value = behind; U.uAway.value.set(-dx, -dz); U.uPlayer.value.set(P.x, 0, P.z); }
     const fogCol = scene.fog.color, base = Math.atan2(-dx, -dz);
@@ -791,7 +795,7 @@ export function createStory(C) {
       if (e.live && e.live(dt, T)) e.live = null;
     }
     // the end: deep in the creek fog
-    if (inCreek && creekS > CREEK.L * 0.86 && !S.ended) end();
+    if (story && inCreek && creekS > CREEK.L * 0.86 && !S.ended) end();
   };
   // ---------- v0.6.8 test build: skip-ahead points (pause menu "Skip to", or ?at=<name> on the URL) ----------
   // each point puts the canoe on the route just before a memory, marks earlier memories as played, and starts that one now
@@ -834,7 +838,7 @@ export function createStory(C) {
     if (evName) { const e = S.events.find((x) => x.name === evName); if (e) { e.fired = true; e.live = e.run(); } }
     OBJ.stage = sAt > route.sVia ? 3 : sAt > 0 ? 1 : 0; OBJ.reachedT = S.playT;
     const islandS = (S.skips.find((k) => k[0] === 'island') || [0, 0, route.sVia])[2];
-    if (sAt > islandS + 20) { S.nightT0 = S.playT - 40; S.sReach = islandS; G.hour = 21.5; } else { S.nightT0 = undefined; S.sReach = undefined; NIGHT.dark = 0; NIGHT.swell = 0; NIGHT.crest = false; G.hour = S.hour(); }
+    if (sAt > islandS + 20) { S.nightT0 = S.playT - 40; S.sReach = islandS; G.hour = 21.5; } else { S.nightT0 = undefined; S.sReach = undefined; S.pathT0 = undefined; S.pathPts = null; NIGHT.dark = 0; NIGHT.swell = 0; NIGHT.crest = false; G.hour = S.hour(); }
     return true;
   };
   // ---------- v0.7.0: the night crossing - Big Island to the creek ----------
@@ -856,6 +860,21 @@ export function createStory(C) {
     // the peak: entering the creek, toward the light
     if (on && !NIGHT.crest && inCreek && creekS > CREEK.L * 0.08) { NIGHT.crest = true; audio.crescendo && audio.crescendo(); }
     // the trail: soft pools of light on the water ahead, a slow pulse running toward the creek; they fade into the creek's own lit fog
+    // v0.8.0: as the fog clears, the way to Big Island glows on the water for ~10 s, then fades
+    if (!on) {
+      if (S.pathT0 === undefined && S.fogLift() > 0.97) S.pathT0 = S.playT;
+      const pt = S.pathT0 === undefined ? -1 : S.playT - S.pathT0, pk = pt < 0 ? 0 : sstep(0, 1.5, pt) * (1 - sstep(7, 10, pt));
+      if (pk > 0.001) {
+        if (!S.pathPts) { const R = route.R, tgt = S.campS || route.sVia * 0.85; const pts = [new THREE.Vector3(P.x, 0, P.z)]; for (let k = S.idx; k < R.length && R[k].s <= tgt; k += 2) pts.push(new THREE.Vector3(R[k].x, 0, R[k].z));
+          const cum = [0]; for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + pts[k].distanceTo(pts[k - 1])); S.pathPts = { pts, cum, L: cum[cum.length - 1] }; }
+        const { pts, cum, L } = S.pathPts, step = Math.max(6.5, L / trail.length);
+        trail.forEach((m, i) => { const d = 10 + i * step; if (d > L) { m.visible = false; return; } let k = 1; while (k < cum.length - 1 && cum[k] < d) k++; const u = (d - cum[k - 1]) / (cum[k] - cum[k - 1] || 1);
+          const a2 = pts[k - 1], b2 = pts[k], dx = b2.x - a2.x, dz = b2.z - a2.z, l = Math.hypot(dx, dz) || 1;
+          m.visible = true; m.position.set(a2.x + dx * u, 0.07, a2.z + dz * u); m.scale.set(2.6, 7.5, 1); m.rotation.z = Math.atan2(-dx / l, -dz / l);
+          const pulse = 0.55 + 0.45 * Math.sin(d * 0.05 - T * 1.6); const front = 10 + pt * 90; m.material.opacity = 1.0 * pk * pulse * (1 - sstep(front - 14, front, d)); m.scale.set(3.4, 9, 1); });   // it runs out ahead of you toward the island
+        return;
+      } else if (S.pathPts) { S.pathPts = null; trail.forEach((m) => { m.visible = false; }); }
+    }
     const tk = NIGHT.dark * (1 - sstep(sC - 20, sC + 40, S.sNow));
     trail.forEach((m, i) => {
       const sv = S.sNow + 12 + i * 6.5; if (tk < 0.01 || sv > sC + 30) { m.visible = false; return; }
@@ -868,11 +887,12 @@ export function createStory(C) {
   S.night = NIGHT;
 
   /** v0.7.1: the morning fog lifts after about a minute on the water */
-  S.fogLift = () => (G.mode === 'play' || G.mode === 'ending' ? sstep(55, 95, S.playT) : 0);
+  S.fogLift = () => (G.mode === 'play' || G.mode === 'ending' ? sstep(16, 30, S.playT) : 0);   // v0.8.0: fully gone 30 s after launch
   S.autoTarget = () => S.target ? [S.target.x, S.target.z] : null;
   //   grey dawn at the tent -> morning -> midday on the open water -> golden hour at Big Island -> dusk in the creek
   const HOURS = [[0, 6.35], [0.12, 7.6], [0.3, 10.5], [0.45, 13.5], [0.62, 16.6], [0.76, 17.9], [0.86, 18.7], [0.95, 19.4], [1, 19.9]];
   const dayHour = () => {
+    if (S.nightT0 === undefined) return lerp(6.35, 9.8, sstep(0, 45, S.playT));   // v0.8.0: freeplay - the morning brightens as the fog burns off
     S.maxProg = Math.max(S.maxProg || 0, clamp(S.sNow / route.L, 0, 1)); const p = S.maxProg;
     for (let i = 0; i < HOURS.length - 1; i++) { const [a, ha] = HOURS[i], [b, hb] = HOURS[i + 1]; if (p <= b) return lerp(ha, hb, (p - a) / (b - a)); }
     return HOURS[HOURS.length - 1][1];

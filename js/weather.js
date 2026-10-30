@@ -1,6 +1,6 @@
 // Day-to-day weather. Each new day (at 3 AM) rolls a sky: clear, overcast, or a fog-bound morning that burns off.
 // Showers pass through now and then, mostly on grey days. Everything is exposed as smooth 0..1 levels.
-import { clamp, sstep } from './world.js?v=0.7.2';
+import { clamp, sstep } from './world.js?v=0.8.0';
 
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const R = Math.random;
@@ -44,13 +44,13 @@ export const WX = {
       rainT = S.peak * sstep(0, 14, S.t) * (1 - sstep(S.len - 18, S.len, S.t));
       if (S.t > S.len) { WX.shower = null; }
     }
-    const cloudT = Math.max(WX.kind === 'overcast' ? 0.85 : WX.kind === 'fog' ? 0.35 * (1 - sstep(9, 11.5, hour)) : 0.05, rainT > 0.01 ? 0.75 + 0.25 * rainT : 0, WX.shower ? 0.7 : 0);
+    const cloudT = Math.max(WX.kind === 'overcast' ? 0.85 * (WX.clearK ?? 1) + 0.15 * (1 - (WX.clearK ?? 1)) : WX.kind === 'fog' ? 0.35 * (1 - sstep(9, 11.5, hour)) * (WX.clearK ?? 1) : 0.05, rainT > 0.01 ? 0.75 + 0.25 * rainT : 0, WX.shower ? 0.7 : 0);
     const k = Math.min(1, dt / 9);
     WX.cloud += (cloudT - WX.cloud) * k;
     WX.rain += (rainT - WX.rain) * Math.min(1, dt / 3);
     // fog mornings: socked in before dawn, burning off by mid-morning; a lighter haze returns some evenings
     const fogT = WX.kind === 'fog' ? (hour > 20 || hour < 9 ? 1 : 1 - sstep(8, 10.5, hour)) * (hour > 20 ? sstep(20, 24, hour) : 1) : 0;
-    WX.fog += (fogT - WX.fog) * Math.min(1, dt / 6);
+    WX.fog += (fogT * (WX.clearK ?? 1) - WX.fog) * Math.min(1, dt / ((WX.clearK ?? 1) < 1 ? 2 : 6));   // v0.8.0: the story can burn the fog off (clearK)
     WX.wet = rainT > 0.05 ? Math.min(1, WX.wet + dt / 20) : Math.max(0, WX.wet - dt / 90);
     WX.wind = clamp(WX._windDay + 0.35 * WX.rain + (WX.shower ? 0.15 : 0), 0, 1);
     return WX;

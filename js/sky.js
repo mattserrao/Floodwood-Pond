@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { EXT, sstep, clamp, lerp } from './world.js?v=0.7.2';
-import { WIND, GUST_GLSL } from './wind.js?v=0.7.2';
+import { EXT, sstep, clamp, lerp } from './world.js?v=0.8.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.8.0';
 
 // ------------------------------------------------------------------ day/night palette
 const K = (h, top, mid, hor, fog, hemiS, hemiG, sun, fogD, hemiI) => ({ h, top: new THREE.Color(top), mid: new THREE.Color(mid), hor: new THREE.Color(hor), fog: new THREE.Color(fog), hemiS: new THREE.Color(hemiS), hemiG: new THREE.Color(hemiG), sun: new THREE.Color(sun), fogD, hemiI });
