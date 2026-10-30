@@ -96,7 +96,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.6.3';
+const VERSION = '0.6.4';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -297,10 +297,10 @@ function stepCanoe(dt, controllable) {
     if (prev < 0.04 && P.phase >= 0.04) catchStroke(Math.abs(throttle) > 0.05 ? 1 : 0.6);
     if (prev < 0.5 && P.phase >= 0.5) releaseStroke(hard);
     const u = P.phase;
-    if (u < 0.5) thrust = Math.sin((u / 0.5) * Math.PI) * 1.55 * hard * (AUTO.on ? 0.6 : 1) * (Math.abs(throttle) > 0.05 ? Math.sign(throttle) * (throttle > 0 ? 1 : 0.45) : 0.18);
+    if (u < 0.5) thrust = Math.sin((u / 0.5) * Math.PI) * 1.55 * 1.62 * hard * (AUTO.on ? 0.6 : 1) * (Math.abs(throttle) > 0.05 ? Math.sign(throttle) * (throttle > 0 ? 1 : 0.45) : 0.18);
   } else if (P.act > 0.02) { P.phase = (P.phase + dt / 1.6) % 1; } // finish the motion while the paddle settles
   // gliding (no paddle in the water) keeps most of its momentum; paddling adds stroke drag
-  const lin = lerp(0.035, 0.16, P.act), quad = lerp(0.012, 0.045, P.act);
+  const lin = lerp(0.035, 0.16, P.act), quad = lerp(0.012, 0.045, P.act) * 0.8;
   // wind: a gust pushes the canoe downwind (mostly sideways - a canoe has little grip in the water) and weathervanes the stern
   const gu = gustAt(P.x, P.z), wpush = (WIND.base * 0.03 + gu * 0.09) * (NQ.creek ? 0.2 : 1);
   const wf = WIND.dir.x * fx + WIND.dir.y * fz, wl = WIND.dir.x * lx + WIND.dir.y * lz;
@@ -686,7 +686,7 @@ function frame(now) {
   camera.updateMatrixWorld();
   if (Q.s.refl > 0) {
     // the mirror is low-res and mostly shows the shoreline: skip litter and far reeds, pull the far cull in
-    cullTiles(camera.position, Math.min(G.visDist || 3000, 420), 0, 200);
+    cullTiles(camera.position, Math.min(G.visDist || 3000, 1700), 0, 260);
     refl.render(scene, camera, sky);
     cullTiles(camera.position, G.visDist || 3000, Math.min(G.visDist || 3000, 320), 900);
   }

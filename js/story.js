@@ -522,7 +522,7 @@ export function createStory(C) {
     // glance back over the shoulder now and then to watch the mist (not while a memory is playing)
     //   1) once the first memories are behind you, 2) as Big Island comes alongside, 3) at the mouth of the creek
     S.glanceBeats = S.glanceBeats || [420, route.sVia - 40, (route.sCreek || route.L) - 25];
-    if (!S.glance && S.glanceBeats.length && S.sNow > S.glanceBeats[0] && !C.dragging() && ATT.k < 0.05) { S.glanceBeats.shift(); S.glance = { t: 0, side: Math.random() < 0.5 ? -1 : 1 }; }
+    /* v0.6.4: forced look-backs removed */ if (false && !S.glance && S.glanceBeats.length && S.sNow > S.glanceBeats[0] && !C.dragging() && ATT.k < 0.05) { S.glanceBeats.shift(); S.glance = { t: 0, side: Math.random() < 0.5 ? -1 : 1 }; }
     if (S.glance) { const g = S.glance; g.t += dt; const k = g.t < 2.8 ? ease(g.t / 2.8) : g.t < 6 ? 1 : 1 - ease((g.t - 6) / 2.8); S.glanceYaw = g.side * Math.PI * 0.8 * k; if (g.t > 8.8) { S.glance = null; S.glanceYaw = 0; } }
     MOTES.update(dt);
     // memories
