@@ -1,20 +1,21 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.8.2';
-import { AmbientAudio } from './audio.js?v=0.8.2';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD } from './world.js?v=0.8.2';
-import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.8.2';
-import { createPost } from './post.js?v=0.8.2';
-import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.8.2';
-import { WIND, gustAt, updateWind } from './wind.js?v=0.8.2';
-import { Q } from './quality.js?v=0.8.2';
-import { WX } from './weather.js?v=0.8.2';
-import { createWildlife } from './wildlife.js?v=0.8.2';
-import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.8.2';
-import { createStory } from './story.js?v=0.8.2';
-import { buildShore } from './shore.js?v=0.8.2';
-import { loadModels } from './models.js?v=0.8.2';
-import { buildCamp } from './camp.js?v=0.8.2';
-import { setModels } from './story.js?v=0.8.2';
+import { MAP } from './mapdata.js?v=0.9.0';
+import { AmbientAudio } from './audio.js?v=0.9.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.9.0';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.9.0';
+import { createPost } from './post.js?v=0.9.0';
+import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.9.0';
+import { WIND, gustAt, updateWind } from './wind.js?v=0.9.0';
+import { Q } from './quality.js?v=0.9.0';
+import { WX } from './weather.js?v=0.9.0';
+import { createWildlife } from './wildlife.js?v=0.9.0';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.9.0';
+import { createStory } from './story.js?v=0.9.0';
+import { buildShore } from './shore.js?v=0.9.0';
+import { loadModels } from './models.js?v=0.9.0';
+import { buildCamp } from './camp.js?v=0.9.0';
+import { createNearField } from './nearfield.js?v=0.9.0';
+import { setModels } from './story.js?v=0.9.0';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -40,20 +41,28 @@ addEventListener('resize', () => { post.setSize(); refl.resize(); });
 
 const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 1);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1), moonLight = new THREE.DirectionalLight(0x8fa8ff, 0);
+// v0.9.0: sun shadows in a box that follows the canoe (only the near-field trees, rocks, logs and boats cast)
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+{ const sc = sunLight.shadow.camera; sc.left = -80; sc.right = 80; sc.top = 80; sc.bottom = -80; sc.near = 50; sc.far = 700; sunLight.shadow.bias = -0.0006; sunLight.shadow.normalBias = 0.5; }
 scene.add(hemi, sunLight, sunLight.target, moonLight, moonLight.target);
 
 // ------------------------------------------------------------------ build the world
 let world = {}, story = null, swimmer, canoe, ripples, loons, geese, flies, mist, sky, water, camps, wild, floatLeaves, fallLeaves, drips, rain, audio = new AmbientAudio();
 const launchInfo = {};
 function build() {
-  const { depthTex } = buildTerrain(scene);
+  const { depthTex, mesh: terrainMesh } = buildTerrain(scene); world.terrain = terrainMesh;
   sky = createSky(); scene.add(sky);
   water = createWater(depthTex); scene.add(water);
   buildPaths(scene); buildMountains(scene);
-  world.stats = buildTrees(scene);
+  world.stats = buildTrees(scene); shadeUnderTrees(terrainMesh);
   world.isle = buildIsland(scene);
   world.shore = buildShore(scene, world.models);
   world.camp = buildCamp(scene, WORLD.treePos || [], post);
+  world.near = createNearField(scene); world.near.setQuality(Q.s);
+  // v0.9.0: solid things cast and catch shadows (the shadow box only covers ~80 m round the canoe, so this stays cheap)
+  scene.traverse((o) => { if (!o.isMesh || !o.material || o.material.transparent || o === water || o === world.terrain) return; const t = o.userData.tag;
+    if (o.isInstancedMesh && (t === 'tree' || t === 'reed' || t === 'litter')) return; if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    if (o.isInstancedMesh ? (t === 'shore' || t === 'shrub') : o.geometry.boundingSphere.radius < 40) { o.castShadow = true; o.receiveShadow = true; } });
   buildCreek(scene);
   camps = buildCamps(scene);
   // find the hand launch on the shore, and which way is water
@@ -70,6 +79,7 @@ function build() {
     for (let i = 0; i <= 12; i++) { const k = i / 12, v = cl.clone().lerp(bow, k); v.y -= Math.sin(k * Math.PI) * 0.22; pts.push(v); }
     world.bowLine = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.012, 4), new THREE.MeshStandardMaterial({ color: 0x8a7a58, roughness: 1 })); scene.add(world.bowLine); void D; }
   canoe = createCanoe(world.models); scene.add(canoe.root);
+  canoe.root.traverse((o) => { if (o.isMesh && o !== canoe.mask && o.material && !o.material.transparent && o.material.colorWrite !== false) o.castShadow = true; });
   // the canoe and paddler read as a silhouette against the water and sky (lantern still glows)
   canoe.sil = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.DoubleSide });
   canoe.body.traverse((o) => { if (o.isMesh && o !== canoe.lantern && o.material.colorWrite !== false) o.material = canoe.sil; });
@@ -96,13 +106,17 @@ function applyQuality() {
   if (floatLeaves) floatLeaves.setCount(q.leaves);
   if (rain) rain.setCount(q.rain);
   setLitterScale(q.litter);
+  const sh = q.shadow || 0; renderer.shadowMap.enabled = sh > 0; sunLight.castShadow = sh > 0;
+  if (sh && sunLight.shadow.mapSize.x !== sh) { sunLight.shadow.mapSize.set(sh, sh); if (sunLight.shadow.map) { sunLight.shadow.map.dispose(); sunLight.shadow.map = null; } }
+  scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
+  if (world.near) world.near.setQuality(q);
   const el = document.getElementById('pQual'); if (el) el.textContent = 'Graphics: ' + Q.label();
 }
 Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.8.2';
+const VERSION = '0.9.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -564,6 +578,8 @@ function updateEnvironment(dt, t) {
     pal.hemiI *= 1 + 0.25 * cover;
   }
   // lights
+  TREE_LIGHT.uSunDir.value.copy(sunV); TREE_LIGHT.uSunCol.value.copy(pal.sun); TREE_LIGHT.uSunK.value = sstep(-0.04, 0.12, sunV.y) * (1 - 0.8 * cover);
+  if (world.near) world.near.update(camera.position);
   sunLight.color.copy(pal.sun); sunLight.intensity = 3.2 * sunI; sunLight.position.set(P.x + sunV.x * 300, sunV.y * 300 + 20, P.z + sunV.z * 300); sunLight.target.position.set(P.x, 0, P.z);
   moonLight.intensity = 0.8 * moonVis * (0.2 + 0.8 * moonFrac); moonLight.position.set(P.x + moonV.x * 300, moonV.y * 300 + 20, P.z + moonV.z * 300); moonLight.target.position.set(P.x, 0, P.z);
   hemi.color.copy(pal.hemiS); hemi.groundColor.copy(pal.hemiG); hemi.intensity = pal.hemiI * 1.15;
@@ -747,7 +763,7 @@ function boot() {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap(); buildTitleShots(); buildSkips();
     cam.pos.set(P.x, 5, P.z - 12);
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
-    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05, ctl = false) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, ctl); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, TITLE, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
+    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05, ctl = false) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, ctl); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, TITLE, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe, get near() { return world.near; } };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     ready = true; frame();
     if (pendingStart) startGame();

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp, rnd, pondSD, inPond, NQ, glowTexture } from './world.js?v=0.8.2';
+import { clamp, lerp, rnd, pondSD, inPond, NQ, glowTexture } from './world.js?v=0.9.0';
 
 const flat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, ...extra });
 /** v0.4: bake a set of static child meshes into one vertex-coloured mesh (one draw call instead of many) */

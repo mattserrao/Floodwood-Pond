@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.8.2';
-import { WIND, GUST_GLSL } from './wind.js?v=0.8.2';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.8.2';
+import { MAP } from './mapdata.js?v=0.9.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.9.0';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.9.0';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -210,10 +210,11 @@ function terrainColor(x, z, h, dd, water, c) {
   if (!water && inCampBox(x, z)) { const k = 1 - sstep(CAMP.R - 8, CAMP.R, Math.hypot(x - CAMP.tent[0], z - CAMP.tent[1])); if (k > 0) { campColor(x, z, dd, c); return c; } }
   const n1 = fbm(x * 0.02, z * 0.02), n2 = fbm(x * 0.07 + 9, z * 0.07);
   if (water) c.setRGB(0.12 + 0.04 * n1, 0.11 + 0.04 * n1, 0.07 + 0.02 * n1);
-  else if (dd < 4) c.setRGB(0.5 + 0.1 * n2, 0.43 + 0.08 * n2, 0.29);
-  else if (dd < 26) { c.setRGB(0.26 + 0.08 * n2, 0.3 + 0.06 * n1, 0.12); if (n1 > 0.58) c.setRGB(0.42, 0.32, 0.12); }
+  else if (dd < 4) { const n3 = fbm(x * 0.09 + 4, z * 0.09 - 3), n4 = fbm(x * 0.03 - 9, z * 0.03 + 2);   // v0.9.0: real shores - dark mud, moss, granite, sand only in a few coves
+    c.setRGB(0.2 + 0.05 * n2, 0.17 + 0.04 * n2, 0.11).lerp(new THREE.Color(0.2, 0.25, 0.11), sstep(0.45, 0.7, n3) * 0.8).lerp(new THREE.Color(0.38, 0.37, 0.34), sstep(0.62, 0.78, n2) * 0.75).lerp(new THREE.Color(0.5, 0.44, 0.31), sstep(0.7, 0.82, n4)); }
+  else if (dd < 26) { c.setRGB(0.31 + 0.07 * n2, 0.19 + 0.04 * n1, 0.09).lerp(new THREE.Color(0.2, 0.24, 0.09), sstep(0.55, 0.72, n1) * 0.35); }   /* v0.9.0: brown needle duff with mossy patches, not lawn green */
   else {
-    c.setRGB(0.1, 0.19, 0.08).lerp(new THREE.Color(0.24, 0.16, 0.08), sstep(0.38, 0.62, n1)).lerp(new THREE.Color(0.38, 0.28, 0.08), sstep(0.55, 0.75, n2) * 0.7);
+    c.setRGB(0.2, 0.17, 0.08).lerp(new THREE.Color(0.28, 0.17, 0.08), sstep(0.38, 0.62, n1)).lerp(new THREE.Color(0.36, 0.26, 0.09), sstep(0.55, 0.75, n2) * 0.6);
     if (h > 55) c.lerp(new THREE.Color(0.28, 0.3, 0.26), sstep(55, 110, h) * 0.8);
   }
   return c;
@@ -228,13 +229,13 @@ function campColor(x, z, dd, c) {
   c.copy(duff).lerp(moss, sstep(0.72, 0.85, n) * 0.35).lerp(dirt, Math.max(path, pad * 0.9) * 0.7).lerp(sand, 1 - sstep(2, 9, dd));
   // the base colour this patch blends back into at its edge
   const base = new THREE.Color(); const n1 = fbm(x * 0.02, z * 0.02), n2 = fbm(x * 0.07 + 9, z * 0.07);
-  if (dd < 4) base.setRGB(0.5 + 0.1 * n2, 0.43 + 0.08 * n2, 0.29); else if (dd < 26) base.setRGB(0.26 + 0.08 * n2, 0.3 + 0.06 * n1, 0.12); else base.setRGB(0.1, 0.19, 0.08).lerp(new THREE.Color(0.24, 0.16, 0.08), sstep(0.38, 0.62, n1));
+  if (dd < 4) base.setRGB(0.22, 0.19, 0.12); else if (dd < 26) base.setRGB(0.25, 0.2, 0.11); else base.setRGB(0.16, 0.17, 0.08).lerp(new THREE.Color(0.24, 0.16, 0.08), sstep(0.38, 0.62, n1));
   c.lerp(base, 1 - k); return c;
 }
 function isleColor(x, z, h, dd, c) {
   const n = fbm(x * 0.15, z * 0.15), rock = fbm(x * 0.4 + 5, z * 0.4), bf = beachFactor(x, z);
   if (h < 0) { c.setRGB(0.16 + 0.12 * bf, 0.14 + 0.1 * bf, 0.08 + 0.06 * bf); return c; }
-  if (bf > 0.35 && dd < 26) { c.setRGB(0.62 + 0.06 * n, 0.55 + 0.05 * n, 0.4); if (rock > 0.6) c.setRGB(0.42, 0.41, 0.38); return c; }
+  if (bf > 0.35 && dd < 26) { c.setRGB(0.36 + 0.04 * n, 0.31 + 0.03 * n, 0.23); /* v0.9.0: toned down from bone-white */ if (rock > 0.6) c.setRGB(0.42, 0.41, 0.38); return c; }
   if (dd < 9) { c.setRGB(0.36 + 0.05 * n, 0.35 + 0.04 * n, 0.32); if (rock < 0.45) c.setRGB(0.24, 0.24, 0.16); return c; } // granite ledges + lichen
   c.setRGB(0.15 + 0.08 * n, 0.14 + 0.05 * n, 0.07); return c; // needle duff
 }
@@ -249,9 +250,34 @@ function buildPatch(scene, box, C = 2.5) {
   const idx = [];
   for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) { const a = j * nx + i, b = a + 1, d = a + nx, e = d + 1; idx.push(a, d, b, b, d, e); }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
-  scene.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 })));
+  const pm = new THREE.Mesh(g, groundGrain(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }))); pm.receiveShadow = true; scene.add(pm);
 }
 
+/** v0.9.0: procedural grain on the ground up close - needle speckle, moss mottling and darker hollows - fading out by ~150 m */
+export function groundGrain(mat) {
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying vec3 vGW;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vGW = (modelMatrix * vec4(transformed, 1.)).xyz;');
+    sh.fragmentShader = 'varying vec3 vGW;\n' + GRAIN_GLSL + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      { float camD = length(vGW - cameraPosition), near = 1. - smoothstep(50., 160., camD);
+        if (near > 0. && vGW.y > -0.4) {
+          float speck = gn(vGW * 3.1), fine = gn(vGW * 9.7), mott = gn(vGW * .35);
+          vec3 c = diffuseColor.rgb * (.78 + .32 * speck + .14 * (fine - .5));
+          c = mix(c, c * vec3(.75, 1.05, .62), smoothstep(.55, .8, mott) * .55);      // moss mottling
+          c *= .86 + .18 * smoothstep(.3, .7, gn(vGW * .9));                          // patchy light and dark
+          diffuseColor.rgb = mix(diffuseColor.rgb, c, near);
+        } }`);
+  };
+  mat.customProgramCacheKey = () => 'groundGrain';
+  return mat;
+}
+/** darken the forest floor under the canopy (so the woods read as deep from the water) */
+export function shadeUnderTrees(mesh) {
+  const recs = WORLD.treeRecs || [], col = mesh.geometry.attributes.color, { NX, NZ, CELL, minX, minZ } = EXT, dark = new Float32Array(NX * NZ);
+  recs.forEach((r) => { const ix = Math.round((r[0] - minX) / CELL), iz = Math.round((r[2] - minZ) / CELL);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const i = (iz + b) * NX + ix + a; if (i >= 0 && i < dark.length) dark[i] += a === 0 && b === 0 ? 1 : 0.35; } });
+  for (let i = 0; i < dark.length; i++) { if (SD[i] > -3 || !dark[i]) continue; const k = 1 - 0.32 * Math.min(1, dark[i] / 1.6); col.setXYZ(i, col.getX(i) * k, col.getY(i) * k, col.getZ(i) * k); }
+  col.needsUpdate = true;
+}
 export function buildTerrain(scene) {
   const { NX, NZ, CELL, minX, minZ } = EXT;
   SD = new Float32Array(NX * NZ); H = new Float32Array(NX * NZ);
@@ -277,7 +303,7 @@ export function buildTerrain(scene) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
-  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
+  const mesh = new THREE.Mesh(g, groundGrain(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }))); mesh.receiveShadow = true;
   scene.add(mesh);
   buildPatch(scene, ISLE.box); buildPatch(scene, CREEK.box); buildPatch(scene, CAMP.box, 0.5);
   // v0.6: a 'shelter' map for mist and wind lanes - 1 in bays and against shores, 0 far out on open water, 0 on land
@@ -407,20 +433,57 @@ export function buildCreek(scene) {
 
 // ---------- vegetation ----------
 function mergeGeoms(parts) {
-  const P = [], C = [];
-  for (const { geo, color, y = 0, rotX = 0 } of parts) {
+  const P = [], C = [], B = [];
+  for (const { geo, color, y = 0, rotX = 0, bark = false } of parts) {
     const g = geo.index ? geo.toNonIndexed() : geo; g.translate(0, y, 0);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       P.push(p.getX(i), p.getY(i), p.getZ(i));
       const shade = 0.55 + 0.45 * clamp(p.getY(i) / 14, 0, 1);
-      C.push(color[0] * shade, color[1] * shade, color[2] * shade);
+      C.push(color[0] * shade, color[1] * shade, color[2] * shade); B.push(bark ? 1 : 0);
     }
   }
   const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); out.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); out.computeVertexNormals();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); out.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); out.setAttribute('aBark', new THREE.Float32BufferAttribute(B, 1)); out.computeVertexNormals();
   return out;
 }
+
+// ---------- v0.9.0: shared light for vegetation - sun shining through foliage when you look toward it, and bark/needle grain up close
+export const TREE_LIGHT = { uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.9, 0.7) }, uSunK: { value: 1 } };
+/** chain onto a (sway) material: adds a world position, per-vertex bark flag, procedural grain and backlit translucency */
+export function foliageLight(mat, key = 'f') {
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey() : '';
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    Object.assign(sh.uniforms, TREE_LIGHT);
+    sh.vertexShader = 'attribute float aBark;\nvarying float vBark;\nvarying vec3 vWP;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n vBark = aBark; vWP = (inverse(viewMatrix) * vec4(mvPosition.xyz, 1.)).xyz;');
+    sh.fragmentShader = 'uniform vec3 uSunDir, uSunCol; uniform float uSunK; varying float vBark; varying vec3 vWP;\n' + GRAIN_GLSL + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        { float camD = length(vWP - cameraPosition), near = 1. - smoothstep(40., 140., camD);
+          if (near > 0.) {
+            float g = vBark > .5 ? barkGrain(vWP) : needleGrain(vWP);
+            diffuseColor.rgb *= mix(1., g, near);
+          } }`)
+      .replace('#include <opaque_fragment>', `
+        { vec3 vd = normalize(vWP - cameraPosition); float back = pow(max(dot(vd, uSunDir), 0.), 5.);
+          float fres = 1. - abs(normal.z);
+          outgoingLight += uSunCol * diffuseColor.rgb * back * (.35 + .9 * fres) * (1. - vBark) * .9 * uSunK; }
+        #include <opaque_fragment>`);
+  };
+  mat.customProgramCacheKey = () => prevKey + '_fol' + key;
+  return mat;
+}
+const GRAIN_GLSL = `
+  float gh(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+  float gn(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
+    return mix(mix(mix(gh(i), gh(i+vec3(1,0,0)), f.x), mix(gh(i+vec3(0,1,0)), gh(i+vec3(1,1,0)), f.x), f.y),
+               mix(mix(gh(i+vec3(0,0,1)), gh(i+vec3(1,0,1)), f.x), mix(gh(i+vec3(0,1,1)), gh(i+vec3(1,1,1)), f.x), f.y), f.z); }
+  // bark: long vertical furrows with lighter ridges and lichen flecks
+  float barkGrain(vec3 p){ float f = gn(vec3(p.x * 9., p.y * .9, p.z * 9.)); float ridge = smoothstep(.35, .75, f); float fleck = smoothstep(.82, .9, gn(p * 6.));
+    return .62 + .55 * ridge + .25 * fleck; }
+  // needles / leaves: clumpy light and dark speckle
+  float needleGrain(vec3 p){ float a = gn(p * 2.3), b = gn(p * 7.1); return .7 + .45 * a + .25 * (b - .5); }
+`;
 const cone = (r, h, seg = 6) => new THREE.ConeGeometry(r, h, seg, 1, true);
 
 
@@ -489,12 +552,12 @@ export function setLitterScale(k) { for (const im of TILES) if (im.userData.tag 
 export function buildTrees(scene) {
   const white = [1, 1, 1];
   const conifer = mergeGeoms([
-    { geo: new THREE.CylinderGeometry(0.22, 0.32, 2, 4), color: [0.22, 0.14, 0.08], y: 1 },
+    { geo: new THREE.CylinderGeometry(0.22, 0.32, 2, 4), color: [0.22, 0.14, 0.08], y: 1, bark: true },
     { geo: cone(2.4, 4.2), color: white, y: 3.3 }, { geo: cone(1.9, 3.8), color: white, y: 5.6 },
     { geo: cone(1.3, 3.6), color: white, y: 7.8 }, { geo: cone(0.7, 2.6), color: white, y: 9.6 },
   ]);
   const broad = mergeGeoms([
-    { geo: new THREE.CylinderGeometry(0.25, 0.4, 5, 5), color: [0.28, 0.22, 0.16], y: 2.5 },
+    { geo: new THREE.CylinderGeometry(0.25, 0.4, 5, 5), color: [0.28, 0.22, 0.16], y: 2.5, bark: true },
     { geo: new THREE.IcosahedronGeometry(3.0, 0), color: white, y: 6.4 },
     { geo: new THREE.IcosahedronGeometry(2.1, 0), color: white, y: 8.6 },
   ]);
@@ -503,8 +566,8 @@ export function buildTrees(scene) {
   const coniferCard = cardOf(4.6, 11.5, 5.75), broadCard = cardOf(6.2, 9, 5.2);
   const cardMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const coniferLod = mergeGeoms([{ geo: new THREE.ConeGeometry(2.3, 10.5, 5, 1, true), color: white, y: 5.6 }]);
-  const broadLod = mergeGeoms([{ geo: new THREE.CylinderGeometry(0.3, 0.4, 5, 3, 1, true), color: [0.28, 0.22, 0.16], y: 2.5 }, { geo: new THREE.OctahedronGeometry(3.1, 0), color: white, y: 7.0 }]);
-  const mat = swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }), 30, 1.1);
+  const broadLod = mergeGeoms([{ geo: new THREE.CylinderGeometry(0.3, 0.4, 5, 3, 1, true), color: [0.28, 0.22, 0.16], y: 2.5, bark: true }, { geo: new THREE.OctahedronGeometry(3.1, 0), color: white, y: 7.0 }]);
+  const mat = foliageLight(swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }), 30, 1.1), 'tile');
   const mask = new Uint8Array(EXT.NX * EXT.NZ);
   const markPts = (pts, r) => pts.forEach((p) => {
     const ix = Math.round((p[0] - EXT.minX) / EXT.CELL), iz = Math.round((p[1] - EXT.minZ) / EXT.CELL);
@@ -543,9 +606,16 @@ export function buildTrees(scene) {
     return tiled(scene, geo, mat, list, (im, i, r) => {
       q.setFromAxisAngle(Y, r[4]); const wk = treeWidth(r[7]);
       m.compose(P3.set(r[0], r[1], r[2]), q, S3.set(r[3] * wk * (0.85 + r[5] * 0.3), r[3] * r[7], r[3] * wk * (0.85 + r[5] * 0.3)));
-      im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(r[8][0], r[8][1], r[8][2]));
+      im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(r[8][0], r[8][1], r[8][2])); r.im = im; r.j = i; r.kind = geo === conifer ? 'con' : 'broad';
     }, tag, lodGeo, tag === 'tree' ? (geo === conifer ? coniferCard : broadCard) : null, cardMat);
   };
+  // v0.9.0: young trees crowding the forest edge (they swap to detailed models up close like the rest)
+  for (let i = 0; i < pondSegs.length; i += 4) {
+    const ax = pondSegs[i], az = pondSegs[i + 1], bx = pondSegs[i + 2], bz = pondSegs[i + 3], L = Math.hypot(bx - ax, bz - az), nsp = Math.max(1, Math.round(L / 6));
+    for (let j = 0; j < nsp; j++) { const t = rnd(), x = lerp(ax, bx, t), z = lerp(az, bz, t), nx = -(bz - az) / L, nz = (bx - ax) / L;
+      for (const sg of [1, -1]) { const o = sg * (3 + rnd() * 26), px = x + nx * o, pz = z + nz * o, sd = bil(SD, px, pz); if (-sd < 3 || -sd > 32 || inIsleBox(px, pz) || inCampBox(px, pz) || rnd() < 0.35) continue;
+        const h = inCreekBox(px, pz) ? fullHeight(px, pz) : bil(H, px, pz); conAt.push([px, h - 0.15, pz, 0.16 + rnd() * 0.3, rnd() * 6.28, rnd(), rnd() < 0.15 ? 4 : 0, 1]); } }
+  }
   mk(conifer, conAt, conCols, true, 'tree', coniferLod); mk(broad, broadAt, broadCols, false, 'tree', broadLod);
   // maples near the water drop leaves when a gust passes (see leaves.js)
   const maples = broadAt.filter((r) => -bil(SD, r[0], r[2]) < 90 && r[9] !== 3).map((r) => ({ x: r[0], z: r[2], y: r[1] + 6.6 * r[3] * r[7], r: 2.6 * r[3] * treeWidth(r[7]), col: r[8] }));
@@ -577,6 +647,7 @@ export function buildTrees(scene) {
   scene.add(padMesh); WORLD.pads = padMesh;
   const litter = buildLitter(scene);
   WORLD.maples = maples;
+  WORLD.treeRecs = [...conAt, ...broadAt]; WORLD.treeMat = mat;
   WORLD.treePos = [...conAt, ...broadAt].filter((r) => Math.hypot(r[0] - CAMP.tent[0], r[2] - CAMP.tent[1]) < CAMP.R + 10).map((r) => [r[0], r[2]]);
   return { trees: conAt.length + broadAt.length, reeds: reedPts.length, pads: pads.length, litter, tiles: TILES.length };
 }
@@ -773,6 +844,17 @@ export function buildIsland(scene) {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.95, 6), lac); body.position.y = 0.47; saya.add(body);
     const cord = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.006, 4, 8), new THREE.MeshStandardMaterial({ color: 0xb01c1c, roughness: 0.8 })); cord.position.y = 0.78; cord.rotation.x = 1.2; saya.add(cord);
     saya.position.set(-tz * 0.75 + tx * 0.2, 0.25, tx * 0.75 + tz * 0.2); saya.rotation.set(0.35, 0, 0.25); saya.scale.setScalar(1.3); tree.add(saya); }
+  // v0.9.0: blowdowns and mossy boulders through the island's interior (the near-field ring adds the undergrowth)
+  { const barkB = new THREE.MeshStandardMaterial({ color: 0x6e6256, flatShading: true, roughness: 1 }), plateM = new THREE.MeshStandardMaterial({ color: 0x3e3226, flatShading: true, roughness: 1 }), mossM = new THREE.MeshStandardMaterial({ color: 0x4a5a34, flatShading: true, roughness: 1 });
+    let made = 0, guard = 0;
+    while (made < 26 && guard++ < 2000) { const x = lerp(x0, x1, rnd()), z = lerp(z0, z1, rnd()); if (!inIsle(x, z) || dist(x, z) < 9 || beachFactor(x, z) > 0.3 || Math.hypot(x - swordTree.x, z - swordTree.z) < 8) continue;
+      const g = new THREE.Group(), y = fullHeight(x, z), L = 6 + rnd() * 8, a = rnd() * 6.28; g.position.set(x, y, z); g.rotation.y = a; scene.add(g); made++;
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.32, L, 7), barkB); t.rotation.set(Math.PI / 2 - 0.04, 0, 0); t.position.set(0, 0.25, L / 2); t.castShadow = true; g.add(t);
+      if (rnd() < 0.6) { const p = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 0.9, 0.35, 8), plateM); p.rotation.x = Math.PI / 2 - 0.15; p.position.set(0, 0.7, -0.05); p.castShadow = true; g.add(p); }
+      for (let k = 0; k < 4; k++) { const br = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.06, 0.8 + rnd() * 1.4, 4), barkB); br.position.set((rnd() - 0.5) * 0.3, 0.5, 1 + rnd() * (L - 1.5)); br.rotation.set(rnd() - 0.5, 0, (rnd() < 0.5 ? -1 : 1) * (0.3 + rnd())); g.add(br); } }
+    for (let i = 0; i < 40; i++) { const x = lerp(x0, x1, rnd()), z = lerp(z0, z1, rnd()); if (!inIsle(x, z) || dist(x, z) < 6 || beachFactor(x, z) > 0.3) continue;
+      const r = 0.5 + rnd() * 1.2, b2 = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), rnd() < 0.55 ? mossM : new THREE.MeshStandardMaterial({ color: 0x6a6862, flatShading: true, roughness: 0.9 }));
+      b2.scale.set(1, 0.6 + rnd() * 0.3, 0.8 + rnd() * 0.4); b2.position.set(x, fullHeight(x, z) + r * 0.2, z); b2.rotation.y = rnd() * 6; b2.castShadow = b2.receiveShadow = true; scene.add(b2); } }
   return { swordTree, beach: ISLE.beach, counts: { tall: tall.length, scrub: scrub.length, rocks: rocks.length } };
 }
 

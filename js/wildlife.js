@@ -2,9 +2,9 @@
 // a rare moose, and the odd distant paddler. Everything is low-poly, pooled, spawned only near the player,
 // shy of the canoe, and only animated in detail when it is close enough to see.
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.8.2';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE } from './world.js?v=0.8.2';
-import { WIND } from './wind.js?v=0.8.2';
+import { MAP } from './mapdata.js?v=0.9.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE } from './world.js?v=0.9.0';
+import { WIND } from './wind.js?v=0.9.0';
 
 const flat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.9, ...extra });
 const TAU = Math.PI * 2;
