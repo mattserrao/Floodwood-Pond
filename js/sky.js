@@ -66,13 +66,13 @@ export function createSky() {
         float md = max(dot(d,uMoon),0.);
         // moon disk with phase: project onto the moon's tangent plane, light one side of the terminator
         vec3 mr = normalize(cross(uMoon, vec3(0.,1.,0.))), mu = cross(mr, uMoon);
-        vec2 mp = vec2(dot(d,mr), dot(d,mu)) / 0.03;
-        float disk = smoothstep(1.0, 0.9, length(mp)) * step(0.5, dot(d,uMoon));
+        vec2 mp = vec2(dot(d,mr), dot(d,mu)) / 0.06;
+        float disk = smoothstep(1.0, 0.94, length(mp)) * step(0.5, dot(d,uMoon));
         float k = cos(uPhase*6.2831853), sx = sqrt(max(1.-mp.y*mp.y,0.));
         float lit = uPhase < .5 ? smoothstep(k*sx-.06, k*sx+.06, mp.x) : smoothstep(-k*sx+.06, -k*sx-.06, mp.x);
         float frac = .5 - .5*k;
         float crater = .85 + .15*n2(mp*3.+7.);
-        col += vec3(.88,.93,1.) * disk * (lit*crater*1.5 + .035) * uMoonI + vec3(.35,.45,.8) * pow(md,40.) * 0.3 * uMoonI * (.25+.75*frac);
+        col += vec3(.88,.93,1.) * disk * (lit*crater*1.5 + .035) * uMoonI + vec3(.35,.45,.8) * pow(md,22.) * 0.34 * uMoonI * (.25+.75*frac);
         if (uStars > 0.001 && d.y > -0.05) {
           vec3 sp = d*260.; vec3 id = floor(sp); vec3 fr = fract(sp)-.5; float r = h3(id);
           float star = step(.983,r) * smoothstep(.34,.0,length(fr));

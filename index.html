@@ -56,10 +56,15 @@
   #quote span { display:block; font-size:clamp(17px,2.6vw,28px); line-height:1.7; letter-spacing:.05em; font-style:italic; opacity:0; filter:blur(6px); transition:opacity 3.5s ease, filter 4s ease; }
   #quote span.on { opacity:.88; filter:blur(0); }
   /* story mode: nothing on screen but the world */
-  body.story #clock, body.story #mini, body.story #btns [data-t], body.story #btns #mute, body.story .panel .times { display:none !important; }
+  body.story #clock, body.story #mini, body.story #btns [data-t], body.story #btns #mute, body.story .panel .times-x { display:none !important; }
   body.story #hint { font-size:12px; }
   body.story .freeonly { display:none; }
   body:not(.story) .storyonly { display:none !important; }
+  #clock #time, #clock #phase { display:none; }
+  .panel .ptime { font-size:14px; letter-spacing:.14em; opacity:.8; margin:4px 0 2px; }
+  #objective { position:fixed; left:0; right:0; top:22%; z-index:6; text-align:center; pointer-events:none; color:var(--ink); font-style:italic; text-transform:lowercase;
+    font-size:clamp(17px,2.6vw,26px); letter-spacing:.32em; text-shadow:0 1px 20px rgba(0,0,0,.55); opacity:0; transition:opacity 2.4s ease; }
+  #objective.on { opacity:.85; }
   #veil { position:fixed; inset:0; z-index:2; pointer-events:none; opacity:0; background:#c8ccd0; }
   #toast { position:fixed; left:50%; top:20%; transform:translateX(-50%); font-size:clamp(20px,4vw,34px); letter-spacing:.2em; text-transform:uppercase; opacity:0; transition:opacity 1.6s; z-index:4; text-shadow:0 2px 24px rgba(0,0,0,.6); pointer-events:none; text-align:center; }
   #toast.on { opacity:1; }
@@ -94,19 +99,20 @@
 <canvas id="c"></canvas>
 <div id="veil"></div>
 <div id="blackout"></div>
+<div id="objective"></div>
 <div id="quote"><span>The pond remembers what we were too busy laughing to notice:</span><span>that the best days aren't the ones we plan,</span><span>but the ones we spend together,</span><span>out on the water, with nowhere else to be.</span></div>
-<div id="endcard"><div class="t">Floodwood</div><div class="ver">v0.6.4</div><div class="again">tap to begin again</div></div>
+<div id="endcard"><div class="t">Floodwood</div><div class="ver">v0.6.5</div><div class="again">tap to begin again</div></div>
 <div id="clock" class="hud"><span id="time">6:00 AM</span><small id="phase">Dawn</small><small id="auto">Auto paddle</small></div>
 <div id="btns" class="hud">
-  <button id="pauseBtn" title="Pause (Esc)">❚❚</button><button data-t="5.7" title="Dawn (1)">Dawn</button><button data-t="12" title="Day (2)">Day</button><button data-t="18.3" title="Dusk (3)">Dusk</button><button data-t="22.5" title="Night (4)">Night</button><button id="mute" title="Mute (M)">Sound on</button>
+  <button id="pauseBtn" title="Pause (Esc)">❚❚</button><button id="mute" title="Mute (M)">Sound on</button>
 </div>
 <div id="mini" class="hud"><canvas id="miniC" width="380" height="280"></canvas></div>
-<div id="hint" class="hud">W paddle &nbsp;·&nbsp; A / D steer &nbsp;·&nbsp; Shift paddle hard &nbsp;·&nbsp; drag to look <span class="freeonly">&nbsp;·&nbsp; 1–4 time of day</span> &nbsp;·&nbsp; Esc pause</div>
+<div id="hint" class="hud">W paddle &nbsp;·&nbsp; A / D steer &nbsp;·&nbsp; Shift paddle hard &nbsp;·&nbsp; drag to look <span class="freeonly">&nbsp;·&nbsp; time of day in the pause menu</span> &nbsp;·&nbsp; Esc pause</div>
 <div id="joy" class="hud"><i></i></div>
 <div id="cut"></div>
 <div id="title">
   <div class="tap">touch to begin</div>
-  <div class="ver">v0.6.4</div>
+  <div class="ver">v0.6.5</div>
 </div>
 <div id="pause" class="overlay"><div class="panel">
   <h2>Paused</h2>
@@ -118,9 +124,10 @@
     <button id="pMenu">Main menu</button>
   </div>
   <div class="times opts"><button id="pMood">Mood filter on</button><button id="pCine">Cinematic 30 fps off</button><button id="pBox">Letterbox off</button><button id="pQual">Graphics: Auto</button></div>
-  <div class="times"><button data-t="5.7">Dawn</button><button data-t="12">Day</button><button data-t="18.3">Dusk</button><button data-t="22.5">Night</button></div>
+  <div class="ptime"><span id="pTime">6:00 AM</span> · <span id="pPhase">Dawn</span></div>
+  <div class="times"><button data-t="5.7">Dawn</button><button data-t="12">Day</button><button data-t="18.3">Dusk</button><button data-t="22.5">Night</button><button id="pJourney" class="storyonly">Follow the journey</button></div>
   <div class="keys">W paddle · A / D steer · S back-paddle · Shift paddle hard<br>Drag to look · N or tap minimap for the map · Esc pause · M mute</div>
-  <div class="ver">v0.6.4</div>
+  <div class="ver">v0.6.5</div>
 </div></div>
 <div id="bigmap" class="overlay"><div class="wrap"><canvas id="bigC"></canvas><button id="mapClose" title="Close (Esc)">×</button></div>
   <div class="cap">Tap anywhere on the water to paddle there</div></div>

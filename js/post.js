@@ -21,6 +21,7 @@ export function createPost(renderer) {
     uGrade: { value: 1 }, uVignette: { value: 0.8 }, uGrain: { value: 0 }, uMist: { value: 1 }, uPaint: { value: 0 }, uRays: { value: 0 },
     tMist: { value: mistRT.texture }, uMistRes: { value: new THREE.Vector2(mistRT.width, mistRT.height) },
     uBlur: { value: 0 }, uPrevVP: { value: new THREE.Matrix4() }, uDim: { value: 0 },
+    uFxaa: { value: 0 },
     uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
     tShelter: { value: null }, uExt: { value: new THREE.Vector4(-1700, -1400, 3400, 2800) }, uBay: { value: 1 }, uLift: { value: 0 }, uHaze: { value: new THREE.Color(0.6, 0.66, 0.74) }, uHazeK: { value: 0.9 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.8, 0.6) }, uWake: { value: new THREE.Vector2(0, 1) }, uSpeed: { value: 0 },
     uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
@@ -30,7 +31,22 @@ export function createPost(renderer) {
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol; uniform float uFxaa; varying vec2 vUv;
+      // FXAA (Lottes 3.11 'console' style, compact): smooths geometric edges when MSAA is off (Low tier / phones)
+      vec3 fxaa(vec2 uv){
+        vec2 px = 1. / uRes; vec3 L = vec3(.299, .587, .114);
+        vec3 rgbM = texture2D(tColor, uv).rgb;
+        float lNW = dot(texture2D(tColor, uv + vec2(-1., -1.) * px).rgb, L), lNE = dot(texture2D(tColor, uv + vec2(1., -1.) * px).rgb, L);
+        float lSW = dot(texture2D(tColor, uv + vec2(-1., 1.) * px).rgb, L), lSE = dot(texture2D(tColor, uv + vec2(1., 1.) * px).rgb, L), lM = dot(rgbM, L);
+        float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE))), lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+        if (lMax - lMin < max(.0312, lMax * .125)) return rgbM;                        // no edge: skip the expensive part
+        vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
+        float red = max((lNW + lNE + lSW + lSE) * .03125, 1. / 128.), rcp = 1. / (min(abs(dir.x), abs(dir.y)) + red);
+        dir = clamp(dir * rcp, vec2(-8.), vec2(8.)) * px;
+        vec3 A = .5 * (texture2D(tColor, uv + dir * (1. / 3. - .5)).rgb + texture2D(tColor, uv + dir * (2. / 3. - .5)).rgb);
+        vec3 B = A * .5 + .25 * (texture2D(tColor, uv - dir * .5).rgb + texture2D(tColor, uv + dir * .5).rgb);
+        float lB = dot(B, L); return (lB < lMin || lB > lMax) ? A : B;
+      }
       float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h2(i),h2(i+vec2(1,0)),f.x), mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x), f.y); }
       float fbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<4;i++){ s+=a*n2(p); p*=2.03; a*=.5; } return s; }
@@ -54,7 +70,7 @@ export function createPost(renderer) {
         float d = texture2D(tDepth, uv).r; bool sky = d > 0.99999;
         vec3 wp = sky ? uCamPos + normalize(worldAt(uv, 0.9999) - uCamPos) * 2500. : worldAt(uv, d);
         float dist = length(wp - uCamPos);
-        vec3 col = texture2D(tColor, uv).rgb;
+        vec3 col = uFxaa > .5 ? fxaa(uv) : texture2D(tColor, uv).rgb;
         // ---- motion blur: reproject with last frame's camera, smear along the screen velocity (canoe stays crisp)
         if (uBlur > 0.) {
           vec4 pc = uPrevVP * vec4(wp, 1.);
@@ -208,6 +224,7 @@ export function createPost(renderer) {
     /** apply a quality tier: MSAA samples and mist resolution */
     setQuality(q) {
       if (rt.samples !== q.msaa) { rt.samples = q.msaa; rt.dispose(); }
+      U.uFxaa.value = q.msaa > 0 ? 0 : 1;   // FXAA only when MSAA is off
       mistScale = q.mistScale; api.setSize(); api.blurAllowed = q.blur;
     },
     blurAllowed: true, motionBlur: false, prevVP: new THREE.Matrix4(), hasPrev: false,

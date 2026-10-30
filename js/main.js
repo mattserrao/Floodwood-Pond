@@ -96,7 +96,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.6.4';
+const VERSION = '0.6.5';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -113,7 +113,7 @@ addEventListener('keydown', (e) => {
   if (k === 'm') { toggleMute(); return; }
   if (G.paused || G.mapOpen || G.menu) return;
   keys.add(k);
-  if (k >= '1' && k <= '4' && !story) jumpTo([5.7, 12, 18.3, 22.5][+k - 1]);
+
   if (k === 'n' && G.mode === 'play' && !story) openMap();
 });
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -162,7 +162,8 @@ function toggleMute() {
 }
 $('mute').addEventListener('click', toggleMute);
 document.querySelectorAll('[data-t]').forEach((b) => b.addEventListener('click', () => jumpTo(+b.dataset.t)));
-function jumpTo(h) { if (G.paused) { G.hour = h; G.jump = null; return; } let to = h; if (to <= G.hour) to += 24; G.jump = { from: G.hour, to, t: 0 }; }
+function jumpTo(h) {
+  if (story) { G.manualHour = h; return; } if (G.paused) { G.hour = h; G.jump = null; return; } let to = h; if (to <= G.hour) to += 24; G.jump = { from: G.hour, to, t: 0 }; }
 
 // ------------------------------------------------------------------ pause / main menu
 function setPaused(p) {
@@ -174,6 +175,7 @@ function setPaused(p) {
 $('pauseBtn').addEventListener('click', () => setPaused(true));
 $('pResume').addEventListener('click', () => setPaused(false));
 $('pMute').addEventListener('click', toggleMute);
+$('pJourney').addEventListener('click', () => { G.manualHour = null; });
 $('pMood').addEventListener('click', () => { post.enabled = !post.enabled; $('pMood').textContent = post.enabled ? 'Mood filter on' : 'Mood filter off'; try { localStorage.setItem('fp-mood', post.enabled ? '1' : '0'); } catch (e) {} });
 try { if (localStorage.getItem('fp-mood') === '0') { post.enabled = false; $('pMood').textContent = 'Mood filter off'; } } catch (e) {}
 // v0.4: cinematic 30 fps (physics stays at full rate) with motion blur, optional letterbox, graphics tier
@@ -532,7 +534,7 @@ function updateEnvironment(dt, t) {
   if (G.jump) {
     G.jump.t += dt / 2.6; const k = clamp(G.jump.t, 0, 1), e = k * k * (3 - 2 * k);
     G.hour = (lerp(G.jump.from, G.jump.to, e)) % 24; if (k >= 1) G.jump = null;
-  } else if (story) { const hT = G.mode === 'intro' || G.mode === 'title' ? 6.35 : story.hour(); G.hour = G.mode === 'title' ? hT : lerp(G.hour, hT, Math.min(1, dt * 0.25)); }
+  } else if (story) { const hT = G.mode === 'intro' || G.mode === 'title' ? 6.35 : G.manualHour != null ? G.manualHour : story.hour(); G.hour = G.mode === 'title' ? hT : lerp(G.hour, hT, Math.min(1, dt * 0.25)); }
   else if (G.mode !== 'title') G.hour = (G.hour + (dt * 24) / DAY_LEN) % 24;
   const h = G.hour, pal = samplePalette(h);
   WX.update(G.mode !== 'title' ? dt : 0, h, DAY_LEN);
@@ -618,8 +620,8 @@ function updateEnvironment(dt, t) {
   audio.update({ night, day, dawn, dusk, speed: Math.hypot(P.vx, P.vz), paddling: P.act, rain: WX.rain, gust: P.gust || 0, pull: (P.pull || 0) * P.act, turn: P.turnAmt || 0, play: G.mode === 'play' });
   if (t - lastHud > 0.25) {
     lastHud = t; const hh = Math.floor(h), mm = Math.floor((h - hh) * 60), ap = hh >= 12 ? 'PM' : 'AM', h12 = hh % 12 || 12;
-    $('time').textContent = `${h12}:${String(mm).padStart(2, '0')} ${ap}`;
-    const wl = WX.label(); $('phase').textContent = (wl ? wl + ' · ' : '') + (h < 4.5 || h >= 20.5 ? 'Night' : h < 5.4 ? 'Before dawn' : h < 7 ? 'Sunrise' : h < 11 ? 'Morning' : h < 15 ? 'Midday' : h < 17.4 ? 'Afternoon' : h < 18.5 ? 'Golden hour' : h < 19.4 ? 'Sunset' : 'Dusk');
+    $('time').textContent = `${h12}:${String(mm).padStart(2, '0')} ${ap}`; $('pTime').textContent = $('time').textContent;
+    const wl = WX.label(); $('phase').textContent = (wl ? wl + ' · ' : '') + (h < 4.5 || h >= 20.5 ? 'Night' : h < 5.4 ? 'Before dawn' : h < 7 ? 'Sunrise' : h < 11 ? 'Morning' : h < 15 ? 'Midday' : h < 17.4 ? 'Afternoon' : h < 18.5 ? 'Golden hour' : h < 19.4 ? 'Sunset' : 'Dusk'); $('pPhase').textContent = $('phase').textContent;
   }
 }
 
