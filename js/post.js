@@ -22,6 +22,7 @@ export function createPost(renderer) {
     tMist: { value: mistRT.texture }, uMistRes: { value: new THREE.Vector2(mistRT.width, mistRT.height) },
     uBlur: { value: 0 }, uPrevVP: { value: new THREE.Matrix4() }, uDim: { value: 0 },
     uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
+    tShelter: { value: null }, uExt: { value: new THREE.Vector4(-1700, -1400, 3400, 2800) }, uBay: { value: 1 }, uLift: { value: 0 }, uHaze: { value: new THREE.Color(0.6, 0.66, 0.74) }, uHazeK: { value: 0.9 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.8, 0.6) }, uWake: { value: new THREE.Vector2(0, 1) }, uSpeed: { value: 0 },
     uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
   };
   const mat = new THREE.ShaderMaterial({
@@ -29,7 +30,7 @@ export function createPost(renderer) {
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uPlayer; uniform vec2 uAway; uniform float uBehind; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol; varying vec2 vUv;
       float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h2(i),h2(i+vec2(1,0)),f.x), mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x), f.y); }
       float fbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<4;i++){ s+=a*n2(p); p*=2.03; a*=.5; } return s; }
@@ -75,12 +76,16 @@ export function createPost(renderer) {
         // ---- ground mist (computed at half resolution, depth-aware upsample)
         if (uMist > 0.) {
           vec2 hp = 1. / uMistRes; float fs = 0., ws = 0.;
+          float hs = 0., ss = 0.;
           for (int j = 0; j < 2; j++) for (int i = 0; i < 2; i++) {
             vec2 o = (vec2(float(i), float(j)) - .5) * hp;
-            vec2 m = texture2D(tMist, uv + o).rg;
+            vec4 m = texture2D(tMist, uv + o);
             float w = 1. / (.02 + abs(m.g - dist / 2000.) * 60.);
-            fs += m.r * w; ws += w;
+            fs += m.r * w; hs += m.b * w; ss += m.a * w; ws += w;
           }
+          // aerial haze first (far), then the mist layers on top; haze warms toward the sun
+          vec3 hazeCol = mix(uHaze, uSunCol * .9 + uHaze * .3, ss / ws * .6);
+          col = mix(col, hazeCol, clamp(hs / ws, 0., .9));
           col = mix(col, uMistCol, clamp(fs / ws, 0., .97));
         }
         // ---- god rays: radial blur of the bright sky toward the light
@@ -127,7 +132,7 @@ export function createPost(renderer) {
   const mistMat = new THREE.ShaderMaterial({ uniforms: U, depthTest: false, depthWrite: false, vertexShader: mat.vertexShader,
     fragmentShader: `
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uPlayer; uniform vec2 uAway; uniform float uBehind; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uPlayer, uHaze, uSunDir, uSunCol; uniform vec2 uAway, uWake; uniform vec4 uExt; uniform sampler2D tShelter; uniform float uBehind, uBay, uLift, uHazeK, uSpeed; varying vec2 vUv;
       float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h2(i),h2(i+vec2(1,0)),f.x), mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x), f.y); }
       float fbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<4;i++){ s+=a*n2(p); p*=2.03; a*=.5; } return s; }
@@ -153,14 +158,26 @@ export function createPost(renderer) {
           float dist = length(wp - uCamPos);
           vec3 dir = (wp - uCamPos) / max(dist, 1e-3);
           // integrate density along the ray: exp(-height/H), cheap analytic-ish with 6 samples
-          float acc = 0.;
+          float acc = 0., wisp = 0.;
           for (int i = 0; i < 6; i++) {
             float t = (float(i) + .5) / 6.; vec3 p = uCamPos + dir * dist * t;
             float banks = .55 + .9 * fbm(p.xz * .006 + vec2(uTime * .012, uTime * .007));
-            acc += exp(-max(p.y, 0.) / 11.) * banks;
+            // v0.6 middle layer: fog pools where the water is sheltered (bays, lee of islands) and lifts off with the sun
+            float sh = texture2D(tShelter, (p.xz - uExt.xy) / uExt.zw).r;
+            float pool = mix(1., .3 + 2.6 * sh, uBay) * (1. - uLift * (1. - sh * .85));
+            acc += exp(-max(p.y, 0.) / 11.) * banks * pool;
+            // near layer: low wisps skimming the water, parted by the canoe's wake
+            vec2 rel = p.xz - uPlayer.xz; float along = dot(rel, uWake), side = abs(dot(rel, vec2(-uWake.y, uWake.x)));
+            float wake = 1. - smoothstep(1.2, 4.5 + uSpeed * 2.5, side) * step(0., -along) * smoothstep(-40., -2., along) * .9;
+            float w = fbm(p.xz * .09 + vec2(uTime * .06, uTime * .035)); w = smoothstep(.52, .78, w);
+            wisp += w * exp(-max(p.y, 0.) / 1.4) * smoothstep(60., 10., length(rel)) * wake;
           }
           float density = acc / 6. * min(dist, 1600.) * .0042;
           float f = (1. - exp(-density * uMist)) * smoothstep(8., 70., dist); // keep the canoe crisp
+          f = max(f, wisp / 6. * uMist * .9 * smoothstep(3., 12., dist));
+          // far layer: aerial perspective - everything fades toward the sky at the horizon with distance and low height
+          float haze = 1. - exp(-dist * uHazeK * 5.5e-4); haze *= mix(1., .3, smoothstep(0., 400., wp.y));
+          float sunward = pow(max(dot(dir, uSunDir), 0.), 8.);
           // v0.5: the mist that follows you - a swirling wall over everything behind the canoe
           if (uBehind > 0.) {
             vec2 v = wp.xz - uPlayer.xz; float lv = length(v);
@@ -173,7 +190,7 @@ export function createPost(renderer) {
             float hgt = sky ? smoothstep(.55, .0, dir.y) : exp(-max(wp.y, 0.) / 45.);
             f = max(f, clamp(behind * nearK * hgt * (.4 + .8 * sw) * uBehind * 1.15, 0., .97));
           }
-          gl_FragColor = vec4(f, dist / 2000., 0., 1.);
+          gl_FragColor = vec4(f, dist / 2000., haze * (sky ? 0. : 1.), sunward);
       }` });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); quad.frustumCulled = false;
   const pScene = new THREE.Scene(); pScene.add(quad);

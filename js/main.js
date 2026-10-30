@@ -11,6 +11,7 @@ import { WX } from './weather.js';
 import { createWildlife } from './wildlife.js';
 import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js';
 import { createStory } from './story.js';
+import { buildShore } from './shore.js';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -48,6 +49,7 @@ function build() {
   buildPaths(scene); buildMountains(scene);
   world.stats = buildTrees(scene);
   world.isle = buildIsland(scene);
+  world.shore = buildShore(scene);
   buildCreek(scene);
   camps = buildCamps(scene);
   // find the hand launch on the shore, and which way is water
@@ -89,7 +91,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.5.2';
+const VERSION = '0.6.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -528,6 +530,13 @@ function updateEnvironment(dt, t) {
   wu.uTreeCol.value.setRGB(0.04, 0.08, 0.05).multiplyScalar(0.3 + 0.7 * clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y), 0, 1)).lerp(fogCol, clamp(1 - Math.exp(-Math.pow(450 * fogD, 2)), 0, 1));
   wu.tRefl.value = refl.rt.texture; wu.uReflRes.value.set(refl.rt.width, refl.rt.height); wu.uTexMat.value = refl.texMat; // same object: refl.render() updates it just before the main pass
   post.uniforms.uMist.value = 1 + WX.fog * 0.8 + WX.wet * 0.6; post.uniforms.uDim.value = cover * 0.6 + WX.rain * 0.4;
+  // v0.6 layered atmosphere: fog pools in bays and lifts as the sun climbs; aerial haze toward the sky colour, warmed sunward
+  { const U = post.uniforms; U.tShelter.value = WORLD.shelterTex; U.uExt.value.set(EXT.minX, EXT.minZ, EXT.W, EXT.D);
+    U.uLift.value = 0.85 * sstep(0.12, 0.5, sunV.y) * (1 - WX.fog); U.uBay.value = 1;
+    U.uHaze.value.copy(pal.hor).lerp(greyB.copy(pal.mid), 0.35).lerp(greyA.setRGB(0.62, 0.66, 0.72), 0.3 * cover);
+    U.uHazeK.value = 1.6 + 0.8 * dawnHaze + 0.6 * nightHaze + 0.7 * cover + 1.4 * WX.fog;
+    U.uSunDir.value.copy(sunV.y > -0.05 ? sunV : moonV); U.uSunCol.value.copy(pal.sun).multiplyScalar(sstep(-0.05, 0.15, sunV.y));
+    U.uWake.value.set(Math.sin(P.psi), Math.cos(P.psi)); U.uSpeed.value = Math.hypot(P.vx, P.vz); }
   // the fog decides how far you can see; whole forest tiles past that are skipped
   G.visDist = Math.min(9000, 2.4 / Math.max(fogD, 1e-5));
   cullTiles(camera.position, G.visDist, Math.min(G.visDist, 320), 900); wu.uLight.value = clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y) + 0.14 * moonVis, 0, 1);
@@ -625,7 +634,7 @@ function frame(now) {
   camera.updateMatrixWorld();
   if (Q.s.refl > 0) {
     // the mirror is low-res and mostly shows the shoreline: skip litter and far reeds, pull the far cull in
-    cullTiles(camera.position, Math.min(G.visDist || 3000, 1700), 0, 260);
+    cullTiles(camera.position, Math.min(G.visDist || 3000, 420), 0, 200);
     refl.render(scene, camera, sky);
     cullTiles(camera.position, G.visDist || 3000, Math.min(G.visDist || 3000, 320), 900);
   }
@@ -662,7 +671,7 @@ setTimeout(() => {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap();
     cam.pos.set(P.x, 5, P.z - 12);
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
-    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, false); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, story: () => story, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
+    window.game = { leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, false); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     ready = true; frame();
     if (pendingStart) startGame();

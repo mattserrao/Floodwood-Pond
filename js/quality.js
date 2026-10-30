@@ -4,8 +4,8 @@ const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || na
 
 export const TIERS = {
   low:  { name: 'Low',    pixelRatio: 1,   msaa: 0, mistScale: 0.5, refl: 0,    blur: false, wildlife: 0.5,  leaves: 110, litter: 0.35, rain: 500 },
-  med:  { name: 'Medium', pixelRatio: 1.5, msaa: 2, mistScale: 0.5, refl: 0.35, blur: true,  wildlife: 0.8,  leaves: 200, litter: 0.7,  rain: 900 },
-  high: { name: 'High',   pixelRatio: 2,   msaa: 4, mistScale: 0.5, refl: 0.5,  blur: true,  wildlife: 1,    leaves: 300, litter: 1,    rain: 1400 },
+  med:  { name: 'Medium', pixelRatio: 1.5, msaa: 2, mistScale: 0.5, refl: 0.25, blur: true,  wildlife: 0.8,  leaves: 200, litter: 0.7,  rain: 900 },
+  high: { name: 'High',   pixelRatio: 2,   msaa: 4, mistScale: 0.5, refl: 0.33, blur: true,  wildlife: 1,    leaves: 300, litter: 1,    rain: 1400 },
 };
 const ORDER = ['low', 'med', 'high'];
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();

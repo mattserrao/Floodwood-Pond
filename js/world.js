@@ -234,6 +234,16 @@ export function buildTerrain(scene) {
   const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
   scene.add(mesh);
   buildPatch(scene, ISLE.box); buildPatch(scene, CREEK.box);
+  // v0.6: a 'shelter' map for mist and wind lanes - 1 in bays and against shores, 0 far out on open water, 0 on land
+  const shelter = new Uint8Array(NX * NZ);
+  for (let iz = 0; iz < NZ; iz++) for (let ix = 0; ix < NX; ix++) {
+    const i = iz * NX + ix, sd = SD[i]; if (sd <= 0) { shelter[i] = 0; continue; }
+    // count land in a ring around the point (coarse): more land nearby = more sheltered
+    let land = 0, n = 0; for (let a = 0; a < 12; a++) { const ang = (a / 12) * 6.283; for (const r of [6, 12, 20]) { const jx = ix + Math.round(Math.cos(ang) * r), jz = iz + Math.round(Math.sin(ang) * r); n++; if (jx < 0 || jz < 0 || jx >= NX || jz >= NZ || SD[jz * NX + jx] <= 0) land++; } }
+    shelter[i] = Math.round(clamp(land / n * 1.6, 0, 1) * 255);
+  }
+  const shelterTex = new THREE.DataTexture(shelter, NX, NZ, THREE.RedFormat, THREE.UnsignedByteType);
+  shelterTex.magFilter = shelterTex.minFilter = THREE.LinearFilter; shelterTex.needsUpdate = true; WORLD.shelterTex = shelterTex;
   const depthTex = new THREE.DataTexture(depth, NX, NZ, THREE.RedFormat, THREE.UnsignedByteType);
   depthTex.magFilter = depthTex.minFilter = THREE.LinearFilter; depthTex.needsUpdate = true;
   return { mesh, depthTex };
@@ -371,7 +381,7 @@ export const TILES = [];
 const TILE = 400;
 /** Split one big instance list into ~400 m tiles; each tile is its own InstancedMesh with a bounding sphere.
  *  lodGeo: a much simpler stand-in drawn instead when the tile is far away (shares the instance buffers). */
-function tiled(scene, geo, mat, list, write, tag, lodGeo) {
+function tiled(scene, geo, mat, list, write, tag, lodGeo, cardGeo, cardMat) {
   const buckets = new Map();
   list.forEach((r, i) => { const k = Math.floor((r[0] - EXT.minX) / TILE) + ',' + Math.floor((r[2] - EXT.minZ) / TILE); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(i); });
   const out = [];
@@ -385,17 +395,22 @@ function tiled(scene, geo, mat, list, write, tag, lodGeo) {
       const lod = new THREE.InstancedMesh(lodGeo, mat, idx.length);
       lod.instanceMatrix = im.instanceMatrix; lod.instanceColor = im.instanceColor; lod.boundingSphere = im.boundingSphere; lod.visible = false;
       im.userData.lod = lod; scene.add(lod);
+      if (cardGeo) { // v0.6 third level: a crossed pair of flat cards, unlit, for the far treeline
+        const card = new THREE.InstancedMesh(cardGeo, cardMat, idx.length);
+        card.instanceMatrix = im.instanceMatrix; card.instanceColor = im.instanceColor; card.boundingSphere = im.boundingSphere; card.visible = false;
+        im.userData.card = card; scene.add(card);
+      }
     }
   });
   return out;
 }
-export const CULL = { lodDist: 520 };
+export const CULL = { lodDist: 520, cardDist: 1100 };
 /** hide whole tiles beyond what the fog lets you see (frustum culling does the rest); far tree tiles switch to the LOD */
 export function cullTiles(camPos, visDist, litterDist, reedDist = visDist) {
   for (const im of TILES) {
     const s = im.boundingSphere, d = Math.hypot(s.center.x - camPos.x, s.center.z - camPos.z) - s.radius, tag = im.userData.tag;
     const vis = d < (tag === 'litter' ? litterDist : tag === 'reed' ? reedDist : visDist), lod = im.userData.lod;
-    if (lod) { const near = d < CULL.lodDist; im.visible = vis && near; lod.visible = vis && !near; } else im.visible = vis;
+    if (lod) { const card = im.userData.card, near = d < CULL.lodDist, mid = d < CULL.cardDist || !card; im.visible = vis && near; lod.visible = vis && !near && mid; if (card) card.visible = vis && !mid; } else im.visible = vis;
   }
 }
 /** scale how many litter clusters are drawn (instances are shuffled, so any prefix is an even sample) */
@@ -414,6 +429,9 @@ export function buildTrees(scene) {
     { geo: new THREE.IcosahedronGeometry(2.1, 0), color: white, y: 8.6 },
   ]);
   // far-away stand-ins: one cone / one blob, ~1/6 of the triangles
+  const cardOf = (w, h, y) => { const a = new THREE.PlaneGeometry(w, h); a.translate(0, y, 0); const b = a.clone(); b.rotateY(Math.PI / 2); return mergeGeoms([{ geo: a, color: white, y: 0 }, { geo: b, color: white, y: 0 }]); };
+  const coniferCard = cardOf(4.6, 11.5, 5.75), broadCard = cardOf(6.2, 9, 5.2);
+  const cardMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const coniferLod = mergeGeoms([{ geo: new THREE.ConeGeometry(2.3, 10.5, 5, 1, true), color: white, y: 5.6 }]);
   const broadLod = mergeGeoms([{ geo: new THREE.CylinderGeometry(0.3, 0.4, 5, 3, 1, true), color: [0.28, 0.22, 0.16], y: 2.5 }, { geo: new THREE.OctahedronGeometry(3.1, 0), color: white, y: 7.0 }]);
   const mat = swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }), 30, 1.1);
@@ -456,7 +474,7 @@ export function buildTrees(scene) {
       q.setFromAxisAngle(Y, r[4]); const wk = treeWidth(r[7]);
       m.compose(P3.set(r[0], r[1], r[2]), q, S3.set(r[3] * wk * (0.85 + r[5] * 0.3), r[3] * r[7], r[3] * wk * (0.85 + r[5] * 0.3)));
       im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(r[8][0], r[8][1], r[8][2]));
-    }, tag, lodGeo);
+    }, tag, lodGeo, tag === 'tree' ? (geo === conifer ? coniferCard : broadCard) : null, cardMat);
   };
   mk(conifer, conAt, conCols, true, 'tree', coniferLod); mk(broad, broadAt, broadCols, false, 'tree', broadLod);
   // maples near the water drop leaves when a gust passes (see leaves.js)

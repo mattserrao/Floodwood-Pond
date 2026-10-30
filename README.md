@@ -15,6 +15,15 @@ The light follows the journey (grey dawn at the tent, golden hour at Big Island,
 and the ending surfaces a line of text in the fog. "Drift on its own" in the pause menu turns on auto paddle.
 Add `?free=1` to the URL for the old free-roam game. Optional voice clips go in `audio/memories/`.
 
+## v0.6.0 (test branch): environment, atmosphere, performance
+- **Shoreline detail**: ~1,000 dead silver snags, leaning trees, granite boulders, driftwood, beaver stumps and
+  upturned root plates placed only within ~14 m of the water, plus a few campsite docks and a tin boat.
+- **Layered atmosphere**: fog pools in the bays and lee shores (from a 'shelter' map of the pond) and lifts as the sun
+  climbs; low wisps skim the water near the canoe and part in its wake; aerial haze fades the far shore and hills
+  toward the sky colour, warming toward the sun.
+- **Performance**: a third tree level (flat cards) beyond ~1.1 km; the water mirror renders only the near 420 m at
+  quarter/third resolution and the far treeline is a dark band; shore props are tiled and culled with the forest.
+
 ## Run it
 It's static files, but ES modules need a web server:
 

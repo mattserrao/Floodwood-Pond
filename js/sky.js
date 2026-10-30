@@ -157,6 +157,11 @@ export function createWater(depthTex) {
           vec2 ruv = rc.xy / rc.w, rt = 0.8 / uReflRes;   // 4 taps soften the low-res mirror into a natural blur
           vec3 mir = .25 * (texture2D(tRefl, ruv + vec2(rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(-rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(rt.x, -rt.y)).rgb + texture2D(tRefl, ruv - rt).rgb);
           refl = mix(mir, refl * .8, smoothstep(.35, .85, gu) * .8);   // gusts scatter the image into a soft, darker sheen
+          // v0.6: the mirror stops ~400 m out; beyond that the far treeline is a dark band (same as the cheap path)
+          float dcam = length(cameraPosition.xz - p);
+          float ryf = clamp(V.y + (R.y - V.y) * .3, 0., 1.), tl = .035 + .03 * wn2(p * .004 + 5.) + .012 * wn2(p * .03);
+          vec3 band = mix(uTreeCol, mix(uSkyHor, uSkyTop, pow(ry,.55)), smoothstep(tl * .7, tl * 1.15, ryf));
+          refl = mix(refl, band, smoothstep(300., 420., dcam));
         } else {
           // cheap fallback: a dark treeline band just above the reflected horizon
           float ryf = clamp(V.y + (R.y - V.y) * .3, 0., 1.);   // mostly the flat-mirror angle, so the band stays solid
@@ -200,7 +205,7 @@ export function createReflection(renderer) {
   const mirrorPos = new THREE.Vector3(0, 0, 0), camPos = new THREE.Vector3(), rot = new THREE.Matrix4(), look = new THREE.Vector3(0, 0, -1), view = new THREE.Vector3(), target = new THREE.Vector3(), q = new THREE.Vector4();
   const texMat = new THREE.Matrix4();
   const api = {
-    rt, scale: 0, texMat, hide: [],
+    rt, scale: 0, texMat, hide: [], far: 420,
     setScale(s) { api.scale = s; api.resize(); },
     resize() { if (!api.scale) return; const v = renderer.getDrawingBufferSize(new THREE.Vector2()); rt.setSize(Math.max(4, Math.round(v.x * api.scale)), Math.max(4, Math.round(v.y * api.scale))); },
     /** sky: the sky dome (moved to the mirror camera), hide: objects that must not appear in the mirror */
@@ -214,7 +219,7 @@ export function createReflection(renderer) {
       rot.extractRotation(camera.matrixWorld); look.set(0, 0, -1).applyMatrix4(rot).add(camPos);
       target.subVectors(mirrorPos, look); target.reflect(normal).negate(); target.add(mirrorPos);
       cam.position.copy(view); cam.up.set(0, 1, 0).applyMatrix4(rot).reflect(normal); cam.lookAt(target);
-      cam.far = camera.far; cam.near = camera.near; cam.fov = camera.fov; cam.aspect = camera.aspect; cam.updateMatrixWorld(); cam.projectionMatrix.copy(camera.projectionMatrix);
+      cam.far = api.far || camera.far; cam.near = camera.near; // v0.6: the mirror only needs the near shore; the far treeline is faked as a dark band in the water shader cam.fov = camera.fov; cam.aspect = camera.aspect; cam.updateMatrixWorld(); cam.projectionMatrix.copy(camera.projectionMatrix);
       texMat.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1); texMat.multiply(cam.projectionMatrix); texMat.multiply(cam.matrixWorldInverse);
       // oblique near plane = the water surface (nothing below the water ends up in the mirror)
       plane.setFromNormalAndCoplanarPoint(normal, mirrorPos.set(0, 0.03, 0)); plane.applyMatrix4(cam.matrixWorldInverse);
