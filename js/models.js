@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { GLTFLoader } from '../lib/GLTFLoader.js?v=0.9.0';
+import { GLTFLoader } from '../lib/GLTFLoader.js?v=0.9.1';
 
 // v0.6.1: hand-built Blender models (models/*.glb). Each is exported in metres, origin on the ground,
 // facing +Y in Blender = -Z in three.js (glTF export is Y-up); `front` says which way the model's bow/face points.
 const loader = new GLTFLoader();
-const MODEL_V = '0.9.0';   // set by tools/bump.sh - cache-busts the .glb files on each release
+const MODEL_V = '0.9.1';   // set by tools/bump.sh - cache-busts the .glb files on each release
 const cache = {};
 export const MODELS = {
   tent: { file: 'tent.glb' }, paddler: { file: 'paddler.glb' }, kayaker: { file: 'kayaker.glb' }, boyStand: { file: 'boystand.glb' }, boyLeap: { file: 'boyleap.glb' },

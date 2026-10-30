@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { EXT, sstep, clamp, lerp } from './world.js?v=0.9.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.9.0';
+import { EXT, sstep, clamp, lerp } from './world.js?v=0.9.1';
+import { WIND, GUST_GLSL } from './wind.js?v=0.9.1';
 
 // ------------------------------------------------------------------ day/night palette
 const K = (h, top, mid, hor, fog, hemiS, hemiG, sun, fogD, hemiI) => ({ h, top: new THREE.Color(top), mid: new THREE.Color(mid), hor: new THREE.Color(hor), fog: new THREE.Color(fog), hemiS: new THREE.Color(hemiS), hemiG: new THREE.Color(hemiG), sun: new THREE.Color(sun), fogD, hemiI });
@@ -144,7 +144,7 @@ export function createWater(depthTex) {
         vec2 g = wv(p,vec2(1.,.3),.55,.018,1.1) + wv(p,vec2(-.4,1.),.8,.012,1.4) + wv(p,vec2(.7,-.8),1.3,.008,1.9) + wv(p,vec2(-1.,-.2),2.3,.005,2.6) + wv(p,vec2(.2,1.),3.7,.003,3.3);
         g *= .55 + .9 * gu;
         float far = 1. - smoothstep(25., 140., dist);
-        g += (wv(p, uWindDir + vec2(.2,-.1), 6.1, .006, 4.1) + wv(p, uWindDir + vec2(-.3,.25), 9.3, .004, 5.3)) * smoothstep(.15, .6, gu) * (.3 + .7*far);
+        g += (wv(p, uWindDir + vec2(.2,-.1), 6.1, .006, 2.4) + wv(p, uWindDir + vec2(-.3,.25), 9.3, .004, 3.1)) * smoothstep(.15, .6, gu) * (.3 + .7*far);
         if (uRain > .01) g += rainRings(p) * .045 * uRain * (1. - smoothstep(20., 70., dist));
         vec3 n = normalize(vec3(-g.x, 1., -g.y));
         vec3 V = normalize(cameraPosition - vW);

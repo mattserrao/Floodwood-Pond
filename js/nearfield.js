@@ -6,7 +6,7 @@
 //  - soft contact shadows under trunks, rocks and stumps
 // Everything is instanced (one draw call per kind) and rebuilt only when the canoe has moved a few metres.
 import * as THREE from 'three';
-import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS } from './world.js?v=0.9.0';
+import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE } from './world.js?v=0.9.1';
 
 // ------------------------------------------------------------------ geometry helpers
 /** a mesh builder that collects triangles with colours and a bark flag */
@@ -120,7 +120,9 @@ const blobTex = (() => { const c = document.createElement('canvas'); c.width = c
 export function createNearField(scene, opts = {}) {
   const recs = WORLD.treeRecs || [], tileMat = WORLD.treeMat;
   const nearMat = foliageLight(swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }), 30, 1.1), 'near');
-  const groundMat = foliageLight(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, side: THREE.DoubleSide }), 'ground');
+  distFade(nearMat, 'in', 'tree');
+  const groundMat = distFade(foliageLight(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, side: THREE.DoubleSide }), 'ground'), 'in', 'ground');
+  const saplingMat = distFade(foliageLight(swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }), 30, 1.1), 'sap'), 'in', 'ground');
   const mkIM = (geo, mat, max, shadow = true) => { const im = new THREE.InstancedMesh(geo, mat, max); im.count = 0; im.frustumCulled = false; im.castShadow = shadow; im.receiveShadow = true;
     im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3); scene.add(im); return im; };
 
@@ -137,7 +139,7 @@ export function createNearField(scene, opts = {}) {
   const nearestTree = (x, z) => { let best = 1e9; for (const r of around(x, z, 7)) best = Math.min(best, Math.hypot(r[0] - x, r[2] - z)); return best; };
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
   let swapped = new Set(); const saved = new Map();
-  const blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: blobTex, color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 4000);
+  const blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), distFade(new THREE.MeshBasicMaterial({ map: blobTex, color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }), 'alpha', 'ground'), 4000);
   blobs.count = 0; blobs.frustumCulled = false; blobs.renderOrder = 1; scene.add(blobs);
 
   // --- ground detail ring
@@ -146,7 +148,7 @@ export function createNearField(scene, opts = {}) {
     duff: mkIM(decal(R0, 10, 1.3), groundMat, 1600, false), moss: mkIM(decal(R0, 9, 0.9), groundMat, 900, false),
     fern: mkIM(fernGeo(R0), groundMat, 1400), shrub: mkIM(shrubGeo(R0), groundMat, 700), sedge: mkIM(sedgeGeo(R0), groundMat, 1400, false),
     stick: mkIM(stickGeo(), groundMat, 900, false), cone: mkIM(coneGeo(), groundMat, 700, false), rock: mkIM(rockGeo(R0), groundMat, 500), stump: mkIM(stumpGeo(R0), groundMat, 120),
-    root: mkIM(rootGeo(R0), groundMat, 500), log: mkIM(logGeo(R0), groundMat, 160), sapling: mkIM(spruce(909), nearMat, 600),
+    root: mkIM(rootGeo(R0), groundMat, 500), log: mkIM(logGeo(R0), groundMat, 160), sapling: mkIM(spruce(909), saplingMat, 600),
   };
   blobs.receiveShadow = false;
   groundMat.polygonOffset = false;
@@ -205,25 +207,29 @@ export function createNearField(scene, opts = {}) {
   }
 
   function rebuildTrees(x, z, radius) {
-    const now = new Set(around(x, z, radius));
-    // put back the ones that left the ring
-    for (const r of swapped) if (!now.has(r)) { r.im.setMatrixAt(r.j, saved.get(r)); r.im.instanceMatrix.needsUpdate = true; saved.delete(r); }
+    // detailed twins exist out to the ring edge; the far tree is only hidden well inside it,
+    // so across the outer band both draw and the shaders cross-dissolve them (no pop)
+    const now = new Set(around(x, z, radius)), inner = radius - 38;
+    const hide = new Set(); for (const r of now) if ((r[0] - x) ** 2 + (r[2] - z) ** 2 < inner * inner) hide.add(r);
+    for (const r of swapped) if (!hide.has(r)) { r.im.setMatrixAt(r.j, saved.get(r)); r.im.instanceMatrix.needsUpdate = true; saved.delete(r); }
     kinds.forEach((k) => { k.im.count = 0; });
-    let nb = 0;
+    let nb = 0; const m = new THREE.Matrix4();
     for (const r of now) {
-      if (!saved.has(r)) { const m = new THREE.Matrix4(); r.im.getMatrixAt(r.j, m); saved.set(r, m); r.im.setMatrixAt(r.j, ZERO); r.im.instanceMatrix.needsUpdate = true; }
+      if (saved.has(r)) m.copy(saved.get(r)); else r.im.getMatrixAt(r.j, m);
+      if (hide.has(r) && !saved.has(r)) { saved.set(r, m.clone()); r.im.setMatrixAt(r.j, ZERO); r.im.instanceMatrix.needsUpdate = true; }
       const k = byKey[kindFor(r)]; if (!k || k.im.count >= k.im.instanceMatrix.count) continue;
-      const m = saved.get(r); k.im.setMatrixAt(k.im.count, m); COL.setRGB(r[8][0], r[8][1], r[8][2]); k.im.setColorAt(k.im.count, COL); k.im.count++;
+      k.im.setMatrixAt(k.im.count, m); COL.setRGB(r[8][0], r[8][1], r[8][2]); k.im.setColorAt(k.im.count, COL); k.im.count++;
       V3.setFromMatrixScale(m); const bs = 2.2 * Math.max(V3.x, 0.6); M4.compose(V3.set(r[0], r[1] + 0.33, r[2]), Q.identity(), S3.set(bs, 1, bs)); blobs.setMatrixAt(nb++, M4);
     }
-    swapped = now; blobs.count = nb;
+    swapped = hide; blobs.count = nb;
     kinds.forEach((k) => { k.im.instanceMatrix.needsUpdate = true; k.im.instanceColor.needsUpdate = true; }); blobs.instanceMatrix.needsUpdate = true;
   }
 
   const S = { last: null, treeR: opts.treeR ?? 110, groundR: opts.groundR ?? 64, enabled: true };
+  const syncFade = () => { NEAR_FADE.uTreeR.value = S.enabled ? S.treeR : 0; NEAR_FADE.uGroundR.value = S.enabled ? S.groundR : 0; }; syncFade();
   return {
     meshes: () => [...kinds.map((k) => k.im), ...Object.values(G)],
-    setQuality(q) { S.treeR = q.nearTrees ?? 110; S.groundR = q.nearGround ?? 64; S.last = null; },
+    setQuality(q) { S.treeR = q.nearTrees ?? 110; S.groundR = q.nearGround ?? 64; S.last = null; syncFade(); },
     update(pos) {
       if (!S.enabled) return;
       if (S.last && Math.hypot(pos.x - S.last.x, pos.z - S.last.z) < 7) return;

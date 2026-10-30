@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.9.0';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.9.0';
-import { Voices } from './voices.js?v=0.9.0';
-import { recolor } from './models.js?v=0.9.0';
+import { MAP } from './mapdata.js?v=0.9.1';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.9.1';
+import { Voices } from './voices.js?v=0.9.1';
+import { recolor } from './models.js?v=0.9.1';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};

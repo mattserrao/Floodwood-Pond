@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.9.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.9.0';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.9.0';
+import { MAP } from './mapdata.js?v=0.9.1';
+import { WIND, GUST_GLSL } from './wind.js?v=0.9.1';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.9.1';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -451,6 +451,34 @@ function mergeGeoms(parts) {
 // ---------- v0.9.0: shared light for vegetation - sun shining through foliage when you look toward it, and bark/needle grain up close
 export const TREE_LIGHT = { uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.9, 0.7) }, uSunK: { value: 1 } };
 /** chain onto a (sway) material: adds a world position, per-vertex bark flag, procedural grain and backlit translucency */
+/** v0.9.1: near-field detail dissolves in/out by distance instead of popping.
+ *  mode 'in'  = visible inside the ring, dithered out toward its edge (detailed trees, ground props)
+ *  mode 'out' = the far-tree twin: visible exactly where the detailed tree is not (same dither, inverted)
+ *  mode 'alpha' = transparent things (contact blobs) just fade. */
+export const NEAR_FADE = { uTreeR: { value: 0 }, uGroundR: { value: 0 } };
+export function distFade(mat, mode, which = 'tree') {
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey() : '';
+  const R = which === 'tree' ? 'uTreeR' : 'uGroundR';
+  const band = which === 'tree' ? `smoothstep(${R} - 30., ${R} - 8., vFadeD)` : `smoothstep(${R} * .48, ${R} * .8, vFadeD)`;
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    Object.assign(sh.uniforms, NEAR_FADE);
+    sh.vertexShader = 'varying float vFadeD;\n' + sh.vertexShader.replace('#include <fog_vertex>', `#include <fog_vertex>
+      #ifdef USE_INSTANCING
+        vec3 fo = (modelMatrix * instanceMatrix * vec4(0., 0., 0., 1.)).xyz;
+      #else
+        vec3 fo = (modelMatrix * vec4(0., 0., 0., 1.)).xyz;
+      #endif
+      vFadeD = distance(fo.xz, cameraPosition.xz);`);
+    const body = mode === 'alpha' ? '' : 'float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(.06711056, .00583715))));\n' +
+      (mode === 'in' ? 'if (ign > fIn) discard;' : `if (${R} > 1. && ign <= fIn) discard;`);
+    sh.fragmentShader = 'uniform float uTreeR, uGroundR; varying float vFadeD;\n' + sh.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+      { float fIn = 1. - ${band}; ${body} }`);
+    if (mode === 'alpha') sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>\n diffuseColor.a *= 1. - ${band};`);
+  };
+  mat.customProgramCacheKey = () => prevKey + '_df' + mode + which;
+  return mat;
+}
 export function foliageLight(mat, key = 'f') {
   const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey() : '';
   mat.onBeforeCompile = (sh, r) => {
@@ -647,7 +675,7 @@ export function buildTrees(scene) {
   scene.add(padMesh); WORLD.pads = padMesh;
   const litter = buildLitter(scene);
   WORLD.maples = maples;
-  WORLD.treeRecs = [...conAt, ...broadAt]; WORLD.treeMat = mat;
+  WORLD.treeRecs = [...conAt, ...broadAt]; WORLD.treeMat = mat; distFade(mat, 'out', 'tree');
   WORLD.treePos = [...conAt, ...broadAt].filter((r) => Math.hypot(r[0] - CAMP.tent[0], r[2] - CAMP.tent[1]) < CAMP.R + 10).map((r) => [r[0], r[2]]);
   return { trees: conAt.length + broadAt.length, reeds: reedPts.length, pads: pads.length, litter, tiles: TILES.length };
 }
