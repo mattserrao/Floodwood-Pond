@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.8.0';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.8.0';
-import { Voices } from './voices.js?v=0.8.0';
-import { recolor } from './models.js?v=0.8.0';
+import { MAP } from './mapdata.js?v=0.8.1';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.8.1';
+import { Voices } from './voices.js?v=0.8.1';
+import { recolor } from './models.js?v=0.8.1';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};
@@ -825,7 +825,7 @@ export function createStory(C) {
     // wind up whatever memories are still playing (silently), so the jump starts clean
     voices.silent = true;
     S.events.forEach((e) => { for (let i = 0; e.live && i < 400; i++) if (e.live(0.25, S.playT + i * 0.25)) e.live = null; e.live = null; });
-    [...S.ghosts].forEach(removeGhost); voices.silent = false; ATT.fn = null; ATT.k = 0;
+    [...S.ghosts].forEach(removeGhost); voices.silent = false; voices.resetDuck(); ATT.fn = null; ATT.k = 0;
     $('blackout').style.transition = 'none'; $('blackout').style.opacity = 0; $('veil').style.opacity = 0; G.fog = 0; G.fogLift = 0;
     const p = sAt <= 0 ? { x: launchInfo.end[0], z: launchInfo.end[1] } : r;
     P.x = p.x; P.z = p.z; P.psi = Math.atan2(ahead.x - r.x, ahead.z - r.z); if (sAt <= 0) P.psi = launchInfo.psi; P.vx = P.vz = P.w = 0;

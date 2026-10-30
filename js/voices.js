@@ -132,12 +132,15 @@ export class Voices {
   }
   /** pull the music back while a memory plays so the voices sit on top */
   duck(on) {
-    this.ducks = Math.max(0, (this.ducks || 0) + (on ? 1 : -1));
-    const a = this.audio; if (!a.musicBus) return;
-    a.musicBus.gain.cancelScheduledValues(this.ctx.currentTime);
-    a.musicBus.gain.setTargetAtTime(this.ducks > 0 ? 0.16 : 0.5, this.ctx.currentTime, this.ducks > 0 ? 0.6 : 2.5);
-    a.ducked = this.ducks > 0;
+    // v0.8.1: every duck releases itself after 40 s, so a memory that never sends its 'out' (the ghost campsite, a skipped
+    // or cut-short event) can't hold the music down for the rest of the game; the level itself is set by audio.update
+    this.tokens = this.tokens || [];
+    if (on) { const tk = setTimeout(() => { const i = this.tokens.indexOf(tk); if (i >= 0) { this.tokens.splice(i, 1); this.audio.ducked = this.tokens.length > 0; } }, 40000); this.tokens.push(tk); }
+    else if (this.tokens.length) clearTimeout(this.tokens.shift());
+    this.audio.ducked = this.tokens.length > 0;
   }
+  resetDuck() { (this.tokens || []).forEach(clearTimeout); this.tokens = []; this.audio.ducked = false; }
+
 
   // ---------- event foley ----------
   /** a paddle blade biting the water at a position */

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.8.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.8.0';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.8.0';
+import { MAP } from './mapdata.js?v=0.8.1';
+import { WIND, GUST_GLSL } from './wind.js?v=0.8.1';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.8.1';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
