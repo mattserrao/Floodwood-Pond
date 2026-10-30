@@ -42,11 +42,24 @@ def frames_db(x, hop=0.01, win=0.03):
     return 20 * np.log10(rms), h
 
 
-def segment(x, min_gap=0.7, min_len=0.12):
-    """split on silences longer than min_gap; returns [(start, end)] in samples"""
+def segment(x, min_gap=0.7, min_len=0.12, thr=None, expect=None):
+    """split on silences longer than min_gap; returns [(start, end)] in samples.
+    Rooms differ (fridge hum, breaths between takes), so unless a threshold is given, try a range and keep the
+    one whose piece count is closest to the number of takes expected."""
     db, h = frames_db(x)
-    floor, peak = np.percentile(db, 15), np.percentile(db, 99.5)
-    thr = max(floor + 10, peak - 42)
+    if thr is None:
+        floor, peak = np.percentile(db, 15), np.percentile(db, 99.5)
+        cands = [t for t in np.arange(floor + 6, peak - 12, 1.5)] or [max(floor + 10, peak - 42)]
+        best = None
+        for t in cands:
+            n = len(split(db, h, len(x), t, min_gap, min_len))
+            score = abs(n - (expect or n)) + (0.02 * (t - cands[0]))      # closest count; ties -> lower threshold (keeps tails)
+            if best is None or score < best[0]: best = (score, t)
+        thr = best[1]
+    return split(db, h, len(x), thr, min_gap, min_len), thr
+
+
+def split(db, h, nx, thr, min_gap, min_len):
     on = db > thr
     segs, i, n = [], 0, len(on)
     while i < n:
@@ -58,9 +71,9 @@ def segment(x, min_gap=0.7, min_len=0.12):
             while k < n and not on[k]: k += 1
             if (k - j) * 0.01 >= min_gap or k >= n: break
             j = k
-        if (j - i) * 0.01 >= min_len: segs.append((max(0, i * h - int(0.06 * FS)), min(len(x), j * h + int(0.2 * FS))))
+        if (j - i) * 0.01 >= min_len: segs.append((max(0, i * h - int(0.08 * FS)), min(nx, j * h + int(0.35 * FS))))
         i = j + 1
-    return segs, thr
+    return segs
 
 
 def trim(y, thr_rel=-38):
@@ -161,12 +174,13 @@ def main():
     ap.add_argument('recording'); ap.add_argument('--out', default=os.path.join(HERE, '..', '..', 'audio', 'voice'))
     ap.add_argument('--cues', default=os.path.join(HERE, 'cues.json')); ap.add_argument('--no-asr', action='store_true')
     ap.add_argument('--gap', type=float, default=0.7, help='silence (s) that separates takes')
+    ap.add_argument('--thr', type=float, default=None, help='silence threshold in dB (default: automatic)')
     a = ap.parse_args()
     C = json.load(open(a.cues)); os.makedirs(a.out, exist_ok=True)
     takes = [{'cue': c, 'n': k + 1, 'key': f"{c['id']}#{k + 1}"} for c in C['cues'] for k in range(c['takes'])]
 
     x = load(a.recording)
-    segs, thr = segment(x, a.gap)
+    segs, thr = segment(x, a.gap, thr=a.thr, expect=len(takes) + 1)
     print(f'{len(x) / FS:.1f}s recording, {len(segs)} pieces found for {len(takes)} takes (threshold {thr:.0f} dB)')
     texts = [''] * len(segs)
     if not a.no_asr:

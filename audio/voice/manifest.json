@@ -1,0 +1,323 @@
+{
+ "version": 1,
+ "fs": 32000,
+ "voices": [
+  {
+   "id": "v1",
+   "pitch": 0.84,
+   "file": "voice_v1.mp3"
+  },
+  {
+   "id": "v2",
+   "pitch": 0.94,
+   "file": "voice_v2.mp3"
+  },
+  {
+   "id": "v3",
+   "pitch": 1.0,
+   "file": "voice_v3.mp3"
+  },
+  {
+   "id": "v4",
+   "pitch": 1.12,
+   "file": "voice_v4.mp3"
+  },
+  {
+   "id": "v5",
+   "pitch": 1.24,
+   "file": "voice_v5.mp3"
+  },
+  {
+   "id": "v6",
+   "pitch": 1.36,
+   "file": "voice_v6.mp3"
+  }
+ ],
+ "cues": {
+  "laugh_chuckle": {
+   "kind": "laugh",
+   "takes": [
+    {
+     "take": 1,
+     "start": 0.35,
+     "dur": 0.915
+    },
+    {
+     "take": 2,
+     "start": 1.615,
+     "dur": 0.815
+    },
+    {
+     "take": 3,
+     "start": 2.78,
+     "dur": 1.365
+    }
+   ]
+  },
+  "laugh": {
+   "kind": "laugh",
+   "takes": [
+    {
+     "take": 1,
+     "start": 4.495,
+     "dur": 1.31
+    },
+    {
+     "take": 2,
+     "start": 6.155,
+     "dur": 2.19
+    },
+    {
+     "take": 3,
+     "start": 8.695,
+     "dur": 2.035
+    },
+    {
+     "take": 4,
+     "start": 11.08,
+     "dur": 2.485
+    }
+   ]
+  },
+  "laugh_big": {
+   "kind": "laugh",
+   "takes": [
+    {
+     "take": 1,
+     "start": 13.915,
+     "dur": 3.125
+    },
+    {
+     "take": 2,
+     "start": 17.39,
+     "dur": 2.2
+    },
+    {
+     "take": 3,
+     "start": 19.94,
+     "dur": 2.335
+    }
+   ]
+  },
+  "shout_hey": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 22.625,
+     "dur": 0.69
+    },
+    {
+     "take": 2,
+     "start": 23.665,
+     "dur": 0.445
+    }
+   ]
+  },
+  "shout_woo": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 24.46,
+     "dur": 1.16
+    },
+    {
+     "take": 2,
+     "start": 25.97,
+     "dur": 0.63
+    }
+   ]
+  },
+  "shout_go": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 26.95,
+     "dur": 1.51
+    },
+    {
+     "take": 2,
+     "start": 28.81,
+     "dur": 0.675
+    }
+   ]
+  },
+  "shout_yeah": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 29.835,
+     "dur": 0.88
+    },
+    {
+     "take": 2,
+     "start": 31.065,
+     "dur": 1.18
+    }
+   ]
+  },
+  "shout_dude": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 32.595,
+     "dur": 0.88
+    },
+    {
+     "take": 2,
+     "start": 33.825,
+     "dur": 1.17
+    }
+   ]
+  },
+  "shout_oh": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 35.345,
+     "dur": 1.105
+    },
+    {
+     "take": 2,
+     "start": 36.8,
+     "dur": 0.74
+    }
+   ]
+  },
+  "shout_no": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 37.89,
+     "dur": 0.53
+    },
+    {
+     "take": 2,
+     "start": 38.77,
+     "dur": 1.055
+    }
+   ]
+  },
+  "shout_wait": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 40.175,
+     "dur": 0.49
+    },
+    {
+     "take": 2,
+     "start": 41.015,
+     "dur": 0.915
+    }
+   ]
+  },
+  "shout_come": {
+   "kind": "shout",
+   "takes": [
+    {
+     "take": 1,
+     "start": 42.28,
+     "dur": 0.935
+    },
+    {
+     "take": 2,
+     "start": 43.565,
+     "dur": 1.48
+    }
+   ]
+  },
+  "beef": {
+   "kind": "line",
+   "takes": [
+    {
+     "take": 1,
+     "start": 45.395,
+     "dur": 1.84
+    },
+    {
+     "take": 2,
+     "start": 47.585,
+     "dur": 1.845
+    }
+   ]
+  },
+  "line_headsup": {
+   "kind": "line",
+   "takes": [
+    {
+     "take": 1,
+     "start": 49.78,
+     "dur": 0.54
+    }
+   ]
+  },
+  "line_whoa": {
+   "kind": "line",
+   "takes": [
+    {
+     "take": 1,
+     "start": 50.67,
+     "dur": 1.27
+    }
+   ]
+  },
+  "line_pull": {
+   "kind": "line",
+   "takes": [
+    {
+     "take": 1,
+     "start": 52.29,
+     "dur": 1.54
+    }
+   ]
+  },
+  "line_stuck": {
+   "kind": "line",
+   "takes": [
+    {
+     "take": 1,
+     "start": 54.18,
+     "dur": 1.605
+    }
+   ]
+  },
+  "line_faster": {
+   "kind": "line",
+   "takes": [
+    {
+     "take": 1,
+     "start": 56.135,
+     "dur": 1.4
+    }
+   ]
+  },
+  "line_binos": {
+   "kind": "line",
+   "takes": [
+    {
+     "take": 1,
+     "start": 57.885,
+     "dur": 1.24
+    }
+   ]
+  },
+  "line_dad": {
+   "kind": "line",
+   "takes": [
+    {
+     "take": 1,
+     "start": 59.475,
+     "dur": 1.335
+    }
+   ]
+  }
+ }
+}

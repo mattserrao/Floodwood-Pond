@@ -1,0 +1,43 @@
+recording: rec.m4a
+pieces: 38  takes: 38
+
+   3.98s   1.2s  'Ha ha ha.'                               ->  laugh_chuckle#1
+   6.71s   1.1s  'Ha ha ha.'                               ->  laugh_chuckle#2
+   8.35s   1.7s  'Ha ha ha.'                               ->  laugh_chuckle#3
+  11.48s   1.3s  'Ha ha ha.'                               ->  laugh#1
+  14.17s   2.5s  'Ha ha ha ha.'                            ->  laugh#2
+  17.67s   2.3s  'Heh heh heh heh.'                        ->  laugh#3
+  22.16s   3.3s  'Ha ha ha ha.'                            ->  laugh#4
+  25.86s   4.0s  'Heh heh heh heh heh heh heh.'            ->  laugh_big#1
+  30.16s   3.4s  'Ha ha ha ha ha.'                         ->  laugh_big#2
+  34.09s   2.6s  'Ah! Heh heh heh.'                        ->  laugh_big#3
+  41.71s   1.0s  'Hey!'                                    ->  shout_hey#1
+  45.29s   0.7s  'Hey!'                                    ->  shout_hey#2
+  48.96s   1.4s  'Whoa!'                                   ->  shout_woo#1
+  51.30s   0.9s  'Whoa!'                                   ->  shout_woo#2
+  53.83s   1.8s  'Go go go!'                               ->  shout_go#1
+  56.46s   1.0s  'Go!'                                     ->  shout_go#2
+  58.70s   1.0s  'Heh heh heh.'                            ->  (skipped)
+  60.26s   1.1s  'Yeah!'                                   ->  shout_yeah#1
+  62.37s   1.2s  'Yes!'                                    ->  shout_yeah#2
+  65.25s   1.1s  'Dude!'                                   ->  shout_dude#1
+  67.08s   1.5s  'Dude!'                                   ->  shout_dude#2
+  69.72s   1.2s  'Whoa!'                                   ->  shout_oh#1
+  71.39s   1.0s  'Ah!'                                     ->  shout_oh#2
+  73.71s   0.8s  'No!'                                     ->  shout_no#1
+  75.15s   1.3s  'No!'                                     ->  shout_no#2
+  78.23s   0.8s  'Wait!'                                   ->  shout_wait#1
+  79.70s   1.1s  'Wait, wait, wait.'                       ->  shout_wait#2
+  81.92s   1.2s  'Come on!'                                ->  shout_come#1
+  83.41s   1.8s  'Come on! Come on!'                       ->  shout_come#2
+  87.70s   2.1s  'Ah, beef beef beef beef beef!'           ->  beef#1
+  91.15s   2.1s  'Ah, beef beef beef beef!'                ->  beef#2
+  95.18s   0.8s  'Heads up!'                               ->  line_headsup#1
+  96.81s   1.6s  'Whoa! Whoa! Whoa!'                       ->  line_whoa#1
+ 102.25s   1.7s  'Keep pulling, it floats.'                ->  line_pull#1
+ 105.18s   1.9s  "I'm stuck! I'm stuck!"                   ->  line_stuck#1
+ 108.16s   1.7s  'Faster! Faster!'                         ->  line_faster#1
+ 110.71s   1.5s  'The binoculars!'                         ->  line_binos#1
+ 113.08s   1.6s  'Those were my dads.'                     ->  line_dad#1
+
+missing takes: line_race#1
