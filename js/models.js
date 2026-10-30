@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { GLTFLoader } from '../lib/GLTFLoader.js';
+import { GLTFLoader } from '../lib/GLTFLoader.js?v=0.7.1';
 
 // v0.6.1: hand-built Blender models (models/*.glb). Each is exported in metres, origin on the ground,
 // facing +Y in Blender = -Z in three.js (glTF export is Y-up); `front` says which way the model's bow/face points.
 const loader = new GLTFLoader();
+const MODEL_V = '0.7.1';   // set by tools/bump.sh - cache-busts the .glb files on each release
 const cache = {};
 export const MODELS = {
   tent: { file: 'tent.glb' }, paddler: { file: 'paddler.glb' }, kayaker: { file: 'kayaker.glb' }, boyStand: { file: 'boystand.glb' }, boyLeap: { file: 'boyleap.glb' },
@@ -12,7 +13,7 @@ export const MODELS = {
 };
 /** load one model (cached); resolves to a fresh clone of the scene group, flat-shaded, with Blender +Y mapped to game +Z */
 export function loadModel(name) {
-  if (!cache[name]) cache[name] = new Promise((res, rej) => loader.load('models/' + MODELS[name].file, (g) => {
+  if (!cache[name]) cache[name] = new Promise((res, rej) => loader.load('models/' + MODELS[name].file + (MODEL_V ? '?v=' + MODEL_V : ''), (g) => {
     const s = g.scene; s.traverse((o) => { if (o.isMesh) { o.material.flatShading = true; o.material.needsUpdate = true; o.castShadow = o.receiveShadow = false; } });
     // Blender +Y (model "forward") exports as -Z in three.js; the game's boats face +Z, so turn them round
     s.rotation.y = Math.PI; s.updateMatrixWorld(true);

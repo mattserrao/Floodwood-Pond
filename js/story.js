@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js';
-import { Voices } from './voices.js';
-import { recolor } from './models.js';
+import { MAP } from './mapdata.js?v=0.7.1';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.7.1';
+import { Voices } from './voices.js?v=0.7.1';
+import { recolor } from './models.js?v=0.7.1';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};
@@ -256,9 +256,9 @@ export function createStory(C) {
     I.t = 0; I.done = false; I.steps = 0; I.sat = false; I.yawW = undefined; S.ended = false; canoe.person.visible = false; canoe.paddle.visible = false;
     $('blackout').style.transition = 'none'; $('blackout').style.opacity = 1;
     voices.unzip();
-    setTimeout(() => { $('blackout').style.transition = 'opacity 2.6s ease'; $('blackout').style.opacity = 0; }, 1700);
+    setTimeout(() => { $('blackout').style.transition = 'opacity 1.6s ease'; $('blackout').style.opacity = 0; }, 900);
   };
-  // timeline (s): 0-1.7 black + unzip | 1.7-4.2 crawl out & stand | 4.2-6.6 turn back to the tent | 6.6-8.4 hold | 8.4-10.6 turn to the water
+  // timeline (s): 0-1.0 black + unzip | 1.0-2.8 crawl out & stand | 2.8-3.8 glance back at the tent | 3.8-4.4 hold | 4.4-5.6 turn to the water
   //   | walk down to the dock and out along it | step down into the canoe | hand off
   const D = CAMP.dock, toDock = () => Math.atan2(D.root[0] - tentFront.x, D.root[1] - tentFront.z);
   const floorY = (x, z) => { const d = onDock(x, z, 0.05); return d !== null ? d : Math.max(heightAt(x, z), 0.1); };
@@ -271,17 +271,17 @@ export function createStory(C) {
     const foot = new THREE.Vector3(D.root[0] - n[0] * 0.6, 0, D.root[1] - n[1] * 0.6), on = new THREE.Vector3(D.root[0] + n[0] * 0.6, 0, D.root[1] + n[1] * 0.6);
     const edge = new THREE.Vector3(D.root[0] + n[0] * sa - side[0] * 0.55, 0, D.root[1] + n[1] * sa - side[1] * 0.55);
     const pts = [out, foot, on, edge], cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
-    const walkLen = cum[cum.length - 1], walkT = walkLen / 1.3, tWalk0 = 10.6, tWalk1 = tWalk0 + walkT, tSit1 = tWalk1 + 2.4;
+    const walkLen = cum[cum.length - 1], walkT = walkLen / 2.0, tWalk0 = 5.6, tWalk1 = tWalk0 + walkT, tSit1 = tWalk1 + 1.8;   // v0.7.1: shorter - out, a quick look back, then a brisk walk down
     let pos = new THREE.Vector3(), yaw = face, pitch = -0.08, eye = 1.62, bob = 0, absY = null;
-    if (t < 4.2) { const k = ease(clamp((t - 1.7) / 2.5, 0, 1)); pos.lerpVectors(tentFront.clone().add(new THREE.Vector3(-Math.sin(face) * 0.6, 0, -Math.cos(face) * 0.6)), out, k); eye = lerp(0.55, 1.62, ease(clamp((t - 2.6) / 1.6, 0, 1))); pitch = lerp(-0.25, -0.06, k); }
+    if (t < 2.8) { const k = ease(clamp((t - 1.0) / 1.8, 0, 1)); pos.lerpVectors(tentFront.clone().add(new THREE.Vector3(-Math.sin(face) * 0.6, 0, -Math.cos(face) * 0.6)), out, k); eye = lerp(0.55, 1.62, ease(clamp((t - 1.6) / 1.2, 0, 1))); pitch = lerp(-0.25, -0.06, k); }
     else if (t < tWalk0) { pos.copy(out); const back = face + Math.PI * 0.94;
-      yaw = t < 6.6 ? lerp(face, back, ease((t - 4.2) / 2.4)) : t < 8.4 ? back : lerp(back, face + Math.PI * 2, ease((t - 8.4) / 2.2)); pitch = t < 8.4 ? -0.16 : -0.07; }
+      yaw = t < 3.8 ? lerp(face, back, ease((t - 2.8) / 1.0)) : t < 4.4 ? back : lerp(back, face + Math.PI * 2, ease((t - 4.4) / 1.2)); pitch = t < 4.4 ? -0.16 : -0.07; }
     else if (t < tWalk1) { const d = (t - tWalk0) / walkT * walkLen; pos.copy(lookAhead(pts, cum, d)); const ah = lookAhead(pts, cum, d + 2.2); if (ah.distanceTo(pos) > 0.05) yaw = Math.atan2(ah.x - pos.x, ah.z - pos.z);
       bob = Math.abs(Math.sin(d * 1.6)) * 0.05; pitch = -0.1 - 0.1 * clamp(d / walkLen, 0, 1);
       if (I.yawW !== undefined) { let dy = yaw - I.yawW; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); yaw = I.yawW + dy * Math.min(1, dt * 4); } I.yawW = yaw;
-      const stepN = Math.floor(d / 0.72); if (stepN > I.steps) { I.steps = stepN; const deck = onDock(pos.x, pos.z, 0.05) !== null; if (deck) { voices.thunk({ x: pos.x, y: D.deck, z: pos.z }, 0.35); voices.step(stepN % 2 ? 0.2 : -0.2, 0.35); } else voices.step(stepN % 2 ? 0.25 : -0.25, 0.9); } }
-    else if (t < tSit1) { const k = ease((t - tWalk1) / 2.4), y0 = I.yawW ?? face; let dy = launchInfo.psi - y0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-      pos.lerpVectors(edge, s, ease(clamp((t - tWalk1) / 1.4, 0, 1))); absY = lerp(D.deck + 1.62, 0.1 + 1.05, k) - Math.sin(clamp((t - tWalk1) / 1.4, 0, 1) * Math.PI) * 0.12;
+      const stepN = Math.floor(d / 0.8); if (stepN > I.steps) { I.steps = stepN; const deck = onDock(pos.x, pos.z, 0.05) !== null; if (deck) { voices.thunk({ x: pos.x, y: D.deck, z: pos.z }, 0.35); voices.step(stepN % 2 ? 0.2 : -0.2, 0.35); } else voices.step(stepN % 2 ? 0.25 : -0.25, 0.9); } }
+    else if (t < tSit1) { const k = ease((t - tWalk1) / 1.8), y0 = I.yawW ?? face; let dy = launchInfo.psi - y0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      pos.lerpVectors(edge, s, ease(clamp((t - tWalk1) / 1.1, 0, 1))); absY = lerp(D.deck + 1.62, 0.1 + 1.05, k) - Math.sin(clamp((t - tWalk1) / 1.1, 0, 1) * Math.PI) * 0.12;
       yaw = y0 + dy * k; pitch = lerp(-0.35, -0.05, k); if (!I.sat && k > 0.5) { I.sat = true; audio.knock(0.22); audio.hullSlap && audio.hullSlap(0.6); ripples.spawn(s.x, s.z, 3, 1.8, 0.35, 0.3); } }
     else { pos.copy(s); eye = 1.05; yaw = launchInfo.psi; absY = 0.1 + 1.05; I.done = true; }
     const y = absY !== null ? absY : floorY(pos.x, pos.z) + eye + bob;
@@ -845,6 +845,8 @@ export function createStory(C) {
   }
   S.night = NIGHT;
 
+  /** v0.7.1: the morning fog lifts after about a minute on the water */
+  S.fogLift = () => (G.mode === 'play' || G.mode === 'ending' ? sstep(55, 95, S.playT) : 0);
   S.autoTarget = () => S.target ? [S.target.x, S.target.z] : null;
   //   grey dawn at the tent -> morning -> midday on the open water -> golden hour at Big Island -> dusk in the creek
   const HOURS = [[0, 6.35], [0.12, 7.6], [0.3, 10.5], [0.45, 13.5], [0.62, 16.6], [0.76, 17.9], [0.86, 18.7], [0.95, 19.4], [1, 19.9]];
