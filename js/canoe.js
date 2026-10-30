@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp, rnd, pondSD, inPond, NQ, glowTexture } from './world.js?v=0.9.1';
+import { clamp, lerp, rnd, pondSD, inPond, NQ, glowTexture } from './world.js?v=0.9.2';
 
 const flat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, ...extra });
 /** v0.4: bake a set of static child meshes into one vertex-coloured mesh (one draw call instead of many) */
@@ -95,6 +95,48 @@ export function createCanoe(M = {}) {
   halo.scale.setScalar(1.1); halo.position.y = -0.41; hang.add(halo);
   mergeStatic(body, body.children.filter((o) => o.isMesh && o !== mask));
   return { root, body, paddle, person, armL, armR, light, halo, lantern, hang, blade, mask };
+}
+
+function rigRowerArms(fig, person, paddle) {
+  const get = (n) => fig.getObjectByName('Rower_' + n) || fig.getObjectByName(n);
+  const hL = get('handL'), hR = get('handR'), sL = get('sleeveL'), sR = get('sleeveR');
+  if (!hL || !hR || !sL || !sR) return null;
+  const sleeveMat = sL.material, handMat = hL.material;
+  [hL, hR, sL, sR].forEach((o) => { o.visible = false; });
+  const centred = (m) => { const g = m.geometry.clone(); g.computeBoundingBox(); const c = g.boundingBox.getCenter(new THREE.Vector3()); g.translate(-c.x, -c.y, -c.z); return g; };
+  const seg = (r0, r1) => { const g = new THREE.CylinderGeometry(r1, r0, 1, 7, 1); g.translate(0, 0.5, 0); return g; };
+  const UPPER = 0.31, FORE = 0.33, UP = new THREE.Vector3(0, 1, 0);
+  // shoulders sit at the top inner end of the original sleeves (figure space; +z is toward the bow)
+  const side = [-1, 1].map((sx) => {
+    const hand = sx < 0 ? hL : hR;
+    const g = new THREE.Group(); person.add(g);
+    const up = new THREE.Mesh(seg(0.075, 0.062), sleeveMat), fo = new THREE.Mesh(seg(0.064, 0.05), sleeveMat), hd = new THREE.Mesh(centred(hand), handMat);
+    [up, fo, hd].forEach((m) => { m.castShadow = true; g.add(m); });
+    return { sx, sh: new THREE.Vector3(sx * 0.2, 0.92, 0.1), up, fo, hd };
+  });
+  const tmp = new THREE.Vector3(), d = new THREE.Vector3(), pole = new THREE.Vector3(), el = new THREE.Vector3(), q = new THREE.Quaternion();
+  const gripL = new THREE.Vector3(0, 0.29, 0), shaftL = new THREE.Vector3(0, -0.36, 0);
+  const place = (m, a, b) => { d.subVectors(b, a); const L = d.length(); m.position.copy(a); m.quaternion.copy(q.setFromUnitVectors(UP, d.divideScalar(L || 1))); m.scale.set(1, L, 1); };
+  function solve(S, T, sx, A) {
+    d.subVectors(T, S); let L = d.length(); const reach = UPPER + FORE;
+    const k = L > reach * 0.999 ? L / (reach * 0.999) : 1;           // stretch a touch rather than leave the hand short of the paddle
+    const a = UPPER * k, b = FORE * k; L = Math.max(L, 0.05); d.divideScalar(L);
+    const x = (a * a - b * b + L * L) / (2 * L), h = Math.sqrt(Math.max(a * a - x * x, 0));
+    // elbows drop and flare outward, the way a paddler's do
+    pole.set(sx * 0.9, -0.7, -0.25); pole.addScaledVector(d, -pole.dot(d)).normalize();
+    el.copy(S).addScaledVector(d, x).addScaledVector(pole, h);
+    place(A.up, S, el); place(A.fo, el, T); A.hd.position.copy(T); A.hd.quaternion.copy(q.setFromUnitVectors(UP, tmp.subVectors(T, el).normalize()));
+  }
+  return {
+    update(s) {
+      paddle.parent.updateMatrixWorld(true);
+      const grip = person.worldToLocal(paddle.localToWorld(tmp.copy(gripL)).clone());
+      const shaft = person.worldToLocal(paddle.localToWorld(tmp.copy(shaftL)).clone());
+      // the hand on the paddle side holds the shaft, the other caps the grip
+      const lowSide = s >= 0 ? 1 : -1;
+      side.forEach((A) => solve(A.sh, A.sx === lowSide ? shaft : grip, A.sx, A));
+    },
+  };
 }
 
 // ------------------------------------------------------------------ ripples
@@ -357,6 +399,9 @@ function createCanoeFromModels(root, body, M) {
   const person = new THREE.Group(), fig = (M.rower || M.paddler).clone(true); fig.rotation.set(0, 0, 0); person.add(fig); person.position.set(0, 0.1, -0.75); body.add(person);
   const armL = new THREE.Group(), armR = new THREE.Group(); person.add(armL, armR);   // real arms are baked into the model
   const paddle = new THREE.Group(); body.add(paddle);
+  // v0.9.2: the baked sleeves/hands never moved, so the paddle swung free of them. Replace them with
+  // two-bone arms (shoulder -> elbow -> hand) solved every frame so the hands stay on the T-grip and the shaft.
+  const arms = rigRowerArms(fig, person, paddle);
   // model: blade spans y -0.48..0, shaft 0..1.45, T-grip at 1.51 (Blender Z-up -> Y-up). The pivot is the upper hand,
   // so hang the paddle with the grip just above it and the blade down in the water (same proportions as the old primitive)
   const pd = M.paddleSingle.clone(true); pd.position.y = 0.33 - 1.51; paddle.add(pd);
@@ -380,5 +425,5 @@ function createCanoeFromModels(root, body, M) {
   const light = new THREE.PointLight(0xffb066, 0, 7, 2); light.position.y = -0.41; hang.add(light);
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffa95a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }));
   halo.scale.setScalar(1.1); halo.position.y = -0.41; hang.add(halo);
-  return { root, body, paddle, person, armL, armR, light, halo, lantern, hang, blade, mask };
+  return { root, body, paddle, person, armL, armR, light, halo, lantern, hang, blade, mask, updateArms: arms ? arms.update : null };
 }
