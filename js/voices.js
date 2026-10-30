@@ -2,6 +2,7 @@
 // the game's 3D audio, plus optional recorded clips: drop files into audio/memories/<name>.mp3 (e.g. beef.mp3,
 // laugh1.mp3) and they are used in place of the synthesis. Spoken lines fall back to the browser's speech voice.
 const rand = (a, b) => a + Math.random() * (b - a);
+const NO_VOICES = true;
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
 // formant tables [frequency, bandwidth, gain]
@@ -48,6 +49,7 @@ export class Voices {
 
   /** "ha-ha-ha" - pitch falls through the burst */
   laugh(pos, o = {}) {
+    if (NO_VOICES) return;   // v0.8.2: memories play without voices - only their sounds (splashes, paddles, the shimmer in and out)
     if (!this.ok()) return; if (this.tryClip(pick(['laugh1', 'laugh2', 'laugh3']), pos, o.vol)) return;
     const t0 = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1);
     const n = o.n || Math.floor(rand(5, 10)); let f = o.f0 || rand(150, 230), t = t0; const vow = pick(['a', 'a', 'e', 'o']);
@@ -57,6 +59,7 @@ export class Voices {
 
   /** excited shouts: "hey!", "woo!", "go go go!", "yeahhh", "dude!", "ohhh!" */
   shout(pos, word, o = {}) {
+    if (NO_VOICES) return;   // v0.8.2: memories play without voices - only their sounds (splashes, paddles, the shimmer in and out)
     if (!this.ok()) return; if (this.tryClip('shout_' + (word || 'any'), pos, o.vol)) return;
     const t = this.ctx.currentTime + (o.delay || 0), d = this.out(pos, o.vol ?? 1), f = o.f0 || rand(170, 260);
     const W = {
@@ -70,6 +73,7 @@ export class Voices {
 
   /** a crowd of young men: overlapping shouts and laughter for `sec` seconds around a moving source */
   rowdy(posFn, sec, density = 1, vol = 1) {
+    if (NO_VOICES) return;   // v0.8.2: memories play without voices - only their sounds (splashes, paddles, the shimmer in and out)
     if (!this.ok()) return;
     const n = Math.round(sec * 1.4 * density);
     for (let i = 0; i < n; i++) {
@@ -80,6 +84,7 @@ export class Voices {
 
   /** spoken line: recorded clip if present, else the browser's speech voice (not spatialised) */
   say(name, text, pos, o = {}) {
+    if (NO_VOICES) return;   // v0.8.2: memories play without voices - only their sounds (splashes, paddles, the shimmer in and out)
     if (!this.ok()) return;
     if (this.tryClip(name, pos, o.vol)) return;
     if (!window.speechSynthesis) { this.shout(pos, 'hey'); return; }
@@ -199,6 +204,7 @@ export class Voices {
   }
   /** an eruption: several young men laughing at once, staggered, different pitches */
   erupt(pos, sec = 4, vol = 1) {
+    if (NO_VOICES) return;   // v0.8.2: memories play without voices - only their sounds (splashes, paddles, the shimmer in and out)
     if (!this.ok()) return;
     for (let i = 0; i < 5; i++) { const p = { x: pos.x + rand(-3, 3), y: 1, z: pos.z + rand(-3, 3) };
       this.laugh(p, { delay: rand(0, 0.5) + i * 0.15, n: Math.floor(rand(8, 14)), f0: rand(130, 240), vol: vol * rand(0.7, 1) });

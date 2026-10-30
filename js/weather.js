@@ -1,6 +1,6 @@
 // Day-to-day weather. Each new day (at 3 AM) rolls a sky: clear, overcast, or a fog-bound morning that burns off.
 // Showers pass through now and then, mostly on grey days. Everything is exposed as smooth 0..1 levels.
-import { clamp, sstep } from './world.js?v=0.8.1';
+import { clamp, sstep } from './world.js?v=0.8.2';
 
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const R = Math.random;
