@@ -31,6 +31,13 @@ kayak and a 4.8 m tandem with real cockpits; a 5 m canoe with gunwales, thwarts 
 paddles; a picnic table; a netted cantaloupe; an aluminium rowboat; a dock with cleat and ladder. `js/models.js` loads
 them; if a file is missing the game falls back to the old primitives.
 
+## v0.6.2: the campsite
+A 0.5 m ground patch around the tent (bumps, a flattened tent pad, a worn dirt path to the canoe) coloured as needle duff,
+moss and packed dirt; ~2,000 pieces of leaf litter, larch and pine needles, cones and twigs clumped under the trees
+and kicked off the path; a fire ring of blackened stones with cold ash, charred logs and a wisp of smoke; split
+firewood stacked by a tree; a camp chair facing the fire; bronze bracken and scarlet blueberry along the tree line;
+roots breaking the surface around the trunks; and dew that sparkles toward the low sun for the first minutes.
+
 ## Run it
 It's static files, but ES modules need a web server:
 

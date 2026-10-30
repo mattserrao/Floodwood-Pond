@@ -147,7 +147,25 @@ function bil(arr, x, z) {
   const ix = Math.floor(fx), iz = Math.floor(fz), tx = fx - ix, tz = fz - iz, i = iz * EXT.NX + ix;
   return lerp(lerp(arr[i], arr[i + 1], tx), lerp(arr[i + EXT.NX], arr[i + EXT.NX + 1], tx), tz);
 }
-export const inPatch = (x, z) => inIsleBox(x, z) || inCreekBox(x, z);
+// v0.6.2: the campsite - a fine ground patch around the tent with worn dirt, needle duff and a path to the water
+export const CAMP = (() => {
+  const L = MAP.launch; const d = nearest(pondSegs, L[0], L[1]); const qx = NQ.x, qz = NQ.z;
+  const e = 4, gx = pondSD(qx + e, qz) - pondSD(qx - e, qz), gz = pondSD(qx, qz + e) - pondSD(qx, qz - e), gl = Math.hypot(gx, gz) || 1;
+  const nx = gx / gl, nz = gz / gl, side = [nz, -nx];
+  const start = [qx - nx * 9, qz - nz * 9];                                   // where the canoe waits (matches story/main)
+  const tent = [start[0] - nx * 13 + side[0] * 4.5, start[1] - nz * 13 + side[1] * 4.5];
+  const R = 26;
+  return { tent, start, n: [nx, nz], side, R, box: { x0: tent[0] - R - 6, x1: tent[0] + R + 6, z0: tent[1] - R - 6, z1: tent[1] + R + 6 } };
+})();
+export const inCampBox = (x, z) => x > CAMP.box.x0 && x < CAMP.box.x1 && z > CAMP.box.z0 && z < CAMP.box.z1;
+/** 0..1 how much (x,z) is on the worn path from the tent door to the canoe */
+export function campPath(x, z) {
+  const a = CAMP.tent, b = CAMP.start, abx = b[0] - a[0], abz = b[1] - a[1], l2 = abx * abx + abz * abz;
+  const t = clamp(((x - a[0]) * abx + (z - a[1]) * abz) / l2, 0, 1), px = a[0] + abx * t, pz = a[1] + abz * t;
+  const wob = 0.6 * Math.sin(t * 9) ; const d = Math.hypot(x - px, z - pz) + wob * 0.3;
+  return 1 - sstep(0.7, 1.9, d);
+}
+export const inPatch = (x, z) => inIsleBox(x, z) || inCreekBox(x, z) || inCampBox(x, z);
 export const heightAt = (x, z) => (inPatch(x, z) ? fullHeight(x, z) : bil(H, x, z));
 export const gridSD = (x, z) => bil(SD, x, z);
 
@@ -170,11 +188,19 @@ function sampleTerrain(x, z) {
   const inPoly = evenOdd(MAP.pond, x, z) || MAP.others.some((o) => pip(o.ring, x, z));
   if (inPoly || c > 0) { const sd = inPoly ? Math.max(d0, c) : c; return { h: waterHeight(sd, x, z), sd, dd: 0, water: true }; }
   const dd = Math.min(d0, -c);
-  return { h: pip(ISLE.ring, x, z) ? isleLandHeight(x, z, dd) : landHeight(dd, x, z), sd: -dd, dd, water: false };
+  let h = pip(ISLE.ring, x, z) ? isleLandHeight(x, z, dd) : landHeight(dd, x, z);
+  if (inCampBox(x, z)) {
+    const dt = Math.hypot(x - CAMP.tent[0], z - CAMP.tent[1]), k = 1 - sstep(CAMP.R - 8, CAMP.R, dt);
+    const bumps = (fbm(x * 0.35 + 11, z * 0.35) - 0.5) * 0.5 + (fbm(x * 1.4, z * 1.4 + 3) - 0.5) * 0.12;
+    const pad = 1 - sstep(1.8, 3.2, dt);                                          // flattened where the tent sits
+    h += k * (bumps * (1 - pad * 0.85) - 0.08 * campPath(x, z) - 0.03 * pad);
+  }
+  return { h, sd: -dd, dd, water: false };
 }
 export function fullHeight(x, z) { return sampleTerrain(x, z).h; }
 function terrainColor(x, z, h, dd, water, c) {
   if (inIsleBox(x, z) && (water || pip(ISLE.ring, x, z))) return isleColor(x, z, h, dd, c);
+  if (!water && inCampBox(x, z)) { const k = 1 - sstep(CAMP.R - 8, CAMP.R, Math.hypot(x - CAMP.tent[0], z - CAMP.tent[1])); if (k > 0) { campColor(x, z, dd, c); return c; } }
   const n1 = fbm(x * 0.02, z * 0.02), n2 = fbm(x * 0.07 + 9, z * 0.07);
   if (water) c.setRGB(0.12 + 0.04 * n1, 0.11 + 0.04 * n1, 0.07 + 0.02 * n1);
   else if (dd < 4) c.setRGB(0.5 + 0.1 * n2, 0.43 + 0.08 * n2, 0.29);
@@ -185,6 +211,18 @@ function terrainColor(x, z, h, dd, water, c) {
   }
   return c;
 }
+function campColor(x, z, dd, c) {
+  const dt = Math.hypot(x - CAMP.tent[0], z - CAMP.tent[1]), k = 1 - sstep(CAMP.R - 8, CAMP.R, dt);
+  const n = fbm(x * 0.3, z * 0.3 + 7), f = fbm(x * 1.6 + 2, z * 1.6), path = campPath(x, z), pad = 1 - sstep(2, 4, dt);
+  const duff = new THREE.Color(0.3, 0.2, 0.09).lerp(new THREE.Color(0.42, 0.28, 0.11), f);          // needle duff: warm brown-orange, bright enough to survive the grade
+  const moss = new THREE.Color(0.16, 0.27, 0.1); const dirt = new THREE.Color(0.4, 0.33, 0.23).lerp(new THREE.Color(0.47, 0.39, 0.27), f);
+  const sand = new THREE.Color(0.5, 0.44, 0.31);
+  c.copy(duff).lerp(moss, sstep(0.55, 0.75, n) * 0.8).lerp(dirt, Math.max(path, pad * 0.9)).lerp(sand, 1 - sstep(2, 9, dd));
+  // the base colour this patch blends back into at its edge
+  const base = new THREE.Color(); const n1 = fbm(x * 0.02, z * 0.02), n2 = fbm(x * 0.07 + 9, z * 0.07);
+  if (dd < 4) base.setRGB(0.5 + 0.1 * n2, 0.43 + 0.08 * n2, 0.29); else if (dd < 26) base.setRGB(0.26 + 0.08 * n2, 0.3 + 0.06 * n1, 0.12); else base.setRGB(0.1, 0.19, 0.08).lerp(new THREE.Color(0.24, 0.16, 0.08), sstep(0.38, 0.62, n1));
+  c.lerp(base, 1 - k); return c;
+}
 function isleColor(x, z, h, dd, c) {
   const n = fbm(x * 0.15, z * 0.15), rock = fbm(x * 0.4 + 5, z * 0.4), bf = beachFactor(x, z);
   if (h < 0) { c.setRGB(0.16 + 0.12 * bf, 0.14 + 0.1 * bf, 0.08 + 0.06 * bf); return c; }
@@ -192,8 +230,8 @@ function isleColor(x, z, h, dd, c) {
   if (dd < 9) { c.setRGB(0.36 + 0.05 * n, 0.35 + 0.04 * n, 0.32); if (rock < 0.45) c.setRGB(0.24, 0.24, 0.16); return c; } // granite ledges + lichen
   c.setRGB(0.15 + 0.08 * n, 0.14 + 0.05 * n, 0.07); return c; // needle duff
 }
-function buildPatch(scene, box) {
-  const { x0, x1, z0, z1 } = box, C = 2.5, nx = Math.ceil((x1 - x0) / C) + 1, nz = Math.ceil((z1 - z0) / C) + 1;
+function buildPatch(scene, box, C = 2.5) {
+  const { x0, x1, z0, z1 } = box, nx = Math.ceil((x1 - x0) / C) + 1, nz = Math.ceil((z1 - z0) / C) + 1;
   const pos = new Float32Array(nx * nz * 3), col = new Float32Array(nx * nz * 3), c = new THREE.Color();
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
     const x = x0 + i * C, z = z0 + j * C, k = j * nx + i, T = sampleTerrain(x, z), h = T.h;
@@ -233,7 +271,7 @@ export function buildTerrain(scene) {
   g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
   const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 }));
   scene.add(mesh);
-  buildPatch(scene, ISLE.box); buildPatch(scene, CREEK.box);
+  buildPatch(scene, ISLE.box); buildPatch(scene, CREEK.box); buildPatch(scene, CAMP.box, 0.5);
   // v0.6: a 'shelter' map for mist and wind lanes - 1 in bays and against shores, 0 far out on open water, 0 on land
   const shelter = new Uint8Array(NX * NZ);
   for (let iz = 0; iz < NZ; iz++) for (let ix = 0; ix < NX; ix++) {
@@ -507,6 +545,7 @@ export function buildTrees(scene) {
   scene.add(padMesh); WORLD.pads = padMesh;
   const litter = buildLitter(scene);
   WORLD.maples = maples;
+  WORLD.treePos = [...conAt, ...broadAt].filter((r) => Math.hypot(r[0] - CAMP.tent[0], r[2] - CAMP.tent[1]) < CAMP.R + 10).map((r) => [r[0], r[2]]);
   return { trees: conAt.length + broadAt.length, reeds: reedPts.length, pads: pads.length, litter, tiles: TILES.length };
 }
 

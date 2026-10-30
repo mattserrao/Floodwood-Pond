@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js';
-import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES } from './world.js';
+import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP } from './world.js';
 
 // v0.6: what a real Adirondack shoreline is made of - dead silver snags, leaning trees, granite boulders,
 // driftwood, stumps, a few docks. Everything lives within ~14 m of the water's edge, where the eye actually looks.
@@ -30,7 +30,7 @@ function instanced(scene, geo, mat, items, tag = 'shore') {
 }
 
 export function buildShore(scene, M = {}) {
-  const skip = (x, z) => inIsleBox(x, z) && beachFactor(x, z) > 0.2;
+  const skip = (x, z) => (inIsleBox(x, z) && beachFactor(x, z) > 0.2) || Math.hypot(x - CAMP.tent[0], z - CAMP.tent[1]) < 22;   // the campsite is dressed by camp.js
   const pts = shorePoints(6);
   const E = (x, y, z) => new THREE.Euler(x, y, z), V = (x, y, z) => new THREE.Vector3(x, y, z);
   const snags = [], leaners = [], rocks = [], drift = [], stumps = [], roots = [];

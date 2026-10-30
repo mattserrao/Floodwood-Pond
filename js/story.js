@@ -211,8 +211,8 @@ export function createStory(C) {
     const a = new THREE.Vector2(tx, tz), b = new THREE.Vector2(launchInfo.start[0], launchInfo.start[1]), m4 = new THREE.Matrix4(), pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
     const segD = (x, z) => { const ab = b.clone().sub(a), t = clamp(((x - a.x) * ab.x + (z - a.y) * ab.y) / ab.lengthSq(), 0, 1); return Math.hypot(x - (a.x + ab.x * t), z - (a.y + ab.y * t)); };
     scene.traverse((o) => {
-      if (!o.isInstancedMesh || o.count > 200000) return; let touched = false;
-      for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); pos.setFromMatrixPosition(m4); if (Math.hypot(pos.x - tx, pos.z - tz) < 9 || segD(pos.x, pos.z) < 4.5) { m4.decompose(pos, q, sc); m4.compose(pos, q, sc.set(0, 0, 0)); o.setMatrixAt(i, m4); touched = true; } }
+      if (!o.isInstancedMesh || o.count > 200000 || o.userData.tag !== 'tree') return; let touched = false;
+      for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); pos.setFromMatrixPosition(m4); if (Math.hypot(pos.x - tx, pos.z - tz) < 7 || segD(pos.x, pos.z) < 3) { m4.decompose(pos, q, sc); m4.compose(pos, q, sc.set(0, 0, 0)); o.setMatrixAt(i, m4); touched = true; } }
       if (touched) o.instanceMatrix.needsUpdate = true;
     });
   }
