@@ -221,10 +221,11 @@ function terrainColor(x, z, h, dd, water, c) {
 function campColor(x, z, dd, c) {
   const dt = Math.hypot(x - CAMP.tent[0], z - CAMP.tent[1]), k = 1 - sstep(CAMP.R - 8, CAMP.R, dt);
   const n = fbm(x * 0.3, z * 0.3 + 7), f = fbm(x * 1.6 + 2, z * 1.6), path = campPath(x, z), pad = 1 - sstep(2, 4, dt);
-  const duff = new THREE.Color(0.3, 0.2, 0.09).lerp(new THREE.Color(0.42, 0.28, 0.11), f);          // needle duff: warm brown-orange, bright enough to survive the grade
-  const moss = new THREE.Color(0.16, 0.27, 0.1); const dirt = new THREE.Color(0.4, 0.33, 0.23).lerp(new THREE.Color(0.47, 0.39, 0.27), f);
+  // v0.7.0 (photos): bare rust-orange white-pine duff, almost no undergrowth; a little moss only in the damp hollows
+  const duff = new THREE.Color(0.36, 0.18, 0.08).lerp(new THREE.Color(0.5, 0.27, 0.12), f).lerp(new THREE.Color(0.3, 0.15, 0.07), sstep(0.6, 0.8, n) * 0.6);
+  const moss = new THREE.Color(0.2, 0.25, 0.1); const dirt = new THREE.Color(0.4, 0.33, 0.23).lerp(new THREE.Color(0.47, 0.39, 0.27), f);
   const sand = new THREE.Color(0.5, 0.44, 0.31);
-  c.copy(duff).lerp(moss, sstep(0.55, 0.75, n) * 0.8).lerp(dirt, Math.max(path, pad * 0.9)).lerp(sand, 1 - sstep(2, 9, dd));
+  c.copy(duff).lerp(moss, sstep(0.72, 0.85, n) * 0.35).lerp(dirt, Math.max(path, pad * 0.9) * 0.7).lerp(sand, 1 - sstep(2, 9, dd));
   // the base colour this patch blends back into at its edge
   const base = new THREE.Color(); const n1 = fbm(x * 0.02, z * 0.02), n2 = fbm(x * 0.07 + 9, z * 0.07);
   if (dd < 4) base.setRGB(0.5 + 0.1 * n2, 0.43 + 0.08 * n2, 0.29); else if (dd < 26) base.setRGB(0.26 + 0.08 * n2, 0.3 + 0.06 * n1, 0.12); else base.setRGB(0.1, 0.19, 0.08).lerp(new THREE.Color(0.24, 0.16, 0.08), sstep(0.38, 0.62, n1));
@@ -378,6 +379,30 @@ export function buildCreek(scene) {
   const tm = new THREE.InstancedMesh(tuft, new THREE.MeshStandardMaterial({ color: 0xa48a4a, flatShading: true }), tufts.length);
   tufts.forEach((p, i) => { m4.compose(new THREE.Vector3(p[0], Math.max(heightAt(p[0], p[1]), -0.2), p[1]), q.setFromEuler(new THREE.Euler((rnd() - 0.5) * 0.4, rnd() * 6, (rnd() - 0.5) * 0.4)), new THREE.Vector3(1, 0.6 + rnd() * 0.9, 1)); tm.setMatrixAt(i, m4); });
   scene.add(tm);
+  // v0.7.0 (photos 39-44): lush banks - a dense band of tall grass and ferns, and deadfall lying out across the amber water
+  const grass = new THREE.ConeGeometry(0.05, 1.1, 3); grass.translate(0, 0.55, 0);
+  const fern = (() => { const parts = []; for (let i = 0; i < 6; i++) { const f = new THREE.PlaneGeometry(0.14, 0.7, 1, 2); f.translate(0, 0.35, 0); f.rotateX(-0.9); f.rotateY((i / 6) * 6.283); parts.push(f.toNonIndexed()); }
+    const P = []; parts.forEach((g) => { const a2 = g.attributes.position; for (let i = 0; i < a2.count; i++) P.push(a2.getX(i), a2.getY(i), a2.getZ(i)); }); const o = new THREE.BufferGeometry(); o.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); o.computeVertexNormals(); return o; })();
+  const gr = [], fe = [];
+  CREEK.pts.forEach(([x, z, w], i) => {
+    const nx2 = CREEK.pts[Math.min(i + 1, CREEK.pts.length - 1)], dx = nx2[0] - x, dz = nx2[1] - z, l = Math.hypot(dx, dz) || 1;
+    for (let k = 0; k < 26; k++) { const side = k % 2 ? 1 : -1, o = side * (w + 0.2 + rnd() * 5), t = rnd(), px = x + dx * t - dz / l * o, pz = z + dz * t + dx / l * o; if (creekSD(px, pz) > -0.3) continue; (rnd() < 0.7 ? gr : fe).push([px, pz]); }
+  });
+  const gm2 = new THREE.InstancedMesh(grass, new THREE.MeshStandardMaterial({ color: 0x8a8a3c, flatShading: true }), gr.length), cc = new THREE.Color();
+  gr.forEach((p, i) => { m4.compose(new THREE.Vector3(p[0], heightAt(p[0], p[1]) - 0.05, p[1]), q.setFromEuler(new THREE.Euler((rnd() - 0.5) * 0.5, rnd() * 6, (rnd() - 0.5) * 0.5)), new THREE.Vector3(1, 0.7 + rnd() * 0.8, 1)); gm2.setMatrixAt(i, m4); const j = 0.75 + rnd() * 0.4; gm2.setColorAt(i, cc.setRGB(0.75 * j, 0.68 * j, 0.36 * j)); });
+  scene.add(gm2);
+  const fm2 = new THREE.InstancedMesh(fern, new THREE.MeshStandardMaterial({ flatShading: true, side: THREE.DoubleSide }), fe.length);
+  fe.forEach((p, i) => { m4.compose(new THREE.Vector3(p[0], heightAt(p[0], p[1]) - 0.03, p[1]), q.setFromEuler(new THREE.Euler(0, rnd() * 6, 0)), new THREE.Vector3(1, 1, 1).multiplyScalar(0.8 + rnd() * 0.8)); fm2.setMatrixAt(i, m4); const j = 0.8 + rnd() * 0.4; fm2.setColorAt(i, cc.setRGB((rnd() < 0.6 ? 0.55 : 0.3) * j, (rnd() < 0.6 ? 0.4 : 0.36) * j, 0.12 * j)); });
+  scene.add(fm2);
+  // deadfall: bare trunks lying from the bank out over the water, branches poking up
+  const bark = new THREE.MeshStandardMaterial({ color: 0x7c7064, flatShading: true, roughness: 1 });
+  for (let k = 0; k < 9; k++) {
+    const i = Math.floor((0.12 + 0.8 * (k + rnd() * 0.6) / 9) * (CREEK.pts.length - 1)), [x, z, w] = CREEK.pts[i], nx2 = CREEK.pts[Math.min(i + 1, CREEK.pts.length - 1)], dx = nx2[0] - x, dz = nx2[1] - z, l = Math.hypot(dx, dz) || 1;
+    const side = k % 2 ? 1 : -1, bx = x - dz / l * side * (w + 2.5), bz = z + dx / l * side * (w + 2.5), len = 2.5 + w * 0.5 + rnd() * 0.6;
+    const g = new THREE.Group(); g.position.set(bx, Math.max(heightAt(bx, bz), 0.1) + 0.1, bz); g.rotation.y = Math.atan2(-(-dz / l * side), -(dx / l * side)) + (rnd() - 0.5) * 0.7; scene.add(g);
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, len, 6), bark); t.rotation.x = Math.PI / 2 - 0.06; t.position.z = len / 2; g.add(t);
+    for (let b2 = 0; b2 < 6; b2++) { const br = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.04, 0.5 + rnd() * 1.1, 4), bark); br.position.set((rnd() - 0.5) * 0.2, 0.2, 0.8 + rnd() * (len - 1)); br.rotation.set(rnd() - 0.5, 0, (rnd() < 0.5 ? -1 : 1) * (0.3 + rnd() * 0.8)); g.add(br); }
+  }
 }
 
 // ---------- vegetation ----------
@@ -613,6 +638,13 @@ export function buildMountains(scene) {
     const m = new THREE.Mesh(geo, mats[i % 3]); m.scale.set(w, hh, w * (0.7 + rnd() * 0.5));
     m.position.set(Math.cos(a) * r * 1.15, hh * 0.25 - 40, Math.sin(a) * r); m.rotation.y = rnd() * 6; g.add(m);
   }
+  // v0.7.0 (photos 1, 19-21): one distinct rounded peak standing behind the far shore, seen across the pond from camp
+  { const ring = MAP.pond[0]; let cx = 0, cz = 0; ring.forEach((p) => { cx += p[0]; cz += p[1]; }); cx /= ring.length; cz /= ring.length;
+    let dx = cx - CAMP.q[0], dz = cz - CAMP.q[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    const px = cx + dx * 2300 + dz * 300, pz = cz + dz * 2300 - dx * 300, peakMat = new THREE.MeshStandardMaterial({ color: 0x24403a, flatShading: true, roughness: 1 });
+    const peak = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), peakMat); peak.scale.set(820, 360, 700); peak.position.set(px, -60, pz); peak.rotation.y = Math.atan2(dx, dz); g.add(peak);
+    const sh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), peakMat); sh.scale.set(700, 250, 600); sh.position.set(px + dz * 650, -40, pz - dx * 650); g.add(sh);
+    WORLD.peak = { x: px, z: pz }; }
   scene.add(g); return g;
 }
 
@@ -737,24 +769,33 @@ export function buildIsland(scene) {
   sword.position.set(tx * (trunkR - 0.24), 3.35, tz * (trunkR - 0.24)); // ~3 m (10 ft) above the ground
   sword.rotation.y = Math.atan2(-tz, tx);
   tree.add(sword);
+  { const saya = new THREE.Group(), lac = new THREE.MeshStandardMaterial({ color: 0x0c0b0c, roughness: 0.35, metalness: 0.2 });   // black lacquered scabbard leaning on the roots, red cord
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.95, 6), lac); body.position.y = 0.47; saya.add(body);
+    const cord = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.006, 4, 8), new THREE.MeshStandardMaterial({ color: 0xb01c1c, roughness: 0.8 })); cord.position.y = 0.78; cord.rotation.x = 1.2; saya.add(cord);
+    saya.position.set(-tz * 0.75 + tx * 0.2, 0.25, tx * 0.75 + tz * 0.2); saya.rotation.set(0.35, 0, 0.25); saya.scale.setScalar(1.3); tree.add(saya); }
   return { swordTree, beach: ISLE.beach, counts: { tall: tall.length, scrub: scrub.length, rocks: rocks.length } };
 }
 
 function makeKatana() {
+  // v0.7.0 (photo 0): red-wrapped hilt with dark diamonds showing through, an ornate gold guard, gold collar and pommel.
   // Built along +x: the tip (x = 0) is buried in the trunk, the handle sticks out.
   const g = new THREE.Group();
   const steel = new THREE.MeshStandardMaterial({ color: 0xd4dae2, metalness: 0.15, roughness: 0.28, emissive: 0x1c1f24 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xc89a34, metalness: 0.7, roughness: 0.3, emissive: 0x2a1c06 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xb01c1c, roughness: 0.75, emissive: 0x200404 }), dark = new THREE.MeshStandardMaterial({ color: 0x141214, roughness: 0.8 });
   const shape = new THREE.Shape(); const L = 0.72, Wd = 0.032, curve = (t) => 0.018 * t * t; // gentle sori
   shape.moveTo(0, curve(0) + 0.006);
   for (let i = 1; i <= 12; i++) { const t = i / 12; shape.lineTo(t * L, curve(1 - t) + (i === 12 ? Wd : Wd * Math.min(1, 0.4 + t * 3))); }
   shape.lineTo(L, 0); for (let i = 11; i >= 0; i--) { const t = i / 12; shape.lineTo(t * L, curve(1 - t) - (i === 0 ? -0.006 : 0)); }
   const blade = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.007, bevelEnabled: false }), steel); blade.position.set(0, -0.016, -0.0035); g.add(blade);
-  const habaki = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.016), new THREE.MeshStandardMaterial({ color: 0xb8902e, metalness: 0.6, roughness: 0.35 })); habaki.position.set(L + 0.012, 0.002, 0); g.add(habaki);
-  const tsuba = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.008, 10), new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.5, roughness: 0.5 })); tsuba.rotation.z = Math.PI / 2; tsuba.position.set(L + 0.03, 0.002, 0); g.add(tsuba);
-  const tsuka = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.032, 0.024), new THREE.MeshStandardMaterial({ color: 0x15151c, roughness: 0.8 })); tsuka.position.set(L + 0.165, 0.002, 0); g.add(tsuka);
-  const wrapMat = new THREE.MeshStandardMaterial({ color: 0xe8e2cf, roughness: 0.9 });
-  for (let i = 0; i < 7; i++) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.034, 0.026), wrapMat); w.position.set(L + 0.05 + i * 0.033, 0.002, 0); w.rotation.y = 0.5; g.add(w); }
-  const kashira = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.036, 0.028), habaki.material); kashira.position.set(L + 0.302, 0.002, 0); g.add(kashira);
+  const habaki = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.016), gold); habaki.position.set(L + 0.012, 0.002, 0); g.add(habaki);
+  // ornate guard: a gold disc with a scalloped rim
+  const tsuba = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.009, 14), gold); tsuba.rotation.z = Math.PI / 2; tsuba.position.set(L + 0.03, 0.002, 0); g.add(tsuba);
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2, b = new THREE.Mesh(new THREE.SphereGeometry(0.011, 5, 4), gold); b.position.set(L + 0.03, 0.002 + Math.cos(a) * 0.05, Math.sin(a) * 0.05); g.add(b); }
+  const tsuka = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.032, 0.024), dark); tsuka.position.set(L + 0.165, 0.002, 0); g.add(tsuka);
+  for (let i = 0; i < 9; i++) { for (const s of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.036, 0.008), red); w.position.set(L + 0.05 + i * 0.026, 0.002, s * 0.012); w.rotation.y = s * 0.0; w.rotation.z = s * 0.55; g.add(w); } }   // crossing red cord, diamonds of dark between
+  const kashira = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.038, 0.03), gold); kashira.position.set(L + 0.302, 0.002, 0); g.add(kashira);
+  const tassel = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.012, 0.12, 4), red); tassel.position.set(L + 0.31, -0.06, 0); g.add(tassel);
   g.scale.setScalar(1.3);
   return g;
 }

@@ -10,6 +10,14 @@ const CHORDS = [
   [45, 52, 57, 59, 64],   // A6sus
 ];
 const PENTA = [62, 64, 66, 69, 71, 74, 76, 78, 81, 83, 86]; // D major pentatonic
+// v0.7.0: the night crossing from Big Island to the creek - D minor, falling, i - VI - iv - V
+const DARK_CHORDS = [
+  [38, 50, 57, 62, 65],   // Dm
+  [34, 46, 53, 58, 62],   // Bb
+  [31, 43, 50, 55, 58],   // Gm
+  [33, 45, 52, 57, 61],   // A
+];
+const MINOR = [62, 64, 65, 67, 69, 70, 72, 74, 76, 77, 79];   // D aeolian
 
 export class AmbientAudio {
   constructor() {
@@ -19,7 +27,10 @@ export class AmbientAudio {
     this.t = { note: 0, chord: 0, bird: 0, owl: 0, loon: 0 };
     this.chordIdx = 0;
     this.melIdx = 4;
+    this.dark = 0; this.darkI = 0; this.darkSet = false;
   }
+  /** v0.7.0: dark = 0..1 crossfade into the minor night theme, intensity = 0..1 how far it has swelled */
+  setDark(dark, intensity) { this.dark = dark; this.darkI = intensity; }
 
   // iOS: must run synchronously inside a user tap. Web Audio on iPhone is muted by the ring/silent switch
   // unless the page's audio session is "playback", so we request that and keep a silent <audio> element playing.
@@ -376,22 +387,32 @@ export class AmbientAudio {
   tick() {
     const ctx = this.ctx; if (!ctx) return;
     const now = ctx.currentTime, s = this.s;
-    // Pad chords
+    // Pad chords (v0.7.0: the night theme swaps in D minor chords, coming faster, louder and brighter as it swells)
+    const dk = this.dark, di = this.darkI * dk, darkOn = dk > 0.5;
+    if (darkOn !== this.darkSet) { this.darkSet = darkOn; this.chordIdx = 0; if (darkOn) this.t.chord = Math.min(this.t.chord, now + 1.5); }
     if (now + 0.5 > this.t.chord) {
-      const chord = CHORDS[this.chordIdx++ % CHORDS.length];
-      this.pad(this.t.chord, chord, 15);
-      this.t.chord += 12.5;
+      const period = 12.5 - 5.5 * di;
+      if (darkOn) { const chord = DARK_CHORDS[this.chordIdx++ % DARK_CHORDS.length]; this.pad(this.t.chord, chord, period + 3, 1 + 1.3 * di, 700 + 1900 * di); if (di > 0.35) this.strings(this.t.chord, chord.slice(-3), period + 2, (di - 0.35) * 1.5); }
+      else { const chord = CHORDS[this.chordIdx++ % CHORDS.length]; this.pad(this.t.chord, chord, 15); }
+      this.t.chord += period;
     }
+    // a low D drone under the night theme
+    if (dk > 0.05 && !this.drone) { const ctx2 = this.ctx, g = ctx2.createGain(); g.gain.value = 0; const lp = ctx2.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300; lp.connect(g); g.connect(this.musicBus);
+      [36.7, 36.95, 73.4].forEach((f, i) => { const o = this.osc(i < 2 ? 'sawtooth' : 'sine', f); const og = ctx2.createGain(); og.gain.value = i < 2 ? 0.25 : 0.4; o.connect(og); og.connect(lp); o.start(); });
+      this.drone = { g, lp }; }
+    if (this.drone) { this.drone.g.gain.setTargetAtTime(dk * (0.05 + 0.1 * di), now, 1.5); this.drone.lp.frequency.setTargetAtTime(220 + 500 * di, now, 2); }
     // Melody
     if (now + 0.4 > this.t.note) {
-      const rest = Math.random() < 0.18 + 0.25 * s.night;
+      const rest = Math.random() < (darkOn ? 0.12 : 0.18 + 0.25 * s.night);
       if (!rest) {
-        this.melIdx = Math.max(0, Math.min(PENTA.length - 1, this.melIdx + pick([-2, -1, -1, 0, 1, 1, 2])));
-        let m = PENTA[this.melIdx] - (s.night > 0.5 ? 12 : 0);
-        this.pluck(this.t.note, mtof(m), rand(0.07, 0.14) * (1 - 0.3 * s.night));
+        const SC = darkOn ? MINOR : PENTA;
+        this.melIdx = Math.max(0, Math.min(SC.length - 1, this.melIdx + pick(darkOn ? [-2, -1, -1, -1, 0, 1, 2] : [-2, -1, -1, 0, 1, 1, 2])));
+        let m = SC[this.melIdx] - (s.night > 0.5 && !darkOn ? 12 : 0);
+        this.pluck(this.t.note, mtof(m), rand(0.07, 0.14) * (darkOn ? 1 + 0.8 * di : 1 - 0.3 * s.night));
+        if (darkOn && di > 0.5 && Math.random() < 0.4) this.pluck(this.t.note, mtof(m - 12), 0.06 * di);
         if (Math.random() < 0.18) this.pluck(this.t.note + 0.34, mtof(m + pick([2, 5, 7])), 0.05);
       }
-      this.t.note += rand(1.3, 3.4) + s.night * 1.4;
+      this.t.note += darkOn ? rand(1.0, 2.6) - 0.6 * di : rand(1.3, 3.4) + s.night * 1.4;
     }
     // Birds (day / dawn)
     if (now > this.t.bird) {
@@ -412,11 +433,11 @@ export class AmbientAudio {
     }
   }
 
-  pad(t, midis, dur) {
+  pad(t, midis, dur, k = 1, cut = null) {
     const ctx = this.ctx;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900 - 250 * this.s.night; lp.Q.value = 0.3;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.11, t + 4); g.gain.setValueAtTime(0.11, t + dur - 5); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = cut || 900 - 250 * this.s.night; lp.Q.value = 0.3;
+    const g = ctx.createGain(), a = Math.min(4, dur * 0.35), v = 0.11 * k;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + a); g.gain.setValueAtTime(v, t + Math.max(a, dur - 5)); g.gain.linearRampToValueAtTime(0.0001, t + dur);
     lp.connect(g); g.connect(this.musicBus);
     midis.forEach((m, i) => {
       [['triangle', 0, 0.5], ['sine', 7, 0.7], ['sine', -6, 0.5]].forEach(([type, det, vol]) => {
@@ -425,6 +446,31 @@ export class AmbientAudio {
         o.connect(og); og.connect(lp); o.start(t); o.stop(t + dur + 0.2);
       });
     });
+  }
+
+  /** bowed-string swell (filtered detuned saws), for the climb toward the creek */
+  strings(t, midis, dur, k) {
+    const ctx = this.ctx, lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(500, t); lp.frequency.linearRampToValueAtTime(1400 + 1400 * k, t + dur * 0.6); lp.Q.value = 0.7;
+    const g = ctx.createGain(), v = 0.05 * Math.min(1, k); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + dur * 0.5); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    lp.connect(g); g.connect(this.musicBus);
+    midis.forEach((m) => [-9, 0, 8].forEach((det) => { const o = this.osc('sawtooth', mtof(m + 12)); o.detune.value = det; const og = ctx.createGain(); og.gain.value = 0.22 / midis.length;
+      const vib = this.osc('sine', 5.2), vg = ctx.createGain(); vg.gain.value = 4; vib.connect(vg); vg.connect(o.detune); vib.start(t); vib.stop(t + dur + 0.2);
+      o.connect(og); og.connect(lp); o.start(t); o.stop(t + dur + 0.2); }));
+  }
+  /** v0.7.0: the peak at the creek - a long dominant swell with gathering drums, then it opens out into the home key (D major) */
+  crescendo() {
+    const ctx = this.ctx; if (!ctx) return; const t = ctx.currentTime + 0.1, L = 7.5;
+    this.pad(t, [33, 45, 52, 57, 61, 64], L + 1, 2.6, 2600);                     // A (V) swelling
+    this.strings(t, [57, 61, 64, 69], L + 0.5, 1.4);
+    for (let i = 0; i < 14; i++) { const tt = t + L * (1 - Math.pow(1 - i / 14, 1.6)), o = this.osc('sine', 60), g = ctx.createGain();   // drums gathering speed
+      o.frequency.setValueAtTime(70, tt); o.frequency.exponentialRampToValueAtTime(38, tt + 0.35); g.gain.setValueAtTime(0.0001, tt); g.gain.linearRampToValueAtTime(0.08 + 0.14 * i / 14, tt + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.6);
+      o.connect(g); g.connect(this.musicBus); o.start(tt); o.stop(tt + 0.7); }
+    const n = ctx.createBufferSource(); n.buffer = this.white; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8; bp.frequency.setValueAtTime(800, t); bp.frequency.exponentialRampToValueAtTime(6000, t + L);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.05, t + L - 0.2); ng.gain.linearRampToValueAtTime(0.0001, t + L + 0.3); n.connect(bp); bp.connect(ng); ng.connect(this.musicBus); n.start(t, 0, L + 0.5);
+    // the turn: D major opens out, long and bright, then the home theme carries on from here
+    this.pad(t + L, [38, 50, 57, 62, 66, 69, 74], 16, 2.2, 2400); this.strings(t + L, [62, 66, 69, 74], 12, 1);
+    [74, 78, 81, 86].forEach((m, i) => this.pluck(t + L + 0.4 + i * 0.45, mtof(m), 0.12));
+    this.t.chord = t + L + 12; this.chordIdx = 1; this.t.note = t + L + 2.5; this.melIdx = 6;
   }
 
   pluck(t, f, vol) {

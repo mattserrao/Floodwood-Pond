@@ -8,7 +8,7 @@ const cache = {};
 export const MODELS = {
   tent: { file: 'tent.glb' }, paddler: { file: 'paddler.glb' }, kayaker: { file: 'kayaker.glb' }, boyStand: { file: 'boystand.glb' }, boyLeap: { file: 'boyleap.glb' },
   kayak1: { file: 'kayak1.glb' }, kayak2: { file: 'kayak2.glb' }, canoe: { file: 'canoe.glb' }, paddleDouble: { file: 'paddledouble.glb' }, paddleSingle: { file: 'paddlesingle.glb' },
-  picnicTable: { file: 'picnictable.glb' }, cantaloupe: { file: 'cantaloupe.glb' }, rowboat: { file: 'rowboat.glb' }, dock: { file: 'dock.glb' }, launchDock: { file: 'launchdock.glb' }, rower: { file: 'rower.glb' },
+  picnicTable: { file: 'picnictable.glb' }, cantaloupe: { file: 'cantaloupe.glb' }, rowboat: { file: 'rowboat.glb' }, dock: { file: 'dock.glb' }, launchDock: { file: 'launchdock.glb' }, rower: { file: 'rower.glb' }, canoeAlu: { file: 'canoealu.glb' }, deer: { file: 'deer.glb' }, fisher: { file: 'fisher.glb' },
 };
 /** load one model (cached); resolves to a fresh clone of the scene group, flat-shaded, with Blender +Y mapped to game +Z */
 export function loadModel(name) {

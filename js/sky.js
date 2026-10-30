@@ -109,7 +109,7 @@ export function createWater(depthTex) {
     uniforms: {
       uTime: { value: 0 }, uSun: { value: new THREE.Vector3() }, uMoon: { value: new THREE.Vector3() }, uSunCol: { value: new THREE.Color() },
       uSunI: { value: 1 }, uMoonI: { value: 0 }, uSkyTop: { value: new THREE.Color() }, uSkyHor: { value: new THREE.Color() },
-      uDeep: { value: new THREE.Color(0x061d26) }, uShallow: { value: new THREE.Color(0x2a2410) }, uFog: { value: new THREE.Color() }, uFogD: { value: 0.0007 },
+      uDeep: { value: new THREE.Color(0x061d26) }, uShallow: { value: new THREE.Color(0x4a2a0c) }, uFog: { value: new THREE.Color() }, uFogD: { value: 0.0007 },
       uLight: { value: 1 }, uDepth: { value: depthTex }, uExt: { value: new THREE.Vector4(EXT.minX, EXT.minZ, EXT.W, EXT.D) },
       uLantern: { value: new THREE.Vector3() }, uLanternI: { value: 0 },
       // v0.4: mirrored treeline, wind roughness, rain rings
@@ -165,8 +165,11 @@ export function createWater(depthTex) {
         }
         vec2 uv = (p - uExt.xy)/uExt.zw;
         float depth = texture2D(uDepth, uv).r*8.0;
+        // v0.7.0 (photos): tannin-stained shallows - tea/amber where it's shallow (and all down the creek), deep water stays blue-black
+        float shal = 1. - smoothstep(.2, 2.6, depth);
         vec3 body = mix(uShallow, uDeep, 1.-exp(-depth*.55)) * uLight;
-        vec3 col = mix(body, refl, clamp(fr*1.15,0.,1.));
+        body += vec3(.42,.22,.06) * shal * (.35 + .65*uSunI) * uLight * .55;
+        vec3 col = mix(body, refl, clamp(fr*mix(.62, 1.15, 1. - shal),0.,1.));
         float sp = pow(max(dot(R,uSun),0.),400.)*3.2 + pow(max(dot(R,uSun),0.),40.)*.22;
         col += uSunCol * sp * uSunI * (1. - .85*uCover);
         float mp = pow(max(dot(R,uMoon),0.),500.)*2.0 + pow(max(dot(R,uMoon),0.),60.)*.12;

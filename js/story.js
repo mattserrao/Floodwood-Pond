@@ -87,7 +87,7 @@ function fadeGhost(g, o, t) {
   const prev = g.userData.o || 0; if (MOTES && o < prev - 1e-4 && prev > 0.02) MOTES.dissolve(g, (prev - o) * 900);   // fading out: it crumbles into drifting light
   g.userData.o = o; g.visible = o > 0.004; g.userData.mats.forEach((m, i) => { m.opacity = o * m.userData.k * (0.84 + 0.16 * Math.sin(t * 2.3 + i * 1.7)); }); }
 function person(g, m, kind = 'kayaker') {
-  const src = M[kind]; if (src) { const p = recolor(src.clone(true), m); return p; }
+  const src = M[kind]; if (src) { const w = new THREE.Group(); w.add(recolor(src.clone(true), m)); return w; }   // wrapped: callers may rotate it freely without undoing the loader's turn-round
   const p = new THREE.Group();
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.32, 3, 8), m); torso.position.y = 0.48; p.add(torso);
   const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 1), m); head.position.y = 0.88; p.add(head);
@@ -113,7 +113,7 @@ function kayak(tandem) {
 function ghostCanoe(n = 2) {
   const g = G0(), hull = gm(g, GHOST, 0.75), body = gm(g, GHOST, 0.9);
   const roll = new THREE.Group(); g.add(roll);
-  if (M.canoe) { const h = recolor(M.canoe.clone(true), hull); h.position.y = 0.34; roll.add(h); }
+  const cs = M.canoeAlu || M.canoe; if (cs) { const h = recolor(cs.clone(true), hull); h.position.y = 0.34; roll.add(h); }   // v0.7.0: dented aluminum canoes, like the ones in the photos
   else { const h = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 4.0, 4, 10), hull); h.rotation.x = Math.PI / 2; h.scale.set(1, 1, 0.5); h.position.y = 0.12; roll.add(h); }
   g.userData.paddles = [];
   if (n >= 3) { const mid = person(g, body, 'kayaker'); mid.position.set(0, 0.0, -0.15); roll.add(mid); g.userData.middle = mid; }
@@ -292,7 +292,7 @@ export function createStory(C) {
   S.endIntro = () => { canoe.person.visible = true; canoe.paddle.visible = true; };
 
   // ---------------- events
-  const tmp = new THREE.Vector3(), WHITE = new THREE.Color(1, 1, 1);
+  const tmp = new THREE.Vector3(), WHITE = new THREE.Color(1, 1, 1), INK = new THREE.Color(0.01, 0.012, 0.02);
   const playerFwd = () => [Math.sin(P.psi), Math.cos(P.psi)], playerLeft = () => [Math.cos(P.psi), -Math.sin(P.psi)];
   // ghosts are transparent and write no depth, so draw them after the (transparent) water or it paints over them
   function addGhost(g) { g.traverse((o) => { o.renderOrder = 4; }); scene.add(g); S.ghosts.push(g); return g; }
@@ -593,6 +593,62 @@ export function createStory(C) {
     };
   });
 
+  // ---------- v0.7.0 (photos 70-75): the catch - golden hour, a friend standing in the shallows holding up two fish,
+  //            two aluminum canoes nosed onto the bank either side of him; whoops from the shore
+  // where the route runs 15-45 m off a shore (either side), so he's close enough to read
+  let sCatch = sBino + Math.max(90, ((route.sCreek || route.L) - sBino) * 0.55), CS = null;
+  for (let sv = sBino + 90; sv < (route.sCreek || route.L) - 50 && !CS; sv += 6) { const rp = routeAt(route, sv);
+    for (const sd of [1, -1]) { let x = rp.x, z = rp.z, d = 0; while (d < 60 && pondSD(x, z) > 0) { x += rp.dz * 2 * sd; z += -rp.dx * 2 * sd; d += 2; } if (d >= 16 && d <= 46 && !CS) { CS = { x, z }; sCatch = sv; } } }
+  S.sCatch = sCatch;
+  ev('catch', () => S.sNow > sCatch - 45 && S.sNow < (route.sCreek || route.L) - 20, () => {
+    const F = playerFwd(), L2 = playerLeft();
+    // nearest shore ahead on either side
+    let best = CS ? { x: CS.x, z: CS.z } : null; if (!best) for (const sd of [1, -1]) { let x = P.x + F[0] * 22, z = P.z + F[1] * 22, d = 0; while (d < 140 && pondSD(x, z) > 0) { x += L2[0] * 2 * sd; z += L2[1] * 2 * sd; d += 2; } if (!best || d < best.d) best = { x, z, d, sd }; }
+    const g = G0(), m = gm(g, GHOST, 0.95), mh = gm(g, GHOST, 0.75);
+    const [gx, gz] = grad(best.x, best.z), wx = best.x + gx * 2.2, wz = best.z + gz * 2.2;     // just off the bank, knee-deep
+    g.position.set(wx, -0.3, wz); g.rotation.y = Math.atan2(P.x - wx, P.z - wz); g.scale.setScalar(1.5);
+    const fisher = new THREE.Group(); fisher.add(M.fisher ? recolor(M.fisher.clone(true), m) : person(g, m, 'paddler')); fisher.rotation.y = Math.PI; g.add(fisher);
+    [-1, 1].forEach((sd) => { const c = M.canoeAlu ? recolor(M.canoeAlu.clone(true), mh) : new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 4, 4, 8), mh); const w = new THREE.Group(); w.add(c);
+      w.position.set(sd * 1.5, 0.3, -3.3); w.rotation.set(-0.08, sd * 0.18, 0); g.add(w); });   // nosed up on the bank behind him
+    addGhost(g);   // after the children, so they all get the ghost draw order
+    let t = 0, outC = false, k0 = 0;
+    voices.memoryIn({ x: wx, y: 1, z: wz }); attend(() => ({ x: g.position.x, z: g.position.z }), 14);
+    setTimeout(() => g.visible && voices.shout(gpos(g), 'woo', { vol: 1, f0: 220 }), 2500);
+    setTimeout(() => g.visible && voices.shout(gpos(g), 'yeah', { vol: 0.9, f0: 190, take: 1 }), 4200);
+    setTimeout(() => g.visible && voices.laugh(gpos(g), { vol: 0.9, n: 8 }), 6000);
+    setTimeout(() => g.visible && voices.shout(gpos(g), 'dude', { vol: 0.8, f0: 170 }), 9500);
+    return (dt, T) => {
+      t += dt;
+      fisher.position.y = Math.max(0, Math.sin(Math.min(t, 6) * 1.2)) * 0.08;                   // hoisting the fish up, bouncing on his heels
+      fisher.rotation.z = Math.sin(t * 1.7) * 0.04;
+      if (Math.random() < dt * 1.5) ripples.spawn(wx + rand(-0.4, 0.4), wz + rand(-0.4, 0.4), 0.6, 1.2, 0.18, 0.05);
+      if (t > 13 && !outC) { outC = true; voices.memoryOut(gpos(g)); }
+      fadeGhost(g, sstep(0, 2.5, t) * (1 - sstep(13, 17, t)) * 0.7, T);
+      if (t > 17.5) { removeGhost(g); return true; }
+    };
+  });
+
+  // ---------- v0.7.0 (photos 41-44): a deer in the creek grass - real, not a memory. It lifts its head, watches, and bounds off
+  ev('deer', () => creekSD(P.x, P.z) > -2 && CQ.s > CREEK.L * 0.28, () => {
+    const F = playerFwd(), L2 = playerLeft(), sd = Math.random() < 0.5 ? 1 : -1;
+    let x = P.x + F[0] * 20, z = P.z + F[1] * 20, d = 0; while (d < 30 && creekSD(x, z) > -2.5) { x += L2[0] * sd; z += L2[1] * sd; d++; }
+    const deer = M.deer ? M.deer.clone(true) : new THREE.Mesh(new THREE.BoxGeometry(0.4, 1, 1.4), new THREE.MeshStandardMaterial({ color: 0x8a5a32 }));
+    const tilt = new THREE.Group(); tilt.add(deer); const g = new THREE.Group(); g.add(tilt); scene.add(g); S.deer = g;   // animate the wrapper, never the model (its own rotation is the loader's turn-round)
+    const gy = () => Math.max(heightAt(g.position.x, g.position.z), 0.1);
+    g.position.set(x, 0, z); g.position.y = gy(); g.rotation.y = Math.atan2(P.x - x, P.z - z) + Math.PI;   // the model looks along -Z
+    let t = 0, fled = -1, hops = 0; const away = [L2[0] * sd, L2[1] * sd];
+    return (dt, T) => {
+      t += dt; const near2 = Math.hypot(P.x - g.position.x, P.z - g.position.z);
+      if (fled < 0) { tilt.rotation.x = t < 1.2 ? 0.25 * (1 - t / 1.2) : Math.sin(t * 0.7) * 0.03;          // head comes up out of the grass
+        if (t > 1.5 && t < 2) attend(() => ({ x: g.position.x, z: g.position.z }), 6, 0);
+        if (near2 < 11 || t > 9) { fled = t; audio.knock(0.12); voices.whoosh({ x: g.position.x, y: 1, z: g.position.z }, 0.5); g.rotation.y = Math.atan2(-away[0], -away[1]); } }
+      else { const u = t - fled; g.position.x += away[0] * 6.5 * dt; g.position.z += away[1] * 6.5 * dt;
+        const ph = (u * 2.4) % 1; g.position.y = gy() + Math.sin(ph * Math.PI) * 0.9; tilt.rotation.x = Math.sin(ph * Math.PI * 2) * 0.25;
+        if (Math.floor(u * 2.4) > hops) { hops = Math.floor(u * 2.4); audio.knock(0.07 / (1 + hops * 0.4)); }
+        if (u > 4) { scene.remove(g); return true; } }
+    };
+  });
+
   // ---------- the ghost campsite on Big Island: glows into view as you approach, there all along ----------
   {
     // the stretch of island shore the route passes closest to (before the turn), so it is seen from ~30-40 m
@@ -605,6 +661,22 @@ export function createStory(C) {
     [[-3.2, -1.5, 0.5], [3.4, -2.2, -0.4]].forEach(([x, z, r]) => { let t; if (M.tent) { t = recolor(M.tent.clone(true), cm); t.scale.setScalar(0.95); } else { t = new THREE.Mesh(new THREE.ConeGeometry(1.4, 1.3, 4), cm); t.position.y = 0.65; } const w = new THREE.Group(); w.add(t); w.position.set(x, 0, z); w.rotation.y = r; camp.add(w); });
     [[-1.3, 1.6, 0.8], [1.4, 1.5, -0.9], [0.1, 2.9, 3.1]].forEach(([x, z, r]) => { const p = person(camp, cm2, 'paddler'); p.position.set(x, -0.05, z); p.rotation.y = r; camp.add(p); });   // sitting round the fire
     const fireTex = glowTexture(); const fire = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireTex, color: 0xffa04a, blending: THREE.AdditiveBlending, transparent: true, opacity: 0, depthWrite: false })); fire.scale.set(4, 4, 1); fire.position.set(0, 0.6, 1.9); fire.material.userData.k = 1.66; camp.userData.mats.push(fire.material); camp.add(fire);
+    // v0.7.0 (photos 61-63): a card game round a tarp-covered table
+    const tbl = new THREE.Group(); tbl.position.set(-4.4, 0, 1.4); tbl.rotation.y = 0.3; camp.add(tbl);
+    const ttop = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 1.6), cm); ttop.position.y = 0.72; tbl.add(ttop);
+    const tarpG = new THREE.PlaneGeometry(1.1, 1.95, 4, 6); { const tp = tarpG.attributes.position; for (let i = 0; i < tp.count; i++) { const x = tp.getX(i), y = tp.getY(i); tp.setZ(i, -(Math.max(0, Math.abs(x) - 0.4) + Math.max(0, Math.abs(y) - 0.8)) * 1.4); } }
+    const tarp = new THREE.Mesh(tarpG, cm); tarp.rotation.x = -Math.PI / 2; tarp.position.y = 0.76; tbl.add(tarp);
+    [[-0.08, 0.2], [0.12, -0.1], [0.0, 0.42], [-0.15, -0.35]].forEach(([x, z]) => { const c = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.13), cm2); c.rotation.set(-Math.PI / 2, 0, x * 9); c.position.set(x, 0.8, z); tbl.add(c); });
+    const players = [[-0.75, 0.3, Math.PI / 2], [0.75, -0.2, -Math.PI / 2], [0.1, 1.2, Math.PI]].map(([x, z, r]) => { const p = person(camp, cm2, 'paddler'); p.position.set(x, -0.05, z); p.rotation.y = r; tbl.add(p); return p; });
+    // v0.7.0 (photos 55-56, 66-69): a hammock slung between two trees, one friend lying in it, another about to swing it
+    const hamT = new THREE.Group(); hamT.position.set(4.6, 0, 1.0); hamT.rotation.y = -0.35; camp.add(hamT);
+    const trM = gm(camp, GHOST, 0.3); trM.fog = false; [-2.1, 2.1].forEach((x) => { const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 3.2, 7), trM); tr.position.set(x, 1.6, 0); hamT.add(tr); });   // just the lower trunks, faint
+    const swing = new THREE.Group(); swing.position.y = 1.7; hamT.add(swing);   // pivot on the rope line, so it rocks side to side
+    const hg = new THREE.PlaneGeometry(2.9, 1.1, 14, 5); { const hp = hg.attributes.position; for (let i = 0; i < hp.count; i++) { const u = hp.getX(i) / 1.45, v = hp.getY(i) / 0.55, sag = 1 - u * u; hp.setY(i, v * 0.55 * (0.25 + 0.75 * Math.sqrt(Math.max(0, sag)))); hp.setZ(i, -0.45 - 0.7 * sag + 0.22 * v * v * sag); } }
+    const ham = new THREE.Mesh(hg, cm2); ham.material.side = THREE.DoubleSide; ham.rotation.x = -Math.PI / 2; swing.add(ham);
+    [-1, 1].forEach((sg) => { const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.7, 3), cm); rope.rotation.z = Math.PI / 2 + sg * 0.5; rope.position.set(sg * 1.75, -0.25, 0); swing.add(rope); });
+    const lier = person(camp, cm2, 'kayaker'); lier.rotation.set(-Math.PI / 2 + 0.25, 0, Math.PI / 2); lier.position.set(-0.1, -1.05, 0.3); swing.add(lier);
+    const pusher = person(camp, cm2, M.boyStand ? 'boyStand' : 'paddler'); pusher.position.set(0.2, 0, 1.25); pusher.rotation.y = Math.PI; hamT.add(pusher);
     camp.scale.setScalar(2.3);   // larger than life: it is read from the water, 60-150 m away
     addGhost(camp); S.ghosts = S.ghosts.filter((x) => x !== camp);   // persistent, not part of an event
     { // clear the trees from the campsite so it can be seen from the water
@@ -618,6 +690,22 @@ export function createStory(C) {
       const d = Math.hypot(P.x - inX, P.z - inZ), k = sstep(330, 160, d) * (1 - sstep(route.sVia + 60, route.sVia + 200, S.sNow));
       fadeGhost(camp, k * 0.75, T); fire.scale.setScalar(4 * (0.9 + 0.12 * Math.sin(T * 9) * Math.sin(T * 5.3)));
       if (k > 0.3 && !S._campSound) { S._campSound = true; voices.memoryIn({ x: inX, y: 1, z: inZ }); }
+      // v0.7.0: once it is in view, the card game and the hammock play out
+      if (k > 0.55 && S.campT === undefined) S.campT = 0;
+      if (S.campT !== undefined && S.campT < 40) {
+        const dt = Math.min(0.1, T - (S._campLast ?? T)); S.campT += dt; const t = S.campT, W = (o, y = 1) => { const v = o.getWorldPosition(new THREE.Vector3()); return { x: v.x, y, z: v.z }; };
+        if (t > 1.5 && !S._cards1) { S._cards1 = true; voices.shout(W(tbl), 'oh', { vol: 0.9, f0: 200 }); setTimeout(() => voices.laugh(W(tbl), { vol: 0.9, n: 9 }), 350); }
+        players[0].rotation.x = t > 1.4 && t < 3 ? -0.35 * Math.sin((t - 1.4) / 1.6 * Math.PI) : 0;          // a big hand slapped down
+        if (t > 4 && !S._hamA) { S._hamA = true; attend(() => W(hamT), 13, 0.4); voices.laugh(W(hamT), { vol: 0.7, n: 5, small: true }); }
+        const amp = t < 4 ? 0 : t < 11 ? lerp(0.08, 0.95, (t - 4) / 7) : Math.max(0, 0.95 - (t - 11) * 0.18);
+        swing.rotation.x = amp * Math.sin((t - 4) * 2.4); pusher.rotation.x = t > 4 && t < 11 ? Math.max(0, Math.sin((t - 4) * 2.4)) * 0.25 : 0;
+        if (t > 11 && !S._dump) { S._dump = true; S._dumpT = t; const wp = lier.getWorldPosition(new THREE.Vector3()); swing.remove(lier); hamT.add(lier); hamT.worldToLocal(wp); lier.position.copy(wp); lier.rotation.set(-1.2, 0.4, 1.4);
+          voices.thunk(W(hamT, 0.2), 0.8); voices.shout(W(hamT), 'no', { vol: 1, f0: 240 }); setTimeout(() => voices.erupt(W(hamT), 4, 1.1), 500); }
+        if (S._dump) { const u = clamp((t - S._dumpT) / 0.5, 0, 1); lier.position.y = lerp(lier.position.y, 0.05, u); lier.position.z = lerp(lier.position.z, 0.9, u * 0.3); }
+        if (t > 19 && !S._cards2) { S._cards2 = true; voices.shout(W(tbl), 'yeah', { vol: 0.9, f0: 230 }); setTimeout(() => voices.laugh(W(tbl), { vol: 0.8 }), 300); }
+        players[2].rotation.x = t > 18.8 && t < 20.5 ? -0.3 * Math.sin((t - 18.8) / 1.7 * Math.PI) : 0;
+      }
+      S._campLast = T;
     };
   }
 
@@ -630,7 +718,7 @@ export function createStory(C) {
     OBJ.t += dt;
     if (OBJ.stage === 0 && S.playT > 1.2) { OBJ.stage = 1; say('paddle to the island'); }
     const dIsl = Math.hypot(P.x - route.BIG.c[0], P.z - route.BIG.c[1]);
-    if (OBJ.stage === 1 && (dIsl < bigR + 70 || S.sNow > route.sVia)) { OBJ.stage = 2; OBJ.reachedT = S.playT; }
+    if (OBJ.stage === 1 && (dIsl < bigR + 70 || S.sNow > route.sVia)) { OBJ.stage = 2; OBJ.reachedT = S.playT; if (S.nightT0 === undefined) { S.nightT0 = S.playT; S.sReach = S.sNow; } }   // v0.7.0: night falls at Big Island
     if (OBJ.stage === 2 && S.playT > OBJ.reachedT + 22) { OBJ.stage = 3; say('paddle to the creek'); }
     const want = OBJ.stage === 1 ? 0.22 * sstep(bigR + 40, bigR + 260, dIsl) : 0;
     glow.material.opacity = lerp(glow.material.opacity, want * (0.85 + 0.15 * Math.sin(T * 0.8)), Math.min(1, dt * 0.8));
@@ -663,8 +751,9 @@ export function createStory(C) {
       const want = new THREE.Vector3(P.x + Math.sin(a) * d, p.y + Math.sin(T * 0.2 + p.ph) * 1.5, P.z + Math.cos(a) * d);
       if (!p.cur) p.cur = want.clone(); p.cur.lerp(want, Math.min(1, dt * 0.35));
       p.sp.position.copy(p.cur); p.sp.scale.setScalar(p.s * (1 + 0.08 * Math.sin(T * 0.3 + p.ph)));
-      p.sp.material.rotation += p.rs * dt; p.sp.material.color.copy(fogCol).lerp(WHITE, 0.25);
-      p.sp.material.opacity = behind * 0.42 * (1 - Math.abs(p.a) / 1.6); p.sp.visible = p.sp.material.opacity > 0.003;
+      const nd = S.night ? S.night.dark : 0;   // v0.7.0: past Big Island the puffs turn to pooling darkness
+      p.sp.material.rotation += p.rs * dt * (1 + nd); p.sp.material.color.copy(fogCol).lerp(WHITE, 0.25 * (1 - nd)).lerp(INK, nd * 0.92);
+      p.sp.material.opacity = behind * (0.42 + 0.3 * nd) * (1 - Math.abs(p.a) / 1.6); p.sp.visible = p.sp.material.opacity > 0.003;
     });
     // attention ramps in when a memory starts and back out when it ends
     const want = ATT.fn && S.playT >= ATT.from && S.playT < ATT.until ? 1 : 0; ATT.k = clamp(ATT.k + (want ? dt / 2.2 : -dt / 2.5), 0, 1); if (!want && ATT.k === 0 && S.playT >= (ATT.from || 0)) ATT.fn = null;
@@ -673,7 +762,7 @@ export function createStory(C) {
     S.glanceBeats = S.glanceBeats || [420, route.sVia - 40, (route.sCreek || route.L) - 25];
     /* v0.6.4: forced look-backs removed */ if (false && !S.glance && S.glanceBeats.length && S.sNow > S.glanceBeats[0] && !C.dragging() && ATT.k < 0.05) { S.glanceBeats.shift(); S.glance = { t: 0, side: Math.random() < 0.5 ? -1 : 1 }; }
     if (S.glance) { const g = S.glance; g.t += dt; const k = g.t < 2.8 ? ease(g.t / 2.8) : g.t < 6 ? 1 : 1 - ease((g.t - 6) / 2.8); S.glanceYaw = g.side * Math.PI * 0.8 * k; if (g.t > 8.8) { S.glance = null; S.glanceYaw = 0; } }
-    MOTES.update(dt); S.updateGhostCamp(T); S.updateObjective(dt, T);
+    MOTES.update(dt); S.updateGhostCamp(T); S.updateObjective(dt, T); updateNight(dt, T, inCreek, creekS);
     // memories
     for (const e of S.events) {
       if (!e.fired && e.test()) { e.fired = true; e.live = e.run(); }
@@ -694,9 +783,11 @@ export function createStory(C) {
     ['tandems', 'Tandem kayaks', 335, 'tandems'],
     ['picnic', 'Picnic table tow', route.sVia * 0.6, 'picnic'],
     ['island', 'Island boys / beef', firstS((r) => Math.hypot(r.x - route.BIG.c[0], r.z - route.BIG.c[1]) < bigR + 140), 'island'],
-    ['camp', 'Ghost campsite', Math.max(0, (S.campS || route.sVia * 0.8) - 70), null],
+    ['camp', 'Ghost campsite (cards, hammock)', Math.max(0, (S.campS || route.sVia * 0.8) - 70), null],
     ['race', 'Race to the tree', sTree - 145, 'race'],
     ['binoculars', 'Binoculars', sBino - 35, 'binoculars'],
+    ['catch', 'The catch', sCatch - 25, 'catch'],
+    ['deer', 'Deer in the creek', creekAt(0.25), 'deer'],
     ['creek', 'Creek mouth', (route.sCreek || route.L) - 30, null],
     ['ending', 'Ending', creekAt(0.8), null],
   ];
@@ -709,27 +800,61 @@ export function createStory(C) {
     voices.silent = true;
     S.events.forEach((e) => { for (let i = 0; e.live && i < 400; i++) if (e.live(0.25, S.playT + i * 0.25)) e.live = null; e.live = null; });
     [...S.ghosts].forEach(removeGhost); voices.silent = false; ATT.fn = null; ATT.k = 0;
-    $('blackout').style.transition = 'none'; $('blackout').style.opacity = 0;
+    $('blackout').style.transition = 'none'; $('blackout').style.opacity = 0; $('veil').style.opacity = 0; G.fog = 0; G.fogLift = 0;
     const p = sAt <= 0 ? { x: launchInfo.end[0], z: launchInfo.end[1] } : r;
     P.x = p.x; P.z = p.z; P.psi = Math.atan2(ahead.x - r.x, ahead.z - r.z); if (sAt <= 0) P.psi = launchInfo.psi; P.vx = P.vz = P.w = 0;
     let bi = 0, bd = 1e18; route.R.forEach((q, k) => { const d = (q.x - P.x) ** 2 + (q.z - P.z) ** 2; if (d < bd) { bd = d; bi = k; } }); S.idx = bi; S.sNow = route.R[bi].s;
     S.maxProg = clamp(S.sNow / route.L, 0, 1); S.playT = Math.max(S.playT, sAt <= 0 ? 0 : 60); G.manualHour = null; G.snap = true; G.hour = S.hour();
     // memories before this point count as played; the chosen one starts right away
-    const order = ['cantaloupe', 'kayaker', 'flotilla', 'tandems', 'picnic', 'island', 'race', 'binoculars'];
+    const order = ['cantaloupe', 'kayaker', 'flotilla', 'tandems', 'picnic', 'island', 'race', 'binoculars', 'catch', 'deer'];
     const upto = evName ? order.indexOf(evName) : sAt <= 0 ? 0 : order.findIndex((n) => (S.skips.find((k) => k[3] === n) || [0, 0, 1e9])[2] > sAt);
     S.events.forEach((e) => { const i = order.indexOf(e.name); if (i >= 0 && (upto < 0 || i < upto)) e.fired = true; else if (!e.live) e.fired = false; });
     if (evName) { const e = S.events.find((x) => x.name === evName); if (e) { e.fired = true; e.live = e.run(); } }
     OBJ.stage = sAt > route.sVia ? 3 : sAt > 0 ? 1 : 0; OBJ.reachedT = S.playT;
+    const islandS = (S.skips.find((k) => k[0] === 'island') || [0, 0, route.sVia])[2];
+    if (sAt > islandS + 20) { S.nightT0 = S.playT - 40; S.sReach = islandS; G.hour = 22.6; } else { S.nightT0 = undefined; S.sReach = undefined; NIGHT.dark = 0; NIGHT.swell = 0; NIGHT.crest = false; G.hour = S.hour(); }
     return true;
   };
+  // ---------- v0.7.0: the night crossing - Big Island to the creek ----------
+  // the mist behind you turns to swirling darkness; a soft trail of light on the water leads to the creek; the music
+  // turns to a darker minor theme that swells all the way there, peaks as you enter the creek, and opens back into the home key
+  const trailTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.4, 'rgba(255,255,255,.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  const trailM = new THREE.MeshBasicMaterial({ map: trailTex, color: 0xffe6c4, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+  const trail = []; for (let i = 0; i < 44; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), trailM.clone()); m.rotation.x = -Math.PI / 2; m.renderOrder = 3; m.visible = false; scene.add(m); trail.push(m); }
+  const NIGHT = { dark: 0, swell: 0, crest: false };
+  function updateNight(dt, T, inCreek, creekS) {
+    const on = S.nightT0 !== undefined, sC = route.sCreek || route.L;
+    const prog = on ? clamp((S.sNow - (S.sReach ?? route.sVia)) / Math.max(1, sC - (S.sReach ?? route.sVia)), 0, 1) : 0;
+    const want = on && !NIGHT.crest ? sstep(0, 12, S.playT - S.nightT0) : 0;
+    NIGHT.dark += (want - NIGHT.dark) * Math.min(1, dt * (NIGHT.crest ? 0.15 : 0.4));
+    NIGHT.swell = Math.max(NIGHT.swell, prog);
+    if (post.uniforms.uDark) post.uniforms.uDark.value = NIGHT.dark;
+    if (audio.setDark) audio.setDark(NIGHT.crest ? 0 : NIGHT.dark, ease(NIGHT.swell));
+    // the peak: entering the creek, toward the light
+    if (on && !NIGHT.crest && inCreek && creekS > CREEK.L * 0.08) { NIGHT.crest = true; audio.crescendo && audio.crescendo(); }
+    // the trail: soft pools of light on the water ahead, a slow pulse running toward the creek; they fade into the creek's own lit fog
+    const tk = NIGHT.dark * (1 - sstep(sC - 20, sC + 40, S.sNow));
+    trail.forEach((m, i) => {
+      const sv = S.sNow + 12 + i * 6.5; if (tk < 0.01 || sv > sC + 30) { m.visible = false; return; }
+      const r = routeAt(route, sv), w = Math.sin(sv * 0.7) * 1.2; m.visible = true;
+      m.position.set(r.x - r.dz * w, 0.07, r.z + r.dx * w); m.scale.set(2.6 + Math.sin(i * 1.7) * 0.6, 7.5, 1); m.rotation.z = Math.atan2(-r.dx, -r.dz);
+      const pulse = 0.55 + 0.45 * Math.sin(sv * 0.05 - T * 1.3), near = sstep(10, 30, sv - S.sNow) * (1 - sstep(200, 290, sv - S.sNow));
+      m.material.opacity = 0.42 * tk * pulse * near;
+    });
+  }
+  S.night = NIGHT;
+
   S.autoTarget = () => S.target ? [S.target.x, S.target.z] : null;
   //   grey dawn at the tent -> morning -> midday on the open water -> golden hour at Big Island -> dusk in the creek
   const HOURS = [[0, 6.35], [0.12, 7.6], [0.3, 10.5], [0.45, 13.5], [0.62, 16.6], [0.76, 17.9], [0.86, 18.7], [0.95, 19.4], [1, 19.9]];
-  S.hour = () => {
+  const dayHour = () => {
     S.maxProg = Math.max(S.maxProg || 0, clamp(S.sNow / route.L, 0, 1)); const p = S.maxProg;
     for (let i = 0; i < HOURS.length - 1; i++) { const [a, ha] = HOURS[i], [b, hb] = HOURS[i + 1]; if (p <= b) return lerp(ha, hb, (p - a) / (b - a)); }
     return HOURS[HOURS.length - 1][1];
   };
+  // v0.7.0: once you reach Big Island the day drains away into night over ~25 s, and stays night to the creek
+  S.hour = () => { const h = dayHour(); if (S.nightT0 === undefined) return h; return lerp(h, 22.6, ease(clamp((S.playT - S.nightT0) / 25, 0, 1))); };
 
   function end() {
     S.ended = true; G.mode = 'ending'; audio.chime();

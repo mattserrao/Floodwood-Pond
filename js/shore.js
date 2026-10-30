@@ -92,13 +92,33 @@ export function buildShore(scene, M = {}) {
   docks.forEach((d) => {
     const g = new THREE.Group(); g.position.set(d.x - d.nx * 1.5, Math.max(heightAt(d.x - d.nx * 1.5, d.z - d.nz * 1.5), 0.15), d.z - d.nz * 1.5); g.rotation.y = Math.atan2(d.nx, d.nz);
     if (M.dock) { const dk = M.dock.clone(true); dk.rotation.y = Math.PI; dk.position.set(0, -0.3, 0); g.add(dk);
-      if (d.boat && M.rowboat) { const rb = M.rowboat.clone(true); rb.position.set(2.6, 0.0, -0.3); rb.rotation.y = 0.4; g.add(rb); } scene.add(g); return; }
+      if (d.boat && M.canoeAlu) { [[2.4, 0.5], [3.5, 0.28]].forEach(([x, r]) => { const c = M.canoeAlu.clone(true); c.position.set(x, 0.05, -0.6); c.rotation.set(0.06, r, 0.04); g.add(c); }); }   // v0.7.0: two dented aluminum canoes nosed up on the bank (photos 49-51)
+      else if (d.boat && M.rowboat) { const rb = M.rowboat.clone(true); rb.position.set(2.6, 0.0, -0.3); rb.rotation.y = 0.4; g.add(rb); } scene.add(g); return; }
     for (let i = 0; i < 9; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 0.4), wood); b.position.set(0, 0.35, i * 0.5); g.add(b); }
     for (const s of [-1, 1]) for (const z of [0.3, 2.2, 4.1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.4, 0.14), wood); p.position.set(s * 0.85, -0.3, z); g.add(p); }
     if (d.boat) { const boat = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 2.6, 3, 7), flat(0x8b9a9f, { metalness: 0.25, roughness: 0.6 })); boat.rotation.x = Math.PI / 2; boat.rotation.z = Math.PI; boat.scale.set(1, 1, 0.45); boat.position.set(2.6, 0.32, -0.5); boat.rotation.y = 0.4; g.add(boat); }
     scene.add(g);
   });
-  return { snags: snags.length, leaners: leaners.length, rocks: rocks.length, drift: drift.length, stumps: stumps.length, roots: roots.length, docks: docks.length };
+  // --- v0.7.0 (photos 35-38, 45-48): leatherleaf / sweet gale shrub islands standing in the tea-coloured shallows,
+  //     and reed beds reaching out from the marshy shores
+  const shrubGeo = (() => { const parts = []; for (let i = 0; i < 16; i++) { const r = Math.sqrt(rnd()), a = rnd() * 6.28, g = new THREE.IcosahedronGeometry(0.22 + rnd() * 0.22, 0); g.scale(1, 1.2, 1); g.translate(Math.cos(a) * r * 0.9, 0.3 + (1 - r) * 0.55 + rnd() * 0.25, Math.sin(a) * r * 0.9); parts.push(g.toNonIndexed()); }
+    for (let i = 0; i < 10; i++) { const a = rnd() * 6.28, g = new THREE.CylinderGeometry(0.004, 0.015, 0.7, 3); g.rotateZ(0.5); g.rotateY(a); g.translate(Math.cos(a) * 0.6, 0.6, Math.sin(a) * 0.6); parts.push(g.toNonIndexed()); }   // bare twigs poking out
+    const P = []; parts.forEach((g) => { const a = g.attributes.position; for (let i = 0; i < a.count; i++) P.push(a.getX(i), a.getY(i), a.getZ(i)); }); const o = new THREE.BufferGeometry(); o.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); o.computeVertexNormals(); return o; })();
+  const reedBed = (() => { const g = new THREE.ConeGeometry(0.035, 1.7, 3); g.translate(0, 0.85, 0); return g; })();
+  const shrubs = [], beds = [];
+  shorePoints(5).forEach((p) => {
+    if (skip(p.x, p.z) || inCreekBox(p.x, p.z)) return;
+    const n = fbm(p.x * 0.012 + 7, p.z * 0.012 - 2); if (n > 0.46) return;            // only along the marshy stretches
+    const k = (0.46 - n) / 0.46;
+    if (rnd() < 0.55 * k) { const d = 1.2 + rnd() * 6, x = p.x + p.nx * d + (rnd() - 0.5) * 3, z = p.z + p.nz * d + (rnd() - 0.5) * 3; if (pondSD(x, z) > 0.5 && pondSD(x, z) < 9) {
+      const s = 0.8 + rnd() * 1.1, c = [[0.2, 0.21, 0.08], [0.3, 0.16, 0.07], [0.12, 0.16, 0.07], [0.33, 0.2, 0.08]][Math.floor(rnd() * 4)], j = 0.85 + rnd() * 0.3;
+      shrubs.push({ pos: V(x, -0.12, z), rot: E(0, rnd() * 6.3, 0), scl: V(s * (1 + rnd() * 0.6), s * (0.8 + rnd() * 0.5), s), col: [c[0] * j, c[1] * j, c[2] * j] }); } }
+    if (rnd() < 0.7 * k) for (let i = 0; i < 40; i++) { const d = 1 + rnd() * 11 * k, x = p.x + p.nx * d + (rnd() - 0.5) * 5, z = p.z + p.nz * d + (rnd() - 0.5) * 5; if (pondSD(x, z) < 0.3 || pondSD(x, z) > 13) continue;
+      const j = 0.8 + rnd() * 0.35; beds.push({ pos: V(x, -0.05, z), rot: E((rnd() - 0.5) * 0.25, rnd() * 6.3, (rnd() - 0.5) * 0.25), scl: V(1, 0.6 + rnd() * 0.8, 1), col: [0.7 * j, 0.6 * j, 0.32 * j] }); }
+  });
+  instanced(scene, shrubGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), shrubs, 'shrub');
+  instanced(scene, reedBed, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), beds, 'reed');
+  return { shrubs: shrubs.length, beds: beds.length, snags: snags.length, leaners: leaners.length, rocks: rocks.length, drift: drift.length, stumps: stumps.length, roots: roots.length, docks: docks.length };
 }
 
 function merge(geos) {

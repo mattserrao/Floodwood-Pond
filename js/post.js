@@ -22,7 +22,7 @@ export function createPost(renderer) {
     tMist: { value: mistRT.texture }, uMistRes: { value: new THREE.Vector2(mistRT.width, mistRT.height) },
     uBlur: { value: 0 }, uPrevVP: { value: new THREE.Matrix4() }, uDim: { value: 0 },
     uFxaa: { value: 0 },
-    uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
+    uDark: { value: 0 }, uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
     tShelter: { value: null }, uExt: { value: new THREE.Vector4(-1700, -1400, 3400, 2800) }, uBay: { value: 1 }, uLift: { value: 0 }, uHaze: { value: new THREE.Color(0.6, 0.66, 0.74) }, uHazeK: { value: 0.9 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.8, 0.6) }, uWake: { value: new THREE.Vector2(0, 1) }, uSpeed: { value: 0 },
     uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
   };
@@ -31,7 +31,7 @@ export function createPost(renderer) {
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol; uniform float uFxaa; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol, uPlayer; uniform vec2 uAway; uniform float uFxaa, uDark, uBehind; varying vec2 vUv;
       // FXAA (Lottes 3.11 'console' style, compact): smooths geometric edges when MSAA is off (Low tier / phones)
       vec3 fxaa(vec2 uv){
         vec2 px = 1. / uRes; vec3 L = vec3(.299, .587, .114);
@@ -102,7 +102,16 @@ export function createPost(renderer) {
           // aerial haze first (far), then the mist layers on top; haze warms toward the sun
           vec3 hazeCol = mix(uHaze, uSunCol * .9 + uHaze * .3, ss / ws * .6);
           col = mix(col, hazeCol, clamp(hs / ws, 0., .9));
-          col = mix(col, uMistCol, clamp(fs / ws, 0., .97));
+          // v0.7.0: past Big Island the mist behind you turns to darkness - pooling, swirling, almost black
+          vec3 mcol = uMistCol; float mk = clamp(fs / ws, 0., .97);
+          if (uDark > 0.) {
+            vec2 vv = sky ? normalize(wp.xz - uCamPos.xz + vec2(1e-4)) : normalize(wp.xz - uPlayer.xz + vec2(1e-4));
+            float bk = smoothstep(-.2, .55, dot(vv, uAway)) * uBehind;
+            float sw = .7 + .3 * sin(uTime * .35 + wp.x * .021 + sin(wp.z * .017 + uTime * .2) * 2.);
+            float dk = clamp(uDark * bk * sw, 0., 1.);
+            mcol = mix(uMistCol, vec3(.012, .013, .02), dk); mk = clamp(mk * (1. + .35 * dk), 0., .985);
+          }
+          col = mix(col, mcol, mk);
         }
         // ---- god rays: radial blur of the bright sky toward the light
         if (uRays > 0. && uLightVis > 0.) {
@@ -227,6 +236,7 @@ export function createPost(renderer) {
       U.uFxaa.value = q.msaa > 0 ? 0 : 1;   // FXAA only when MSAA is off
       mistScale = q.mistScale; api.setSize(); api.blurAllowed = q.blur;
     },
+    overlay: new THREE.Scene(), overlayDepth: { value: 0 }, overlayCanvas: { value: new THREE.Vector2(1, 1) },
     blurAllowed: true, motionBlur: false, prevVP: new THREE.Matrix4(), hasPrev: false,
     /** lightDir: world direction to the sun or moon; lightCol: its colour; mistCol: current fog/mist tint */
     render(scene, camera, t, lightDir, lightCol, mistCol) {
@@ -244,6 +254,7 @@ export function createPost(renderer) {
       if (U.uMist.value > 0) { quad.material = mistMat; renderer.setRenderTarget(mistRT); renderer.render(pScene, pCam); quad.material = mat; }
       U.uBlur.value = api.motionBlur && api.blurAllowed && api.hasPrev ? 0.5 : 0; U.uPrevVP.value.copy(api.prevVP);
       renderer.setRenderTarget(null); renderer.render(pScene, pCam);
+      if (api.overlay.children.length) { const ac = renderer.autoClear; renderer.autoClear = false; renderer.clearDepth(); api.overlayDepth.value = 1; renderer.getDrawingBufferSize(api.overlayCanvas.value); renderer.render(api.overlay, camera); renderer.autoClear = ac; }   // v0.7.0: light shafts over the mist, occluded by the scene depth
       api.prevVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); api.hasPrev = true;
     },
   };
