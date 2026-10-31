@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.9.2';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.9.2';
-import { Voices } from './voices.js?v=0.9.2';
-import { recolor } from './models.js?v=0.9.2';
+import { MAP } from './mapdata.js?v=0.10.0';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.10.0';
+import { Voices } from './voices.js?v=0.10.0';
+import { recolor } from './models.js?v=0.10.0';
+import { COLLAPSE, colWob } from './collapse.js?v=0.10.0';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};
@@ -273,6 +274,7 @@ export function createStory(C) {
   const I = { t: 0, phase: 0, steps: 0, cam: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, done: false }; S.I = I;
   const seat = () => new THREE.Vector3(launchInfo.start[0] - Math.sin(launchInfo.psi) * 0.6, 0, launchInfo.start[1] - Math.cos(launchInfo.psi) * 0.6);
   S.startIntro = () => {
+    if (S.colReset) S.colReset();
     I.t = 0; I.done = false; I.steps = 0; I.sat = false; I.yawW = undefined; S.ended = false; canoe.person.visible = false; canoe.paddle.visible = false;
     $('blackout').style.transition = 'none'; $('blackout').style.opacity = 1;
     voices.unzip();
@@ -750,6 +752,48 @@ export function createStory(C) {
     glow.visible = glow.material.opacity > 0.003;
   };
 
+  // ---------- v0.10.0: the collapse ----------
+  // a third of the way to Big Island the ground lurches: the world behind you breaks away into the dark, the pond pours
+  // over the edge, and the edge keeps coming - slowly, but it never stops until it has driven you to the island
+  const COL = C.collapse ? { on: false, t: 0, k: 0, after: 0 } : null;
+  const colO = [launchInfo.end[0], launchInfo.end[1]];
+  const colA = (() => { const dx = route.BIG.c[0] - colO[0], dz = route.BIG.c[1] - colO[1], l = Math.hypot(dx, dz); return [dx / l, dz / l]; })();
+  const sAx = (x, z) => (x - colO[0]) * colA[0] + (z - colO[1]) * colA[1];
+  const sIsl = sAx(route.BIG.c[0], route.BIG.c[1]);
+  const COL_TRIG = (sIsl - bigR) / 3, COL_CAP = sIsl - bigR - 55;
+  S.col = COL; S.colTrig = COL_TRIG; S.colCap = COL_CAP; S.sAx = sAx;
+  function colStart(sP) { C.collapse.start(colO[0], colO[1], colA[0], colA[1], sP - 230); COL.on = true; COL.t = 0; COL.k = 0; COL.f0 = sP - 230; COL.sP0 = sP; }
+  function colReset() { if (!COL) return; COL.on = false; COL.t = 0; COL.k = 0; COL.after = 0; C.collapse.reset(); S.colMusic = 0; S.colSwell = 0; COLLAPSE.uniforms.uQuake.value = 0; if (audio.quake) audio.quake(0, 0, 0); }
+  S.colReset = colReset;
+  S.updateCollapse = (dt) => {
+    if (!COL) return;
+    const sP = sAx(P.x, P.z), cs = C.collapse.S, wl = colWob(-(P.x - colO[0]) * colA[1] + (P.z - colO[1]) * colA[0]);   // the ragged edge where you are
+    if (!COL.on) {
+      if (OBJ.stage === 1 && S.nightT0 === undefined && S.playT > 35 && sP > COL_TRIG) { colStart(sP); say('paddle to the island'); S.glance = { t: -1.2, hold: 10, lift: 1, side: Math.random() < 0.5 ? -1 : 1 }; }   // the camera whips round to watch the world go
+      else return;
+    }
+    COL.t += dt;
+    // the front: one great slump right behind you, then a slow, relentless creep (faster if you pull far ahead, so it stays in sight)
+    let f;
+    if (COL.t < 6) f = lerp(COL.f0, COL.sP0 - 70, 1 - Math.pow(1 - COL.t / 6, 2.2));   // most of it goes in the first seconds
+    else { const gap = sP - cs.front - wl; f = cs.front + (0.8 + clamp((gap - 130) * 0.05, 0, 3.5)) * dt; }
+    f = Math.min(f, COL_CAP, sP - 3 - wl); C.collapse.setFront(Math.max(f, cs.front));
+    const capped = cs.front >= COL_CAP - 0.5;
+    // the shaking: a violent first quake, a long rumble while the edge is moving, aftershocks now and then
+    const big = COL.t < 1.5 ? ease(COL.t / 1.5) : COL.t < 7 ? 1 : 0.22 + 0.78 * Math.exp(-(COL.t - 7) / 3);
+    if (!capped && COL.t > 15 && Math.random() < dt / 22) COL.after = 0.55 + Math.random() * 0.35;
+    COL.after = Math.max(0, COL.after - dt * 0.22);
+    COL.k = capped ? Math.max(0, COL.k - dt / 10) : Math.max(big, COL.after);
+    COLLAPSE.uniforms.uQuake.value = COL.k;
+    // the edge drives you on: a constant nudge, a hard shove when it is right on you, and it never lets you fall back over
+    const gap = sP - cs.front - wl, push = 0.04 + 0.6 * sstep(45, 6, gap);
+    P.vx += colA[0] * push * dt; P.vz += colA[1] * push * dt;
+    if (gap < 4) { const vA = P.vx * colA[0] + P.vz * colA[1]; if (vA < 1.2) { P.vx += colA[0] * (1.2 - vA); P.vz += colA[1] * (1.2 - vA); } P.x += colA[0] * (4 - gap); P.z += colA[1] * (4 - gap); }
+    if (audio.quake) audio.quake(COL.k, sstep(260, 25, gap), dt);
+    // the minor theme rises with it (the night crossing takes it from there)
+    S.colMusic = sstep(0, 5, COL.t) * 0.9; S.colSwell = 0.55 * clamp((cs.front - COL.f0) / Math.max(1, COL_CAP - COL.f0), 0, 1);
+  };
+
   // ---------------- per-frame
   S.update = (dt, T) => {
     if (G.mode !== 'play' || S.ended) return;
@@ -787,8 +831,8 @@ export function createStory(C) {
     //   1) once the first memories are behind you, 2) as Big Island comes alongside, 3) at the mouth of the creek
     S.glanceBeats = S.glanceBeats || [420, route.sVia - 40, (route.sCreek || route.L) - 25];
     /* v0.6.4: forced look-backs removed */ if (false && !S.glance && S.glanceBeats.length && S.sNow > S.glanceBeats[0] && !C.dragging() && ATT.k < 0.05) { S.glanceBeats.shift(); S.glance = { t: 0, side: Math.random() < 0.5 ? -1 : 1 }; }
-    if (S.glance) { const g = S.glance; g.t += dt; const k = g.t < 2.8 ? ease(g.t / 2.8) : g.t < 6 ? 1 : 1 - ease((g.t - 6) / 2.8); S.glanceYaw = g.side * Math.PI * 0.8 * k; if (g.t > 8.8) { S.glance = null; S.glanceYaw = 0; } }
-    MOTES.update(dt); S.updateGhostCamp(T); S.updateObjective(dt, T); updateNight(dt, T, inCreek, creekS);
+    if (S.glance) { const g = S.glance, H = g.hold || 6; g.t += dt; const k = g.t < 0 ? 0 : g.t < 2.8 ? ease(g.t / 2.8) : g.t < H ? 1 : 1 - ease(Math.min(1, (g.t - H) / 2.8)); S.glanceYaw = g.side * Math.PI * 0.8 * k; S.glanceLift = g.lift ? g.lift * k : 0; if (g.t > H + 2.8) { S.glance = null; S.glanceYaw = 0; S.glanceLift = 0; } }
+    MOTES.update(dt); S.updateGhostCamp(T); S.updateObjective(dt, T); S.updateCollapse(dt); updateNight(dt, T, inCreek, creekS);
     // memories
     for (const e of S.events) {
       if (!e.fired && e.test()) { e.fired = true; e.live = e.run(); }
@@ -808,6 +852,7 @@ export function createStory(C) {
     ['flotilla', 'Flotilla + tow', 175, 'flotilla'],
     ['tandems', 'Tandem kayaks', 335, 'tandems'],
     ['picnic', 'Picnic table tow', route.sVia * 0.6, 'picnic'],
+    ['quake', 'Earthquake', COL ? firstS((r) => sAx(r.x, r.z) > COL_TRIG + 3) : route.sVia * 0.3, null],
     ['island', 'Island boys / beef', firstS((r) => Math.hypot(r.x - route.BIG.c[0], r.z - route.BIG.c[1]) < bigR + 140), 'island'],
     ['camp', 'Ghost campsite (cards, hammock)', Math.max(0, (S.campS || route.sVia * 0.8) - 70), null],
     ['race', 'Race to the tree', sTree - 145, 'race'],
@@ -838,6 +883,8 @@ export function createStory(C) {
     if (evName) { const e = S.events.find((x) => x.name === evName); if (e) { e.fired = true; e.live = e.run(); } }
     OBJ.stage = sAt > route.sVia ? 3 : sAt > 0 ? 1 : 0; OBJ.reachedT = S.playT;
     const islandS = (S.skips.find((k) => k[0] === 'island') || [0, 0, route.sVia])[2];
+    // v0.10.0: before the quake the world is whole; well past it, the edge has already eaten everything behind
+    if (COL) { const sP = sAx(P.x, P.z); if (sP > COL_TRIG + 25) { if (!COL.on) colStart(sP); COL.t = 40; C.collapse.setFront(Math.min(COL_CAP, sP - 90)); } else colReset(); }
     if (sAt > islandS + 20) { S.nightT0 = S.playT - 40; S.sReach = islandS; G.hour = 21.5; } else { S.nightT0 = undefined; S.sReach = undefined; S.pathT0 = undefined; S.pathPts = null; NIGHT.dark = 0; NIGHT.swell = 0; NIGHT.crest = false; G.hour = S.hour(); }
     return true;
   };
@@ -856,7 +903,7 @@ export function createStory(C) {
     NIGHT.dark += (want - NIGHT.dark) * Math.min(1, dt * (NIGHT.crest ? 0.15 : 0.4));
     NIGHT.swell = Math.max(NIGHT.swell, prog);
     if (post.uniforms.uDark) post.uniforms.uDark.value = NIGHT.dark;
-    if (audio.setDark) audio.setDark(NIGHT.crest ? 0 : NIGHT.dark, ease(NIGHT.swell));
+    if (audio.setDark) audio.setDark(NIGHT.crest ? 0 : Math.max(NIGHT.dark, S.colMusic || 0), ease(Math.max(NIGHT.swell, S.colSwell || 0)));
     // the peak: entering the creek, toward the light
     if (on && !NIGHT.crest && inCreek && creekS > CREEK.L * 0.08) { NIGHT.crest = true; audio.crescendo && audio.crescendo(); }
     // the trail: soft pools of light on the water ahead, a slow pulse running toward the creek; they fade into the creek's own lit fog

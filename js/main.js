@@ -1,21 +1,22 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.9.2';
-import { AmbientAudio } from './audio.js?v=0.9.2';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.9.2';
-import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.9.2';
-import { createPost } from './post.js?v=0.9.2';
-import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.9.2';
-import { WIND, gustAt, updateWind } from './wind.js?v=0.9.2';
-import { Q } from './quality.js?v=0.9.2';
-import { WX } from './weather.js?v=0.9.2';
-import { createWildlife } from './wildlife.js?v=0.9.2';
-import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.9.2';
-import { createStory } from './story.js?v=0.9.2';
-import { buildShore } from './shore.js?v=0.9.2';
-import { loadModels } from './models.js?v=0.9.2';
-import { buildCamp } from './camp.js?v=0.9.2';
-import { createNearField } from './nearfield.js?v=0.9.2';
-import { setModels } from './story.js?v=0.9.2';
+import { MAP } from './mapdata.js?v=0.10.0';
+import { AmbientAudio } from './audio.js?v=0.10.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.10.0';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.10.0';
+import { createPost } from './post.js?v=0.10.0';
+import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.10.0';
+import { WIND, gustAt, updateWind } from './wind.js?v=0.10.0';
+import { Q } from './quality.js?v=0.10.0';
+import { WX } from './weather.js?v=0.10.0';
+import { createWildlife } from './wildlife.js?v=0.10.0';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.10.0';
+import { createStory } from './story.js?v=0.10.0';
+import { buildShore } from './shore.js?v=0.10.0';
+import { loadModels } from './models.js?v=0.10.0';
+import { buildCamp } from './camp.js?v=0.10.0';
+import { createNearField } from './nearfield.js?v=0.10.0';
+import { setModels } from './story.js?v=0.10.0';
+import { createCollapse, patchScene, COLLAPSE } from './collapse.js?v=0.10.0';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -95,7 +96,9 @@ function build() {
   // v0.5: the journey of memories (disable with ?free=1 for the old free-roam game)
   if (!new URLSearchParams(location.search).has('free')) { document.body.classList.add('story'); $('pRestart').textContent = 'Begin again'; }
   setModels(world.models);
-  if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag });
+  world.collapse = createCollapse(scene);
+  if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag, collapse: world.collapse });
+  patchScene(scene);   // v0.10.0: every material learns to fall (compiled now, not mid-quake)
 }
 // ------------------------------------------------------------------ quality tiers
 function applyQuality() {
@@ -116,7 +119,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.9.2';
+const VERSION = '0.10.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -448,6 +451,7 @@ function poseCanoe(dt, t, speed) {
   const groundY = Math.max(heightAt(P.x, P.z), 0);
   c.root.position.set(P.x, 0.1 + bob + (groundY > 0.05 ? groundY : 0), P.z);
   c.root.rotation.set(P.pitch, P.psi, P.roll, 'YXZ');
+  { const qk = COLLAPSE.uniforms.uQuake.value; if (qk > 0.002) { c.root.position.y += Math.sin(t * 17.3) * 0.05 * qk; c.root.rotation.x += Math.sin(t * 7.9) * 0.035 * qk; c.root.rotation.z += Math.sin(t * 9.1 + 1) * 0.05 * qk; } }
   c.mask.position.y = 0.1 - c.root.position.y; // above ripples (y 0.06) and the water plane, below the inner floor
   // lantern swings like a pendulum, pushed by surges, turns and the bob of the hull
   const vfNow = P.vx * Math.sin(P.psi) + P.vz * Math.cos(P.psi), accel = (vfNow - (P.vfPrev ?? vfNow)) / Math.max(dt, 1e-3); P.vfPrev = vfNow;
@@ -540,14 +544,19 @@ function updateCamera(dt, t) {
     cam.heading += (((P.psi - cam.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, dt * 1.6);
   }
   const a = cam.heading + cam.yaw + (story && G.mode !== 'title' ? story.glanceYaw : 0), cp = Math.cos(cam.pitch);
-  tmpV.set(P.x - Math.sin(a) * cp * cam.dist, 0.9 + Math.sin(cam.pitch) * cam.dist, P.z - Math.cos(a) * cp * cam.dist);
+  const gl = story && G.mode !== 'title' ? story.glanceLift || 0 : 0;   // v0.10.0: rise up to look down over the broken edge
+  tmpV.set(P.x - Math.sin(a) * cp * cam.dist * (1 + 0.5 * gl), 0.9 + Math.sin(cam.pitch) * cam.dist + 7 * gl, P.z - Math.cos(a) * cp * cam.dist * (1 + 0.5 * gl));
   tmpV.y = Math.max(tmpV.y, Math.max(heightAt(tmpV.x, tmpV.z), 0) + 1.4);
   cam.pos.lerp(tmpV, G.mode === 'title' || G.snap ? 1 : Math.min(1, dt * 6)); G.snap = false;
   camera.position.copy(cam.pos);
   const lb = story ? Math.abs(story.glanceYaw) / Math.PI : 0; // while glancing back, look past the canoe into the mist
-  cam.look.set(P.x + Math.sin(P.psi) * 3 * (1 - 2.2 * lb), 1.0 + 1.5 * lb, P.z + Math.cos(P.psi) * 3 * (1 - 2.2 * lb));
+  cam.look.set(P.x + Math.sin(P.psi) * 3 * (1 - 2.2 * lb - 6 * gl), 1.0 + 1.5 * lb - 3.5 * gl, P.z + Math.cos(P.psi) * 3 * (1 - 2.2 * lb - 6 * gl));
   if (G.focusK > 0 && G.mode === 'play') { const k = G.focusK * 0.35, fp = G.focusP; cam.look.set(lerp(cam.look.x, fp.x, k), lerp(cam.look.y, 0.7, k), lerp(cam.look.z, fp.z, k)); }
   camera.lookAt(cam.look);
+  // v0.10.0: the earthquake shakes the view
+  const qk = COLLAPSE.uniforms.uQuake.value;
+  if (qk > 0.002) { camera.position.x += (Math.sin(t * 31) + Math.sin(t * 47.3)) * 0.08 * qk; camera.position.y += (Math.sin(t * 39.1) + Math.sin(t * 21.7)) * 0.07 * qk; camera.position.z += (Math.sin(t * 27.7 + 1) + Math.sin(t * 43.9)) * 0.08 * qk;
+    camera.lookAt(cam.look); camera.rotateZ((Math.sin(t * 23.3) + Math.sin(t * 9.7)) * 0.014 * qk); }
 }
 
 // ------------------------------------------------------------------ day / night
@@ -619,6 +628,7 @@ function updateEnvironment(dt, t) {
   // the fog decides how far you can see; whole forest tiles past that are skipped
   G.visDist = Math.min(9000, 2.4 / Math.max(fogD, 1e-5));
   cullTiles(camera.position, G.visDist, Math.min(G.visDist, 320), 900); wu.uLight.value = clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y) + 0.14 * moonVis, 0, 1);
+  if (world.collapse) world.collapse.update(dt, t, P.x, P.z, fogCol, fogD, wu.uLight.value); SWAY.uSwayQ.value = COLLAPSE.uniforms.uQuake.value;
   if (world.camp) { camera.getWorldDirection(tmpV); world.camp.update(t, sunV.y, tmpV.dot(sunV), sunV); }
   // lanterns
   const lamp = 1 - sstep(-0.06, 0.14, sunV.y), flick = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 5.3);

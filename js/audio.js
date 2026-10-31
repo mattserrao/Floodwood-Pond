@@ -31,6 +31,31 @@ export class AmbientAudio {
   }
   /** v0.7.0: dark = 0..1 crossfade into the minor night theme, intensity = 0..1 how far it has swelled */
   setDark(dark, intensity) { this.dark = dark; this.darkI = intensity; }
+  /** v0.10.0: the earthquake and the falls. k = shaking 0..1, roar = waterfall loudness 0..1 */
+  quake(k, roar, dt) {
+    const ctx = this.ctx; if (!ctx || !this.pink) return; const t = ctx.currentTime;
+    if (!this.qk) {
+      const rumble = ctx.createBufferSource(); rumble.buffer = this.pink; rumble.loop = true;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 110; lp.Q.value = 1.2;
+      const rg = ctx.createGain(); rg.gain.value = 0; rumble.connect(lp); lp.connect(rg); rg.connect(this.master); rumble.start();
+      const sub = this.osc('sine', 33), sg = ctx.createGain(); sg.gain.value = 0; sub.connect(sg); sg.connect(this.master); sub.start();
+      const lfo = this.osc('sine', 3.3), lg = ctx.createGain(); lg.gain.value = 9; lfo.connect(lg); lg.connect(sub.frequency); lfo.start();
+      const fall = ctx.createBufferSource(); fall.buffer = this.white; fall.loop = true;
+      const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 900; const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 120;
+      const fg = ctx.createGain(); fg.gain.value = 0; fall.connect(lp2); lp2.connect(hp); hp.connect(fg); fg.connect(this.master); fg.connect(this.send); fall.start();
+      this.qk = { rg, sg, fg };
+    }
+    const Qn = this.qk;
+    Qn.rg.gain.setTargetAtTime(1.6 * k, t, 0.15); Qn.sg.gain.setTargetAtTime(0.5 * k, t, 0.2); Qn.fg.gain.setTargetAtTime(0.22 * roar, t, 0.5);
+    if (k > 0.05 && Math.random() < dt * (0.6 + 3 * k)) this.crack(k);
+  }
+  crack(k) {
+    const ctx = this.ctx, t = ctx.currentTime, src = ctx.createBufferSource(); src.buffer = this.white;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = rand(300, 2400); f.Q.value = 0.8;
+    const g = ctx.createGain(), dur = rand(0.08, 0.5); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(rand(0.15, 0.5) * k, t + 0.005); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const p = this.panner(rand(-0.9, 0.9)); src.connect(f); f.connect(g); g.connect(p); p.connect(this.master); p.connect(this.send); src.start(t, rand(0, 2)); src.stop(t + dur + 0.05);
+    if (Math.random() < 0.5) { const o = this.osc('sine', rand(45, 70)), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(28, t + 0.6); og.gain.setValueAtTime(0.5 * k, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.8); o.connect(og); og.connect(this.master); o.start(t); o.stop(t + 0.9); }
+  }
 
   // iOS: must run synchronously inside a user tap. Web Audio on iPhone is muted by the ring/silent switch
   // unless the page's audio session is "playback", so we request that and keep a silent <audio> element playing.

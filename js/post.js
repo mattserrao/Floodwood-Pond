@@ -198,6 +198,8 @@ export function createPost(renderer) {
           vec3 wp = sky ? uCamPos + normalize(worldAt(uv, 0.9999) - uCamPos) * 2500. : worldAt(uv, d);
           float dist = length(wp - uCamPos);
           vec3 dir = (wp - uCamPos) / max(dist, 1e-3);
+          // v0.10.0: the mist lies on the water - it doesn't fill the void below the broken edge
+          if (dir.y < -1e-3) dist = min(dist, (uCamPos.y + 6.) / -dir.y);
           // integrate density along the ray: exp(-height/H), cheap analytic-ish with 6 samples
           float acc = 0., wisp = 0.;
           for (int i = 0; i < 6; i++) {
