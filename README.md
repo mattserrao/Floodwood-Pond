@@ -4,6 +4,24 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.11.0 (test branch): oil paint
+A painted look, inspired by [Oil Paint](https://patch.gg/blendi/oil-paint) by @blendi on Patch (MIT): the near world is built
+from brush dabs, and everything else is laid in the same painter's palette. Code is in `js/paint.js`.
+- **Brush dabs** on the detailed near-field trees (spruce, white pine, maple, birch), the larger ground detail (rocks, stumps, logs,
+  roots, ferns, shrubs, saplings) and the shoreline props (snags, leaning trees, boulders, driftwood, root plates, shrub islands).
+  Each dab is one touch of mixed colour pinned to the model's surface and laid along a direction (down a whorl, up a trunk, along a
+  log), with a brush mark from an 8-mark atlas generated in code (raking light from the upper left across the paint's thickness).
+  Dabs ride the existing instance matrices, so they sway with the wind, fall with the collapse and take the sun's shadow.
+  On screen a dab is clamped between a min and max size; with distance fewer, larger dabs stand in for the rest, thinning to
+  nothing at the edge of the dab ring, where the painted underlayer carries on.
+- **Painted tone** on every lit surface: light, half-tone and shade mixes with stroke-broken edges, cool shades and warm lights.
+- **Water**: level, broken touches (strokes run across the line of sight but stay pinned to the world), the mirror dragged into
+  soft vertical smears, sun glitter as separate bright dabs. **Sky**: long level strokes.
+- **Canvas**: paint relief catches a raking light, a fine weave shows through the darks; High also runs a light Kuwahara pass.
+- **Cost by tier**: Low has no dabs (painted tone, water, sky and canvas only); Medium draws dabs within 60 m, High within 95 m.
+  Shore props are now split into 200 m tiles, so far ones are culled whole (a saving with paint off too).
+- **Off switch**: "Oil paint on/off" in the pause menu, or `?paint=0`. `?dabdebug` paints every dab red.
+
 ## v0.5.0 (test branch): Memories
 You wake in a tent on the north shore, climb out, look back, walk down to the canoe and push off.
 Ghost memories play alongside you and fade: a cantaloupe tossed in the water, a kayaker who tips over,

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.10.0';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.10.0';
-import { Voices } from './voices.js?v=0.10.0';
-import { recolor } from './models.js?v=0.10.0';
-import { COLLAPSE, colWob } from './collapse.js?v=0.10.0';
+import { MAP } from './mapdata.js?v=0.11.0';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.11.0';
+import { Voices } from './voices.js?v=0.11.0';
+import { recolor } from './models.js?v=0.11.0';
+import { COLLAPSE, colWob } from './collapse.js?v=0.11.0';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};

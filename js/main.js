@@ -1,22 +1,23 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.10.0';
-import { AmbientAudio } from './audio.js?v=0.10.0';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.10.0';
-import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.10.0';
-import { createPost } from './post.js?v=0.10.0';
-import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.10.0';
-import { WIND, gustAt, updateWind } from './wind.js?v=0.10.0';
-import { Q } from './quality.js?v=0.10.0';
-import { WX } from './weather.js?v=0.10.0';
-import { createWildlife } from './wildlife.js?v=0.10.0';
-import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.10.0';
-import { createStory } from './story.js?v=0.10.0';
-import { buildShore } from './shore.js?v=0.10.0';
-import { loadModels } from './models.js?v=0.10.0';
-import { buildCamp } from './camp.js?v=0.10.0';
-import { createNearField } from './nearfield.js?v=0.10.0';
-import { setModels } from './story.js?v=0.10.0';
-import { createCollapse, patchScene, COLLAPSE } from './collapse.js?v=0.10.0';
+import { MAP } from './mapdata.js?v=0.11.0';
+import { AmbientAudio } from './audio.js?v=0.11.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.11.0';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.11.0';
+import { createPost } from './post.js?v=0.11.0';
+import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.11.0';
+import { WIND, gustAt, updateWind } from './wind.js?v=0.11.0';
+import { Q } from './quality.js?v=0.11.0';
+import { WX } from './weather.js?v=0.11.0';
+import { createWildlife } from './wildlife.js?v=0.11.0';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.11.0';
+import { createStory } from './story.js?v=0.11.0';
+import { buildShore } from './shore.js?v=0.11.0';
+import { loadModels } from './models.js?v=0.11.0';
+import { buildCamp } from './camp.js?v=0.11.0';
+import { createNearField } from './nearfield.js?v=0.11.0';
+import { setModels } from './story.js?v=0.11.0';
+import { createCollapse, patchScene, COLLAPSE } from './collapse.js?v=0.11.0';
+import { PAINT, paintScene, updatePaint, setPaintQuality } from './paint.js?v=0.11.0';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -98,13 +99,15 @@ function build() {
   setModels(world.models);
   world.collapse = createCollapse(scene);
   if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag, collapse: world.collapse });
+  paintScene(scene);   // v0.11.0: every lit surface is laid in the painter's three mixes
+  refl.hide.push(...PAINT.dabs.map((d) => d.mesh));   // the low-res mirror shows the painted underlayer, not every dab
   patchScene(scene);   // v0.10.0: every material learns to fall (compiled now, not mid-quake)
 }
 // ------------------------------------------------------------------ quality tiers
 function applyQuality() {
   const q = Q.s;
   renderer.setPixelRatio(dprFor(q)); renderer.setSize(innerWidth, innerHeight, false);
-  post.setQuality(q); refl.setScale(q.refl);
+  post.setQuality(q); refl.setScale(q.refl); setPaintQuality(q);
   if (water) water.material.uniforms.uReflOn.value = q.refl > 0 ? 1 : 0;
   if (floatLeaves) floatLeaves.setCount(q.leaves);
   if (rain) rain.setCount(q.rain);
@@ -119,7 +122,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.10.0';
+const VERSION = '0.11.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -201,6 +204,9 @@ $('pMute').addEventListener('click', toggleMute);
 $('pJourney').addEventListener('click', () => { G.manualHour = null; });
 $('pMood').addEventListener('click', () => { post.enabled = !post.enabled; $('pMood').textContent = post.enabled ? 'Mood filter on' : 'Mood filter off'; try { localStorage.setItem('fp-mood', post.enabled ? '1' : '0'); } catch (e) {} });
 try { if (localStorage.getItem('fp-mood') === '0') { post.enabled = false; $('pMood').textContent = 'Mood filter off'; } } catch (e) {}
+// v0.11.0: oil paint on / off (also ?paint=0)
+const paintLabel = () => { $('pPaint').textContent = PAINT.on ? 'Oil paint on' : 'Oil paint off'; };
+$('pPaint').addEventListener('click', () => { PAINT.set(!PAINT.on); paintLabel(); }); paintLabel();
 // v0.4: cinematic 30 fps (physics stays at full rate) with motion blur, optional letterbox, graphics tier
 const CINE = { on: false, box: false, lastDraw: 0 };
 function setCine(on) { CINE.on = on; post.motionBlur = on; $('pCine').textContent = on ? 'Cinematic 30 fps on' : 'Cinematic 30 fps off'; try { localStorage.setItem('fp-cine', on ? '1' : '0'); } catch (e) {} }
@@ -723,7 +729,7 @@ function frame(now) {
   const calibrating = (G.mode === 'play' || G.mode === 'launch') && !G.paused && !document.hidden && Q.sample(Math.min(sinceDraw, 250));
   if (CINE.on && !calibrating && sinceDraw < 1000 / 30 - 4) return;
   CINE.lastDraw = now; renderer.info.reset();
-  camera.updateMatrixWorld();
+  camera.updateMatrixWorld(); updatePaint(camera, renderer, G.time);
   if (Q.s.refl > 0) {
     // the mirror is low-res and mostly shows the shoreline: skip litter and far reeds, pull the far cull in
     cullTiles(camera.position, Math.min(G.visDist || 3000, 1700), 0, 260);

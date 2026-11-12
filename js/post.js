@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PAINT } from './paint.js?v=0.11.0';
 
 // Single-pass post-processing for a moody, solemn look. Each effect has its own strength uniform (0 = off).
 //   grade     – desaturate, cool lifted shadows, faded warm highlights (split-tone)
@@ -21,7 +22,7 @@ export function createPost(renderer) {
     uGrade: { value: 1 }, uVignette: { value: 0.8 }, uGrain: { value: 0 }, uMist: { value: 1 }, uPaint: { value: 0 }, uRays: { value: 0 },
     tMist: { value: mistRT.texture }, uMistRes: { value: new THREE.Vector2(mistRT.width, mistRT.height) },
     uBlur: { value: 0 }, uPrevVP: { value: new THREE.Matrix4() }, uDim: { value: 0 },
-    uFxaa: { value: 0 },
+    uFxaa: { value: 0 }, uPaintOn: PAINT.uniforms.uPaintOn, uKuwa: { value: 0 },
     uDark: { value: 0 }, uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
     tShelter: { value: null }, uExt: { value: new THREE.Vector4(-1700, -1400, 3400, 2800) }, uBay: { value: 1 }, uLift: { value: 0 }, uHaze: { value: new THREE.Color(0.6, 0.66, 0.74) }, uHazeK: { value: 0.9 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.8, 0.6) }, uWake: { value: new THREE.Vector2(0, 1) }, uSpeed: { value: 0 },
     uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
@@ -31,7 +32,7 @@ export function createPost(renderer) {
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol, uPlayer; uniform vec2 uAway; uniform float uFxaa, uDark, uBehind; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol, uPlayer; uniform vec2 uAway; uniform float uFxaa, uDark, uBehind, uPaintOn, uKuwa; varying vec2 vUv;
       // FXAA (Lottes 3.11 'console' style, compact): smooths geometric edges when MSAA is off (Low tier / phones)
       vec3 fxaa(vec2 uv){
         vec2 px = 1. / uRes; vec3 L = vec3(.299, .587, .114);
@@ -54,7 +55,7 @@ export function createPost(renderer) {
       vec3 worldAt(vec2 uv, float d){ vec4 ndc = vec4(uv*2.-1., d*2.-1., 1.); vec4 v = uProjInv*ndc; v/=v.w; return (uCamWorld*v).xyz; }
 
       vec3 kuwahara(vec2 uv){
-        vec2 px = 1./uRes; const int R = 3; vec3 m[4]; vec3 s[4];
+        vec2 px = 1./uRes; const int R = 2; vec3 m[4]; vec3 s[4];
         for(int k=0;k<4;k++){ m[k]=vec3(0.); s[k]=vec3(0.); }
         for(int j=-R;j<=0;j++) for(int i=-R;i<=0;i++){
           vec3 c0=texture2D(tColor, uv+vec2(i,j)*px).rgb, c1=texture2D(tColor, uv+vec2(-i,j)*px).rgb, c2=texture2D(tColor, uv+vec2(i,-j)*px).rgb, c3=texture2D(tColor, uv+vec2(-i,-j)*px).rgb;
@@ -89,6 +90,17 @@ export function createPost(renderer) {
           }
         }
         if (uPaint > 0.) col = mix(col, kuwahara(uv), uPaint);
+        // v0.11.0 oil paint: (High) a light Kuwahara pass flattens what's left into touches of colour,
+        // then the paint's thickness: edges in the picture catch a raking light from the upper left
+        float relief = 0.;
+        if (uPaintOn > .5) {
+          if (uKuwa > 0. && dist > 6.) col = mix(col, kuwahara(uv), uKuwa * smoothstep(6., 30., dist));
+          vec2 rp = 1.5 / uRes;
+          float lL = luma(texture2D(tColor, uv - vec2(rp.x, 0.)).rgb), lR = luma(texture2D(tColor, uv + vec2(rp.x, 0.)).rgb);
+          float lU = luma(texture2D(tColor, uv + vec2(0., rp.y)).rgb), lD = luma(texture2D(tColor, uv - vec2(0., rp.y)).rgb);
+          relief = clamp(((lL - lR) + (lU - lD)) * 2.2, -.35, .35);
+        }
+        float mistCover = 0.;
         // ---- ground mist (computed at half resolution, depth-aware upsample)
         if (uMist > 0.) {
           vec2 hp = 1. / uMistRes; float fs = 0., ws = 0.;
@@ -111,7 +123,7 @@ export function createPost(renderer) {
             float dk = clamp(uDark * bk * sw, 0., 1.);
             mcol = mix(uMistCol, vec3(.012, .013, .02), dk); mk = clamp(mk * (1. + .35 * dk), 0., .985);
           }
-          col = mix(col, mcol, mk);
+          col = mix(col, mcol, mk); mistCover = mk;
         }
         // ---- v0.7.2: darkness consuming the pond behind you - swirling fingers that reach toward the canoe from the black
         if (uDark > 0. && uBehind > 0.) {
@@ -155,6 +167,14 @@ export function createPost(renderer) {
           g = (g - .18) * .92 + .18;                                            // soften contrast
           col = mix(col, g, uGrade);
         }
+        if (uPaintOn > .5) {
+          col *= 1. + relief * (1. - mistCover) * .55;
+          // the canvas: a fine twill weave and a few fibres, showing most where the paint is thin (darks)
+          vec2 fc = gl_FragCoord.xy;
+          float weave = sin(fc.x * 1.95 + sin(fc.y * .9) * .6) * sin(fc.y * 1.95 + sin(fc.x * .9) * .6);
+          float fib = n2(fc * vec2(.06, .9)) - .5;
+          col *= 1. + (weave * .022 + fib * .02) * (1.2 - smoothstep(0., .7, luma(col)));
+        }
         if (uVignette > 0.) {
           vec2 q = uv - .5; q.x *= uRes.x / uRes.y;
           float v = smoothstep(.95, .25, length(q));
@@ -181,7 +201,7 @@ export function createPost(renderer) {
       vec3 worldAt(vec2 uv, float d){ vec4 ndc = vec4(uv*2.-1., d*2.-1., 1.); vec4 v = uProjInv*ndc; v/=v.w; return (uCamWorld*v).xyz; }
 
       vec3 kuwahara(vec2 uv){
-        vec2 px = 1./uRes; const int R = 3; vec3 m[4]; vec3 s[4];
+        vec2 px = 1./uRes; const int R = 2; vec3 m[4]; vec3 s[4];
         for(int k=0;k<4;k++){ m[k]=vec3(0.); s[k]=vec3(0.); }
         for(int j=-R;j<=0;j++) for(int i=-R;i<=0;i++){
           vec3 c0=texture2D(tColor, uv+vec2(i,j)*px).rgb, c1=texture2D(tColor, uv+vec2(-i,j)*px).rgb, c2=texture2D(tColor, uv+vec2(i,-j)*px).rgb, c3=texture2D(tColor, uv+vec2(-i,-j)*px).rgb;
@@ -252,6 +272,7 @@ export function createPost(renderer) {
     setQuality(q) {
       if (rt.samples !== q.msaa) { rt.samples = q.msaa; rt.dispose(); }
       U.uFxaa.value = q.msaa > 0 ? 0 : 1;   // FXAA only when MSAA is off
+      U.uKuwa.value = q.kuwa ?? 0;
       mistScale = q.mistScale; api.setSize(); api.blurAllowed = q.blur;
     },
     overlay: new THREE.Scene(), overlayDepth: { value: 0 }, overlayCanvas: { value: new THREE.Vector2(1, 1) },

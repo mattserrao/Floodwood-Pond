@@ -6,7 +6,9 @@
 //  - soft contact shadows under trunks, rocks and stumps
 // Everything is instanced (one draw call per kind) and rebuilt only when the canoe has moved a few metres.
 import * as THREE from 'three';
-import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE } from './world.js?v=0.10.0';
+import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE } from './world.js?v=0.11.0';
+import { sampleDabs, dabMaterial, attachDabs, PAINT } from './paint.js?v=0.11.0';
+const dabRadius = () => PAINT.uniforms.uDabR.value;
 
 // ------------------------------------------------------------------ geometry helpers
 /** a mesh builder that collects triangles with colours and a bark flag */
@@ -151,6 +153,26 @@ export function createNearField(scene, opts = {}) {
     root: mkIM(rootGeo(R0), groundMat, 500), log: mkIM(logGeo(R0), groundMat, 160), sapling: mkIM(spruce(909), saplingMat, 600),
   };
   blobs.receiveShadow = false;
+
+  // --- v0.11.0 oil paint: brush dabs over the detailed trees and the larger ground detail (they share each kind's instances)
+  const treeDab = dabMaterial({ sway: [30, 1.1], back: 0.7 }), groundDab = dabMaterial({ back: 0.25 }), sapDab = dabMaterial({ sway: [30, 1.1], back: 0.5 });
+  const TREE_DABS = {
+    con: { dir: 'down', spread: 0.6, size: [0.75, 1.3], aspect: 0.4, density: 4, max: 1100, lift: [0.02, 0.4], barkSize: [0.4, 0.7], barkAspect: 0.32 },
+    pine: { dir: 'down', spread: 1.4, size: [0.7, 1.2], aspect: 0.48, density: 4.5, max: 900, lift: [0.02, 0.35], barkSize: [0.35, 0.6], barkAspect: 0.32 },
+    maple: { dir: 'down', spread: 2.2, size: [0.7, 1.2], aspect: 0.6, density: 4, max: 1000, lift: [0.0, 0.35], barkSize: [0.4, 0.7], barkAspect: 0.34 },
+    birch: { dir: 'down', spread: 2.2, size: [0.65, 1.1], aspect: 0.6, density: 4.5, max: 900, lift: [0.0, 0.3], barkSize: [0.22, 0.4], barkAspect: 0.6, barkDir: new THREE.Vector3(1, 0, 0) },
+  };
+  kinds.forEach((k, i) => { const o = TREE_DABS[k.kind]; if (o) k.dabs = attachDabs(scene, k.im, sampleDabs(k.im.geometry, { ...o, seed: 11 + i * 7 }), treeDab); });
+  const GROUND_DABS = {
+    rock: { dir: 'flat', size: [0.35, 0.6], aspect: 0.55, density: 9, max: 60, lift: [0, 0.04], mat: groundDab },
+    stump: { barkDir: 'up', size: [0.18, 0.3], barkSize: [0.18, 0.3], aspect: 0.4, density: 30, max: 90, mat: groundDab },
+    log: { barkDir: new THREE.Vector3(1, 0, 0), barkSize: [0.3, 0.55], barkAspect: 0.35, density: 22, max: 140, mat: groundDab },
+    root: { barkDir: new THREE.Vector3(1, 0, 0), barkSize: [0.18, 0.32], barkAspect: 0.4, density: 40, max: 80, mat: groundDab },
+    fern: { dir: 'down', spread: 1.2, size: [0.16, 0.28], aspect: 0.4, density: 40, max: 40, mat: groundDab },
+    shrub: { dir: 'down', spread: 2.5, size: [0.12, 0.22], aspect: 0.6, density: 50, max: 50, mat: groundDab },
+    sapling: { dir: 'down', spread: 0.6, size: [0.6, 1.0], aspect: 0.42, density: 3.2, max: 500, lift: [0.02, 0.35], barkSize: [0.28, 0.5], barkAspect: 0.32, mat: sapDab },
+  };
+  Object.entries(GROUND_DABS).forEach(([k, o], i) => attachDabs(scene, G[k], sampleDabs(G[k].geometry, { ...o, seed: 101 + i * 13 }), o.mat));
   groundMat.polygonOffset = false;
   const CELL = 16, cells = new Map();
   const landY = (x, z) => (inPatch(x, z) ? fullHeight(x, z) : heightAt(x, z));
@@ -209,7 +231,10 @@ export function createNearField(scene, opts = {}) {
   function rebuildTrees(x, z, radius) {
     // detailed twins exist out to the ring edge; the far tree is only hidden well inside it,
     // so across the outer band both draw and the shaders cross-dissolve them (no pop)
-    const now = new Set(around(x, z, radius)), inner = radius - 38;
+    // v0.11.0: nearest first, so each kind's brush dabs only need to cover the first dabCount instances
+    const nowA = around(x, z, radius).sort((a, b) => ((a[0] - x) ** 2 + (a[2] - z) ** 2) - ((b[0] - x) ** 2 + (b[2] - z) ** 2));
+    const now = new Set(nowA), inner = radius - 38, dabR2 = (dabRadius() + 12) ** 2;
+    kinds.forEach((k) => { k.im.userData.dabCount = 0; });
     const hide = new Set(); for (const r of now) if ((r[0] - x) ** 2 + (r[2] - z) ** 2 < inner * inner) hide.add(r);
     for (const r of swapped) if (!hide.has(r)) { r.im.setMatrixAt(r.j, saved.get(r)); r.im.instanceMatrix.needsUpdate = true; saved.delete(r); }
     kinds.forEach((k) => { k.im.count = 0; });
@@ -219,6 +244,7 @@ export function createNearField(scene, opts = {}) {
       if (hide.has(r) && !saved.has(r)) { saved.set(r, m.clone()); r.im.setMatrixAt(r.j, ZERO); r.im.instanceMatrix.needsUpdate = true; }
       const k = byKey[kindFor(r)]; if (!k || k.im.count >= k.im.instanceMatrix.count) continue;
       k.im.setMatrixAt(k.im.count, m); COL.setRGB(r[8][0], r[8][1], r[8][2]); k.im.setColorAt(k.im.count, COL); k.im.count++;
+      if ((r[0] - x) ** 2 + (r[2] - z) ** 2 < dabR2) k.im.userData.dabCount = k.im.count;
       V3.setFromMatrixScale(m); const bs = 2.2 * Math.max(V3.x, 0.6); M4.compose(V3.set(r[0], r[1] + 0.33, r[2]), Q.identity(), S3.set(bs, 1, bs)); blobs.setMatrixAt(nb++, M4);
     }
     swapped = hide; blobs.count = nb;

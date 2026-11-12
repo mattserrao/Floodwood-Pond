@@ -1,7 +1,25 @@
 import * as THREE from 'three';
-import { EXT, sstep, clamp, lerp } from './world.js?v=0.10.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.10.0';
-import { COLLAPSE, COLLAPSE_GLSL } from './collapse.js?v=0.10.0';
+import { EXT, sstep, clamp, lerp } from './world.js?v=0.11.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.11.0';
+import { COLLAPSE, COLLAPSE_GLSL } from './collapse.js?v=0.11.0';
+import { PAINT, PAINT_GLSL } from './paint.js?v=0.11.0';
+
+// v0.11.0 oil paint on the water: world-pinned strokes that always run level across the screen (a short line-integral of
+// noise taken perpendicular to the line of sight), so the mirror breaks into horizontal touches of paint as a painter
+// would lay them, and the glitter becomes separate bright dabs.
+const WATER_PAINT_GLSL = /* glsl */`
+  float wpStroke(vec2 p, vec2 along, float sc){
+    float a = 0.; for (int i = -3; i <= 3; i++) a += pN2((p + along * float(i) * sc * .9) / sc * vec2(1., 1.));
+    return a / 7.;
+  }
+  // two stroke scales, stepping with distance so a touch stays a few pixels tall
+  float wpField(vec2 p, float dist){
+    vec2 f = normalize(p - cameraPosition.xz + 1e-4), r = vec2(-f.y, f.x);
+    float lv = log2(max(dist, 2.) / 5.), l0 = floor(lv), k = fract(lv), s0 = exp2(l0) * .7;
+    float a = wpStroke(p + l0 * 17.3, r, s0), b = wpStroke(p + l0 * 17.3 + 5.1, r, s0 * 2.);
+    float st = mix(a, b, smoothstep(.2, .8, k));
+    return clamp((st - .5) * 2.6 + .5, 0., 1.);
+  }`;
 
 // ------------------------------------------------------------------ day/night palette
 const K = (h, top, mid, hor, fog, hemiS, hemiG, sun, fogD, hemiI) => ({ h, top: new THREE.Color(top), mid: new THREE.Color(mid), hor: new THREE.Color(hor), fog: new THREE.Color(fog), hemiS: new THREE.Color(hemiS), hemiG: new THREE.Color(hemiG), sun: new THREE.Color(sun), fogD, hemiI });
@@ -46,7 +64,7 @@ export function createSky() {
       uSun: { value: new THREE.Vector3(0, 1, 0) }, uMoon: { value: new THREE.Vector3(0, -1, 0) }, uSunCol: { value: new THREE.Color() },
       uSunI: { value: 0 }, uGlow: { value: 1 }, uMoonI: { value: 0 }, uStars: { value: 0 }, uTime: { value: 0 },
       uCloudLit: { value: new THREE.Color() }, uCloudShade: { value: new THREE.Color() },
-      uPhase: { value: 0.5 }, uFogCol: { value: new THREE.Color() }, uFogMix: { value: 0 }, uCover: { value: 0 }, uColOn: COLLAPSE.uniforms.uColOn,
+      uPhase: { value: 0.5 }, uFogCol: { value: new THREE.Color() }, uFogMix: { value: 0 }, uCover: { value: 0 }, uColOn: COLLAPSE.uniforms.uColOn, uPaintOn: PAINT.uniforms.uPaintOn,
     },
     vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * p; gl_Position.z = gl_Position.w * 0.99999; }`,
     fragmentShader: `
@@ -56,6 +74,7 @@ export function createSky() {
       float h2(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
       float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h2(i),h2(i+vec2(1,0)),f.x), mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x), f.y); }
       float fbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<5;i++){ s+=a*n2(p); p*=2.03; a*=.5; } return s; }
+      ${PAINT_GLSL}
       void main(){
         vec3 d = normalize(vDir);
         float h = clamp(d.y,0.,1.);
@@ -91,6 +110,11 @@ export function createSky() {
           cc += uSunCol * pow(sd,3.)*0.25*(1.-uCover);
           col = mix(col, cc, cov * smoothstep(0.,.16,d.y) * mix(.92, 1., uCover));
         }
+        if (uPaintOn > .5) {   // v0.11.0: the sky laid in with long level strokes
+          float az = atan(d.z, d.x);
+          float st = pStroke(vec2(az * 9., d.y * 70.) + vec2(0., floor(d.y * 14.) * 3.1)) * .7 + pStroke(vec2(az * 22., d.y * 160.)) * .3;
+          col = mix(col, paintToneS(col, (st - .5) * 1.2), .8);
+        }
         col = mix(col, mix(uCloudShade*1.25, uFogCol, .35), uCover*.55*smoothstep(-.05,.2,d.y));
         col = mix(col, uFogCol, uFogMix);
         if (uColOn > .5) col = mix(col, vec3(.006, .008, .011), smoothstep(.004, -.05, d.y));   // v0.10.0: below the horizon is the void now
@@ -117,7 +141,7 @@ export function createWater(depthTex) {
       // v0.4: mirrored treeline, wind roughness, rain rings
       tRefl: { value: null }, uReflOn: { value: 0 }, uTexMat: { value: new THREE.Matrix4() }, uTreeCol: { value: new THREE.Color(0x0c1a10) },
       uRain: { value: 0 }, uCover: { value: 0 }, uReflRes: { value: new THREE.Vector2(4, 4) },
-      ...WIND.uniforms, ...COLLAPSE.uniforms,
+      ...WIND.uniforms, ...COLLAPSE.uniforms, uPaintOn: PAINT.uniforms.uPaintOn,
     },
     vertexShader: `uniform mat4 uTexMat; varying vec3 vW; varying vec4 vR;
       void main(){ vec4 w = modelMatrix*vec4(position,1.); vW = w.xyz; vR = uTexMat * w; gl_Position = projectionMatrix*viewMatrix*w; }`,
@@ -126,6 +150,8 @@ export function createWater(depthTex) {
       uniform sampler2D uDepth, tRefl; uniform vec4 uExt; varying vec3 vW; varying vec4 vR;
       ${GUST_GLSL}
       ${COLLAPSE_GLSL}
+      ${PAINT_GLSL}
+      ${WATER_PAINT_GLSL}
       vec2 wv(vec2 p, vec2 dir, float k, float a, float sp){ return normalize(dir)*k*a*cos(dot(normalize(dir),p)*k + uTime*sp); }
       // rain: each 0.7 m cell holds one expanding ring at a random phase
       vec2 rainRings(vec2 p){
@@ -154,13 +180,16 @@ export function createWater(depthTex) {
         if (uRain > .01) g += rainRings(p) * .045 * uRain * (1. - smoothstep(20., 70., dist));
         vec3 n = normalize(vec3(-g.x, 1., -g.y));
         vec3 V = normalize(cameraPosition - vW);
+        float ws = uPaintOn > .5 ? wpField(p, dist) : .5;     // the brush on the water (0..1, .5 = neutral)
         float fr = 0.03 + 0.97*pow(1.-max(dot(n,V),0.), 5.);
         vec3 R = reflect(-V,n); float ry = clamp(R.y,0.,1.);
         vec3 refl = mix(uSkyHor, uSkyTop, pow(ry,.55));
         if (uReflOn > .5) {
           // true mirror (low-res render from below the surface), wobbled by the wave normal
           vec4 rc = vR; rc.xy += n.xz * rc.w * (.06 + .12 * smoothstep(.2, .8, gu)) * (1. - .7*(1.-far));
+          rc.x += (ws - .5) * rc.w * .006 * uPaintOn;          // oil paint: the mirror is laid in level, broken touches
           vec2 ruv = rc.xy / rc.w, rt = 0.8 / uReflRes;   // 4 taps soften the low-res mirror into a natural blur
+          if (uPaintOn > .5) rt.y *= 3.5;                         // ...and dragged down into soft vertical smears
           vec3 mir = .25 * (texture2D(tRefl, ruv + vec2(rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(-rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(rt.x, -rt.y)).rgb + texture2D(tRefl, ruv - rt).rgb);
           refl = mix(mir, refl * .8, smoothstep(.35, .85, gu) * .8);   // gusts scatter the image into a soft, darker sheen
         } else {
@@ -177,6 +206,7 @@ export function createWater(depthTex) {
         body += vec3(.42,.22,.06) * shal * (.35 + .65*uSunI) * uLight * .55;
         vec3 col = mix(body, refl, clamp(fr*mix(.62, 1.15, 1. - shal),0.,1.));
         float sp = pow(max(dot(R,uSun),0.),400.)*3.2 + pow(max(dot(R,uSun),0.),40.)*.22;
+        if (uPaintOn > .5) sp = pow(max(dot(R,uSun),0.),60.) * 2.4 * smoothstep(.62, .8, ws) + pow(max(dot(R,uSun),0.),40.)*.18;   // glitter as separate bright dabs
         col += uSunCol * sp * uSunI * (1. - .85*uCover);
         float mp = pow(max(dot(R,uMoon),0.),500.)*2.0 + pow(max(dot(R,uMoon),0.),60.)*.12;
         col += vec3(.7,.8,1.) * mp * uMoonI * (1. - .9*uCover);
@@ -194,6 +224,7 @@ export function createWater(depthTex) {
           col = mix(col, vec3(.84, .88, .88) * uLight, fo * smoothstep(.25, .75, st + fo * .3) * .85);
           alpha = mix(alpha, 1., fo * .6);
         }
+        if (uPaintOn > .5) { col = paintToneS(col, ws - .5); col *= .94 + .12 * ws; }
         float f = 1.-exp(-pow(dist*uFogD,2.));
         col = mix(col, uFog, clamp(f,0.,1.));
         gl_FragColor = vec4(col, alpha);
