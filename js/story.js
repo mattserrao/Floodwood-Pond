@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.10.0';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.10.0';
-import { Voices } from './voices.js?v=0.10.0';
-import { recolor } from './models.js?v=0.10.0';
-import { COLLAPSE, colWob } from './collapse.js?v=0.10.0';
+import { MAP } from './mapdata.js?v=0.12.0';
+import { PAINT } from './paint.js?v=0.12.0';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.12.0';
+import { Voices } from './voices.js?v=0.12.0';
+import { recolor } from './models.js?v=0.12.0';
+import { COLLAPSE, colWob } from './collapse.js?v=0.12.0';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};
@@ -949,7 +950,11 @@ export function createStory(C) {
 
   function end() {
     S.ended = true; G.mode = 'ending'; audio.chime();
-    const veil = $('veil'); veil.style.transition = 'opacity 5s ease, background-color 5s ease'; veil.style.background = '#d9dbd8'; veil.style.opacity = 1;
+    const veil = $('veil'); veil.style.transition = 'opacity 5s ease, background-color 5s ease'; veil.style.background = '#d9dbd8';
+    // v0.12.0: with oil paint on, the world first goes back to the sketch and then to bare canvas (main.js runs uBlank over 7 s),
+    // and only then the veil - the colour of that canvas - settles over it
+    if (PAINT.on) { veil.style.transition = 'opacity 3s ease 6s'; veil.style.background = '#ddd5c4'; }
+    veil.style.opacity = 1;
     const q = $('quote'); q.classList.add('on');
     [...q.querySelectorAll('span')].forEach((el, i) => setTimeout(() => el.classList.add('on'), 5200 + i * 2300));
     const hold = 5200 + q.querySelectorAll('span').length * 2300 + 7000;
