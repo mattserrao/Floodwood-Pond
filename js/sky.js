@@ -225,7 +225,7 @@ export function createWater(depthTex) {
           col = mix(col, vec3(.84, .88, .88) * uLight, fo * smoothstep(.25, .75, st + fo * .3) * .85);
           alpha = mix(alpha, 1., fo * .6);
         }
-        if (uPaintOn > .5) { col = paintToneS(col, ws - .5); col *= .94 + .12 * ws; col = sketchWash(col, col, vW); }   // v0.12.0: unpainted water is bare canvas too
+        if (uPaintOn > .5) { col = paintToneS(col, ws - .5); col *= .94 + .12 * ws; }
         float f = 1.-exp(-pow(dist*uFogD,2.));
         col = mix(col, uFog, clamp(f,0.,1.));
         gl_FragColor = vec4(col, alpha);

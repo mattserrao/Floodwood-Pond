@@ -4,15 +4,15 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
-## v0.12.0 (test branch): the unfinished painting + the painter's day
+## v0.12.0 (test branch): painted as you go + the painter's day
 Builds on the oil paint below (v0.11.0's look is all here).
-- **The unfinished painting.** The world starts as an underdrawing: a thin wash on bare canvas, charcoal contours where
-  forms overlap, hatching in the shadows. Wherever you are, the painting spreads outward from the canoe (fastest close in),
-  and trees take their brush strokes one by one as the front reaches them. Places you've been stay painted; places you
-  haven't are still the sketch. (A 256 x 256 map over the world, `paintAround()` in `js/paint.js`.)
-- **The mist is bare canvas**, with the charcoal contours showing through it.
-- **The ending goes back to canvas**: in the creek fog the world returns to the sketch, then to blank canvas, then the veil
-  (now canvas-coloured) settles.
+- **Painted as you go.** The brush strokes aren't there until you are: the painting spreads outward from the canoe
+  (fastest close in) and each tree takes its strokes one by one as the front reaches it. Places you've been keep their
+  strokes. (A 256 x 256 map over the world, `paintAround()` in `js/paint.js`.) The rest of the world keeps the painted
+  underlayer, so nothing looks unfinished at a distance.
+- **The mist is bare canvas.**
+- **The ending goes back to canvas**: in the creek fog the painting fades to blank canvas, then the veil (now
+  canvas-coloured) settles.
 - **The painter's day.** Each time of day is painted with six paints (`PALETTES` in `js/paint.js`); every colour is pulled
   to the nearest one, keeping its value, with shadows and lights leaning to the hour's shadow and light paints. Golden hour
   and sunset go wild: violet shadows, orange and red water, green-gold sky.

@@ -68,9 +68,7 @@ PAINT.uniforms.uBrush.value = brushAtlas();
 // ------------------------------------------------------------------ the painter's palette (shared GLSL)
 export const PAINT_GLSL = /* glsl */`
   uniform float uPaintOn, uBlank; uniform vec3 uPaper; uniform sampler2D uPaintMap; uniform vec4 uMapExt;
-  // v0.12.0: how far the painting has reached this spot (1 = painted, 0 = still the underdrawing)
-  float paintedAt(vec2 xz){ return texture2D(uPaintMap, (xz - uMapExt.xy) / uMapExt.zw).r; }
-  float sketchAt(vec2 xz){ return max(1. - smoothstep(.15, .85, paintedAt(xz)), clamp(uBlank * 2., 0., 1.)); }
+
   float pH3(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   float pN2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); vec3 k = vec3(i, 7.);
     return mix(mix(pH3(k), pH3(k + vec3(1,0,0)), f.x), mix(pH3(k + vec3(0,1,0)), pH3(k + vec3(1,1,0)), f.x), f.y); }
@@ -98,14 +96,7 @@ export const PAINT_GLSL = /* glsl */`
     c = mix(vec3(pLuma(c)), c, 1.08);                                  // a touch more chroma, as paint has
     return c * (1. + s * .07);
   }
-  // v0.12.0: the underdrawing - where the painting hasn't reached yet, the world is a thin wash on bare canvas
-  vec3 sketchWash(vec3 painted, vec3 lit, vec3 wp){
-    float sk = sketchAt(wp.xz); if (sk <= 0.) return painted;
-    float L = pLuma(lit); vec3 tint = lit / max(L, .02);
-    vec3 wash = uPaper * mix(vec3(1.), tint, .22) * (.72 + .3 * smoothstep(0., .3, L));
-    return mix(painted, wash, sk * .9);
-  }
-  vec3 paintTone(vec3 lit, vec3 wp, vec3 n, float dist){ return uPaintOn < .5 ? lit : sketchWash(paintToneS(lit, pField(wp, n, dist) - .5), lit, wp); }`;
+  vec3 paintTone(vec3 lit, vec3 wp, vec3 n, float dist){ return uPaintOn < .5 ? lit : paintToneS(lit, pField(wp, n, dist) - .5); }`;
 
 /** chain the painted palette onto any lit built-in material (Standard / Lambert / Phong) */
 const toned = new WeakSet();

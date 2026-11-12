@@ -34,7 +34,7 @@ export function createPost(renderer) {
     fragmentShader: /* glsl */`
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
       uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol, uPlayer; uniform vec2 uAway; uniform float uFxaa, uDark, uBehind, uPaintOn, uKuwa, uBlank, uPalK, uShadeK, uRampK; uniform vec3 uPaper, uPal[6]; uniform sampler2D uPaintMap; uniform vec4 uMapExt; varying vec2 vUv;
-      float sketchAtP(vec2 xz){ return max(1. - smoothstep(.15, .85, texture2D(uPaintMap, (xz - uMapExt.xy) / uMapExt.zw).r), clamp(uBlank * 2., 0., 1.)); }
+
       // FXAA (Lottes 3.11 'console' style, compact): smooths geometric edges when MSAA is off (Low tier / phones)
       vec3 fxaa(vec2 uv){
         vec2 px = 1. / uRes; vec3 L = vec3(.299, .587, .114);
@@ -103,20 +103,8 @@ export function createPost(renderer) {
           relief = clamp(((lL - lR) + (lU - lD)) * 2.2, -.35, .35);
         }
         float mistCover = 0.;
-        // v0.12.0 the underdrawing's charcoal: wobbly contour lines where depth breaks, hatching in the shadows -
-        // wherever the painting hasn't reached yet, and through the mist (the mist is bare canvas)
-        float sk = 0., edgeL = 0., hatch = 0., bright = 0.;
+        float bright = 0.;
         if (uPaintOn > .5) {
-          sk = sky ? clamp(uBlank * 2., 0., 1.) : sketchAtP(wp.xz);
-          if (!sky && (sk > .01 || uMist > 0.)) {
-            vec2 fc = gl_FragCoord.xy, wob = (vec2(n2(fc * .04), n2(fc * .04 + 7.)) - .5) * 2.5 / uRes;
-            float e = 0.;
-            for (int k = 0; k < 4; k++) { vec2 o = (k == 0 ? vec2(1., 0.) : k == 1 ? vec2(-1., 0.) : k == 2 ? vec2(0., 1.) : vec2(0., -1.)) * 1.3 / uRes;
-              float dn = texture2D(tDepth, uv + o + wob).r; float dd = dn > .99999 ? 3000. : length(worldAt(uv + o + wob, dn) - uCamPos);
-              e = max(e, (dd - dist) / dist); }
-            edgeL = smoothstep(.03, .09, e) * (.55 + .45 * n2(fc * vec2(.3, .03)));
-            hatch = smoothstep(.6, .95, sin((fc.x - fc.y) * .9 + n2(fc * .03) * 4.) * .5 + .5) * smoothstep(.45, .15, luma(col)) * .45 * smoothstep(.2, .8, wp.y) * (.4 + .6 * n2(fc * .015));   // not on the water
-          }
           bright = smoothstep(1.1, 3., luma(col));   // v0.12.0 thick light: the sun, the glitter, the brightest cloud edges
         }
         // ---- ground mist (computed at half resolution, depth-aware upsample)
@@ -210,17 +198,14 @@ export function createPost(renderer) {
             col *= 1. - max(bUL - bright, 0.) * .45;
             col *= 1. + bright * relief * 1.6;
           }
-          // ---- the underdrawing (and the charcoal showing through the mist)
-          float skE = (1. - smoothstep(.45, .85, uBlank));
-          col = mix(col, uPaper * .2 + vec3(.04), max(edgeL * max(sk, mistCover * mistCover * .8), hatch * sk) * skE);
-          col *= 1. + relief * (1. - mistCover) * .55 * (1. - sk);
-          // the canvas: a fine twill weave and a few fibres, showing most where the paint is thin (darks, mist, the sketch)
+          col *= 1. + relief * (1. - mistCover) * .55;
+          // the canvas: a fine twill weave and a few fibres, showing most where the paint is thin (darks, mist)
           vec2 fc = gl_FragCoord.xy;
           float weave = sin(fc.x * 1.95 + sin(fc.y * .9) * .6) * sin(fc.y * 1.95 + sin(fc.x * .9) * .6);
           float fib = n2(fc * vec2(.06, .9)) - .5;
-          float thin = max(1.2 - smoothstep(0., .7, luma(col)), max(mistCover, sk) * 1.6);
+          float thin = max(1.2 - smoothstep(0., .7, luma(col)), mistCover * 1.6);
           // ---- v0.12.0 the end: everything goes back to bare canvas
-          col = mix(col, uPaper * 1.08, smoothstep(.45, 1., uBlank));
+          col = mix(col, uPaper * 1.08, smoothstep(.0, 1., uBlank));
           col *= 1. + (weave * .022 + fib * .02) * max(thin, uBlank * 2.);
         }
         if (uVignette > 0.) {
