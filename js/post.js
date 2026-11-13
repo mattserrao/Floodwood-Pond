@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PAINT } from './paint.js?v=0.12.0';
+import { PAINT } from './paint.js?v=0.13.0';
 
 // Single-pass post-processing for a moody, solemn look. Each effect has its own strength uniform (0 = off).
 //   grade     – desaturate, cool lifted shadows, faded warm highlights (split-tone)
@@ -22,8 +22,7 @@ export function createPost(renderer) {
     uGrade: { value: 1 }, uVignette: { value: 0.8 }, uGrain: { value: 0 }, uMist: { value: 1 }, uPaint: { value: 0 }, uRays: { value: 0 },
     tMist: { value: mistRT.texture }, uMistRes: { value: new THREE.Vector2(mistRT.width, mistRT.height) },
     uBlur: { value: 0 }, uPrevVP: { value: new THREE.Matrix4() }, uDim: { value: 0 },
-    uFxaa: { value: 0 }, uPaintOn: PAINT.uniforms.uPaintOn, uKuwa: { value: 0 }, uPaintMap: PAINT.uniforms.uPaintMap, uMapExt: PAINT.uniforms.uMapExt, uPaper: PAINT.uniforms.uPaper, uBlank: PAINT.uniforms.uBlank,
-    uPal: PAINT.uniforms.uPal, uPalK: PAINT.uniforms.uPalK, uShadeK: PAINT.uniforms.uShadeK, uRampK: PAINT.uniforms.uRampK,
+    uFxaa: { value: 0 }, uPaintOn: PAINT.uniforms.uPaintOn, uKuwa: { value: 0 },     uPal: PAINT.uniforms.uPal, uPalK: PAINT.uniforms.uPalK, uShadeK: PAINT.uniforms.uShadeK, uRampK: PAINT.uniforms.uRampK,
     uDark: { value: 0 }, uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
     tShelter: { value: null }, uExt: { value: new THREE.Vector4(-1700, -1400, 3400, 2800) }, uBay: { value: 1 }, uLift: { value: 0 }, uHaze: { value: new THREE.Color(0.6, 0.66, 0.74) }, uHazeK: { value: 0.9 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.8, 0.6) }, uWake: { value: new THREE.Vector2(0, 1) }, uSpeed: { value: 0 },
     uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
@@ -33,7 +32,7 @@ export function createPost(renderer) {
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol, uPlayer; uniform vec2 uAway; uniform float uFxaa, uDark, uBehind, uPaintOn, uKuwa, uBlank, uPalK, uShadeK, uRampK; uniform vec3 uPaper, uPal[6]; uniform sampler2D uPaintMap; uniform vec4 uMapExt; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol, uPlayer; uniform vec2 uAway; uniform float uFxaa, uDark, uBehind, uPaintOn, uKuwa, uPalK, uShadeK, uRampK; uniform vec3 uPal[6]; varying vec2 vUv;
 
       // FXAA (Lottes 3.11 'console' style, compact): smooths geometric edges when MSAA is off (Low tier / phones)
       vec3 fxaa(vec2 uv){
@@ -129,7 +128,6 @@ export function createPost(renderer) {
             float dk = clamp(uDark * bk * sw, 0., 1.);
             mcol = mix(uMistCol, vec3(.012, .013, .02), dk); mk = clamp(mk * (1. + .35 * dk), 0., .985);
           }
-          if (uPaintOn > .5) mcol = mix(mcol, uPaper * 1.05, .7 * (1. - smoothstep(.0, .3, uDark)));   // v0.12.0: the mist is unpainted canvas
           col = mix(col, mcol, mk); mistCover = mk;
         }
         // ---- v0.7.2: darkness consuming the pond behind you - swirling fingers that reach toward the canoe from the black
@@ -204,9 +202,7 @@ export function createPost(renderer) {
           float weave = sin(fc.x * 1.95 + sin(fc.y * .9) * .6) * sin(fc.y * 1.95 + sin(fc.x * .9) * .6);
           float fib = n2(fc * vec2(.06, .9)) - .5;
           float thin = max(1.2 - smoothstep(0., .7, luma(col)), mistCover * 1.6);
-          // ---- v0.12.0 the end: everything goes back to bare canvas
-          col = mix(col, uPaper * 1.08, smoothstep(.0, 1., uBlank));
-          col *= 1. + (weave * .022 + fib * .02) * max(thin, uBlank * 2.);
+          col *= 1. + (weave * .022 + fib * .02) * thin;
         }
         if (uVignette > 0.) {
           vec2 q = uv - .5; q.x *= uRes.x / uRes.y;

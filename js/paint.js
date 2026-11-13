@@ -10,8 +10,8 @@
 //   - the brush: eight marks generated in code, with a raking light from the upper left across the paint's thickness.
 // Off with ?paint=0 or the pause menu; tiers set the dab ring (Low has no dabs, only the painted tone).
 import * as THREE from 'three';
-import { SWAY, TREE_LIGHT } from './world.js?v=0.12.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.12.0';
+import { SWAY, TREE_LIGHT } from './world.js?v=0.13.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.13.0';
 
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 let stored = null; try { stored = localStorage.getItem('fp-paint'); } catch (e) {}
@@ -20,9 +20,7 @@ export const PAINT = {
   on: QS.has('paint') ? QS.get('paint') !== '0' : stored !== '0',
   uniforms: {
     uPaintOn: { value: 1 }, uDabR: { value: 85 }, uDabNear: { value: 18 }, uDabMinKeep: { value: 0.2 },
-    uDabPx: { value: new THREE.Vector2(3, 64) }, uPaintMap: { value: null }, uMapExt: { value: new THREE.Vector4(-1700, -1400, 3400, 2800) },
-    uPaper: { value: new THREE.Color(0.86, 0.82, 0.74) }, uBlank: { value: 0 },
-    uPal: { value: Array.from({ length: 6 }, () => new THREE.Color()) }, uPalK: { value: 0 }, uShadeK: { value: 0 }, uRampK: { value: 0 }, uViewH: { value: 900 }, uBrush: { value: null }, uPaintT: { value: 0 },
+    uDabPx: { value: new THREE.Vector2(3, 64) },     uPal: { value: Array.from({ length: 6 }, () => new THREE.Color()) }, uPalK: { value: 0 }, uShadeK: { value: 0 }, uRampK: { value: 0 }, uViewH: { value: 900 }, uBrush: { value: null }, uPaintT: { value: 0 },
   },
   dabs: [],          // twin InstancedMeshes: { mesh, src }
   set(on) { PAINT.on = on; PAINT.uniforms.uPaintOn.value = on ? 1 : 0; try { localStorage.setItem('fp-paint', on ? '1' : '0'); } catch (e) {} },
@@ -67,7 +65,7 @@ PAINT.uniforms.uBrush.value = brushAtlas();
 
 // ------------------------------------------------------------------ the painter's palette (shared GLSL)
 export const PAINT_GLSL = /* glsl */`
-  uniform float uPaintOn, uBlank; uniform vec3 uPaper; uniform sampler2D uPaintMap; uniform vec4 uMapExt;
+  uniform float uPaintOn;
 
   float pH3(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   float pN2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); vec3 k = vec3(i, 7.);
@@ -107,7 +105,7 @@ export function paintMaterial(mat) {
   mat.onBeforeCompile = (sh, r) => {
     if (prev) prev.call(mat, sh, r);
     if (!sh.fragmentShader.includes('#include <opaque_fragment>')) return;
-    sh.uniforms.uPaintOn = PAINT.uniforms.uPaintOn; for (const k of ['uPaper', 'uBlank', 'uPaintMap', 'uMapExt']) sh.uniforms[k] = PAINT.uniforms[k];
+    sh.uniforms.uPaintOn = PAINT.uniforms.uPaintOn;
     if (!/varying vec3 vPaintW;/.test(sh.vertexShader)) {
       sh.vertexShader = 'varying vec3 vPaintW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n vPaintW = (inverse(viewMatrix) * vec4(mvPosition.xyz, 1.)).xyz;');
     }
@@ -181,7 +179,7 @@ export function sampleDabs(geo, o = {}) {
 
 const DAB_VERT_HEAD = /* glsl */`
   attribute vec2 aCorner; attribute vec3 aNrm, aDir; attribute vec4 aInfo; attribute float aLift;
-  uniform float uDabR, uDabNear, uDabMinKeep, uViewH, uTime, uSwayQ; uniform vec2 uDabPx; uniform sampler2D uPaintMap; uniform vec4 uMapExt;
+  uniform float uDabR, uDabNear, uDabMinKeep, uViewH, uTime, uSwayQ; uniform vec2 uDabPx;
   varying vec2 vBUv; varying float vBrush, vFade, vDabH;
   ${GUST_GLSL}`;
 function dabProject(sway) {
@@ -209,10 +207,6 @@ function dabProject(sway) {
     float focal = projectionMatrix[1][1] * .5 * uViewH;
     float px = clamp(aInfo.x * dScale * inversesqrt(keep) * focal / camD, uDabPx.x, uDabPx.y);
     float sW = px * camD / focal;
-    // v0.12.0: painted as you go - as the painting reaches a tree its touches land one by one (with a little overshoot)
-    float pm = texture2D(uPaintMap, (dOrg.xz - uMapExt.xy) / uMapExt.zw).r;
-    float land = clamp((pm - .2 - aInfo.w * .6) / .12, 0., 1.);
-    sW *= land * (1. + .35 * sin(land * 3.1416));
     vec3 dW = normalize(mat3(dIM) * aDir);
     vec3 rgt = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), upv = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
     vec2 d2 = vec2(dot(dW, rgt), dot(dW, upv)); float dl = length(d2); d2 = dl > 1e-3 ? d2 / dl : vec2(0., 1.);
@@ -223,7 +217,7 @@ function dabProject(sway) {
     vec2 c = aCorner * vec2(sW * max(dl, aInfo.y), sW * aInfo.y * mix(.35, 1., fk)) * mix(.55, 1., fk);
     if (face < -.15) c = vec2(0.);
     vec3 dabW = cW + rgt * (c.x * d2.x - c.y * d2.y) + upv * (c.x * d2.y + c.y * d2.x) + normalize(cameraPosition - cW) * .06;
-    if (aInfo.w > keep * vFade || land <= 0.) dabW = cW;                       // dropped (thinned with distance, thinning out to nothing at the ring's edge)
+    if (aInfo.w > keep * vFade) dabW = cW;                       // dropped (thinned with distance, thinning out to nothing at the ring's edge)
     vBUv = aCorner + .5; vBrush = aInfo.z; vDabH = aInfo.w;
     vec4 mvPosition = viewMatrix * vec4(dabW, 1.);
     gl_Position = projectionMatrix * mvPosition;`;
@@ -286,37 +280,6 @@ export function setPaintQuality(q) {
   const U = PAINT.uniforms; U.uDabR.value = q.dabR ?? 0; U.uDabNear.value = q.dabNear ?? 18; U.uDabMinKeep.value = q.dabKeep ?? 0.2;
 }
 
-
-// ------------------------------------------------------------------ v0.12.0: the painting spreads from wherever you are
-// A coarse map over the whole world (13 m a texel) holds how far the painting has got. Around the canoe it rises,
-// fastest close in, so a front travels outward and trees take their strokes as it passes. It never goes back down:
-// places you've been stay painted, places you haven't are still the underdrawing.
-const MAP_N = 256, mapData = new Uint8Array(MAP_N * MAP_N), mapF = new Float32Array(MAP_N * MAP_N);
-const mapTex = new THREE.DataTexture(mapData, MAP_N, MAP_N, THREE.RedFormat, THREE.UnsignedByteType);
-mapTex.magFilter = mapTex.minFilter = THREE.LinearFilter; mapTex.wrapS = mapTex.wrapT = THREE.ClampToEdgeWrapping; mapTex.needsUpdate = true;
-PAINT.uniforms.uPaintMap.value = mapTex;
-const MAP = { R: 95, acc: 0, dirty: false };
-export function fillPaintMap(v = 1) { mapF.fill(v); mapData.fill(Math.round(v * 255)); mapTex.needsUpdate = true; }
-if (QS.get('painted') === '1' || !PAINT.on) fillPaintMap(1);
-export function paintAround(x, z, dt, rateK = 1) {
-  const e = PAINT.uniforms.uMapExt.value, cx = (x - e.x) / e.z * MAP_N, cz = (z - e.y) / e.w * MAP_N, tr = MAP.R / e.z * MAP_N;
-  const x0 = Math.max(0, Math.floor(cx - tr)), x1 = Math.min(MAP_N - 1, Math.ceil(cx + tr)), z0 = Math.max(0, Math.floor(cz - tr)), z1 = Math.min(MAP_N - 1, Math.ceil(cz + tr));
-  for (let j = z0; j <= z1; j++) for (let i = x0; i <= x1; i++) {
-    const d = Math.hypot(i + 0.5 - cx, j + 0.5 - cz) / tr; if (d >= 1) continue;
-    const k = j * MAP_N + i; if (mapF[k] >= 1) continue;
-    mapF[k] = Math.min(1, mapF[k] + dt * rateK * 0.42 * Math.pow(1 - d, 1.6));
-    const b = Math.round(mapF[k] * 255); if (b !== mapData[k]) { mapData[k] = b; MAP.dirty = true; }
-  }
-  MAP.acc += dt; if (MAP.dirty && MAP.acc > 0.15) { MAP.acc = 0; MAP.dirty = false; mapTex.needsUpdate = true; }
-}
-/** per frame: the canvas colour follows the light (bright paper by day, dim by night) */
-const _pc = new THREE.Color();
-export function setPaper(hemi, fogCol) {
-  const L = Math.min(1.05, (0.2126 * hemi.color.r + 0.7152 * hemi.color.g + 0.0722 * hemi.color.b) * hemi.intensity * 0.62 + 0.03);
-  const b = PAINT.uniforms.uBlank.value;   // at the end the canvas comes up to full daylight whatever the hour
-  _pc.setRGB(0.86, 0.82, 0.74).lerp(fogCol, 0.25 * (1 - b)).multiplyScalar(L + (1 - L) * Math.min(1, b * 1.4));
-  PAINT.uniforms.uPaper.value.copy(_pc);
-}
 
 // ------------------------------------------------------------------ v0.12.0: the painter's day
 // Each time of day is painted with six paints: [shadow, four mid colours, light]. Every colour on screen is pulled to the

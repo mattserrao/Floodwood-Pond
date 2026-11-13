@@ -6,8 +6,8 @@
 //  - soft contact shadows under trunks, rocks and stumps
 // Everything is instanced (one draw call per kind) and rebuilt only when the canoe has moved a few metres.
 import * as THREE from 'three';
-import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE } from './world.js?v=0.12.0';
-import { sampleDabs, dabMaterial, attachDabs, PAINT } from './paint.js?v=0.12.0';
+import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE } from './world.js?v=0.13.0';
+import { sampleDabs, dabMaterial, attachDabs, PAINT } from './paint.js?v=0.13.0';
 const dabRadius = () => PAINT.uniforms.uDabR.value;
 
 // ------------------------------------------------------------------ geometry helpers

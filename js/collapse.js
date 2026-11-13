@@ -6,7 +6,7 @@
 //   - the water shader discards behind the front and foams/streams toward the lip (sky.js);
 //   - a waterfall curtain hangs off the lip, spray and dust boil up along it, rubble tumbles into the dark below.
 import * as THREE from 'three';
-import { heightAt } from './world.js?v=0.12.0';
+import { heightAt } from './world.js?v=0.13.0';
 
 export const COLLAPSE = {
   uniforms: { uColO: { value: new THREE.Vector2() }, uColAxis: { value: new THREE.Vector2(0, 1) }, uColFront: { value: -1e6 }, uColOn: { value: 0 }, uQuake: { value: 0 } },

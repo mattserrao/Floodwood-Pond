@@ -1,10 +1,9 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.12.0';
-import { PAINT } from './paint.js?v=0.12.0';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.12.0';
-import { Voices } from './voices.js?v=0.12.0';
-import { recolor } from './models.js?v=0.12.0';
-import { COLLAPSE, colWob } from './collapse.js?v=0.12.0';
+import { MAP } from './mapdata.js?v=0.13.0';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.13.0';
+import { Voices } from './voices.js?v=0.13.0';
+import { recolor } from './models.js?v=0.13.0';
+import { COLLAPSE, colWob } from './collapse.js?v=0.13.0';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};
@@ -271,48 +270,9 @@ export function createStory(C) {
     puffs.push({ sp, a: rand(-1.15, 1.15), d: rand(35, 170), y: rand(2, 16), s: rand(45, 110), rs: rand(-0.12, 0.12), ph: rand(0, 6.28), cur: null });
   }
 
-  // ---------------- intro: first person, out of the tent and down to the canoe
-  const I = { t: 0, phase: 0, steps: 0, cam: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, done: false }; S.I = I;
-  const seat = () => new THREE.Vector3(launchInfo.start[0] - Math.sin(launchInfo.psi) * 0.6, 0, launchInfo.start[1] - Math.cos(launchInfo.psi) * 0.6);
-  S.startIntro = () => {
-    if (S.colReset) S.colReset();
-    I.t = 0; I.done = false; I.steps = 0; I.sat = false; I.yawW = undefined; S.ended = false; canoe.person.visible = false; canoe.paddle.visible = false;
-    $('blackout').style.transition = 'none'; $('blackout').style.opacity = 1;
-    voices.unzip();
-    setTimeout(() => { $('blackout').style.transition = 'opacity 1.6s ease'; $('blackout').style.opacity = 0; }, 900);
-  };
-  // timeline (s): 0-1.0 black + unzip | 1.0-2.8 crawl out & stand | 2.8-3.8 glance back at the tent | 3.8-4.4 hold | 4.4-5.6 turn to the water
-  //   | walk down to the dock and out along it | step down into the canoe | hand off
-  const D = CAMP.dock, toDock = () => Math.atan2(D.root[0] - tentFront.x, D.root[1] - tentFront.z);
-  const floorY = (x, z) => { const d = onDock(x, z, 0.05); return d !== null ? d : Math.max(heightAt(x, z), 0.1); };
-  const lookAhead = (pts, cum, d) => { d = Math.min(d, cum[cum.length - 1]); let i = 1; while (i < cum.length - 1 && cum[i] < d) i++; const k = (d - cum[i - 1]) / (cum[i] - cum[i - 1] || 1); return pts[i - 1].clone().lerp(pts[i], k); };
-  S.introCamera = (dt) => {
-    I.t += dt; const t = I.t, s = seat(), face = toDock();
-    const out = tentFront.clone().add(new THREE.Vector3(Math.sin(face) * 2.4 * TS2 / 1.6, 0, Math.cos(face) * 2.4 * TS2 / 1.6));
-    // walk: out of camp -> foot of the dock -> along the deck to beside the seat
-    const sa = (s.x - D.root[0]) * n[0] + (s.z - D.root[1]) * n[1];
-    const foot = new THREE.Vector3(D.root[0] - n[0] * 0.6, 0, D.root[1] - n[1] * 0.6), on = new THREE.Vector3(D.root[0] + n[0] * 0.6, 0, D.root[1] + n[1] * 0.6);
-    const edge = new THREE.Vector3(D.root[0] + n[0] * sa - side[0] * 0.55, 0, D.root[1] + n[1] * sa - side[1] * 0.55);
-    const pts = [out, foot, on, edge], cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
-    const walkLen = cum[cum.length - 1], walkT = walkLen / 2.0, tWalk0 = 5.6, tWalk1 = tWalk0 + walkT, tSit1 = tWalk1 + 1.8;   // v0.7.1: shorter - out, a quick look back, then a brisk walk down
-    let pos = new THREE.Vector3(), yaw = face, pitch = -0.08, eye = 1.62, bob = 0, absY = null;
-    if (t < 2.8) { const k = ease(clamp((t - 1.0) / 1.8, 0, 1)); pos.lerpVectors(tentFront.clone().add(new THREE.Vector3(-Math.sin(face) * 0.6, 0, -Math.cos(face) * 0.6)), out, k); eye = lerp(0.55, 1.62, ease(clamp((t - 1.6) / 1.2, 0, 1))); pitch = lerp(-0.25, -0.06, k); }
-    else if (t < tWalk0) { pos.copy(out); const back = face + Math.PI * 0.94;
-      yaw = t < 3.8 ? lerp(face, back, ease((t - 2.8) / 1.0)) : t < 4.4 ? back : lerp(back, face + Math.PI * 2, ease((t - 4.4) / 1.2)); pitch = t < 4.4 ? -0.16 : -0.07; }
-    else if (t < tWalk1) { const d = (t - tWalk0) / walkT * walkLen; pos.copy(lookAhead(pts, cum, d)); const ah = lookAhead(pts, cum, d + 2.2); if (ah.distanceTo(pos) > 0.05) yaw = Math.atan2(ah.x - pos.x, ah.z - pos.z);
-      bob = Math.abs(Math.sin(d * 1.6)) * 0.05; pitch = -0.1 - 0.1 * clamp(d / walkLen, 0, 1);
-      if (I.yawW !== undefined) { let dy = yaw - I.yawW; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); yaw = I.yawW + dy * Math.min(1, dt * 4); } I.yawW = yaw;
-      const stepN = Math.floor(d / 0.8); if (stepN > I.steps) { I.steps = stepN; const deck = onDock(pos.x, pos.z, 0.05) !== null; if (deck) { voices.thunk({ x: pos.x, y: D.deck, z: pos.z }, 0.35); voices.step(stepN % 2 ? 0.2 : -0.2, 0.35); } else voices.step(stepN % 2 ? 0.25 : -0.25, 0.9); } }
-    else if (t < tSit1) { const k = ease((t - tWalk1) / 1.8), y0 = I.yawW ?? face; let dy = launchInfo.psi - y0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-      pos.lerpVectors(edge, s, ease(clamp((t - tWalk1) / 1.1, 0, 1))); absY = lerp(D.deck + 1.62, 0.1 + 1.05, k) - Math.sin(clamp((t - tWalk1) / 1.1, 0, 1) * Math.PI) * 0.12;
-      yaw = y0 + dy * k; pitch = lerp(-0.35, -0.05, k); if (!I.sat && k > 0.5) { I.sat = true; audio.knock(0.22); audio.hullSlap && audio.hullSlap(0.6); ripples.spawn(s.x, s.z, 3, 1.8, 0.35, 0.3); } }
-    else { pos.copy(s); eye = 1.05; yaw = launchInfo.psi; absY = 0.1 + 1.05; I.done = true; }
-    const y = absY !== null ? absY : floorY(pos.x, pos.z) + eye + bob;
-    camera.position.set(pos.x, y, pos.z);
-    camera.lookAt(pos.x + Math.sin(yaw) * Math.cos(pitch) * 10, y + Math.sin(pitch) * 10, pos.z + Math.cos(yaw) * Math.cos(pitch) * 10);
-    return I.done;
-  };
-  S.endIntro = () => { canoe.person.visible = true; canoe.paddle.visible = true; };
+  // ---------------- v0.13.0: no tent scene - the game opens in the canoe at the dock (the tent stays up on the bank)
+  S.begin = () => { S.ended = false; canoe.person.visible = true; canoe.paddle.visible = true; };
+  S.endIntro = S.begin;
 
   // ---------------- events
   const tmp = new THREE.Vector3(), WHITE = new THREE.Color(1, 1, 1), INK = new THREE.Color(0.01, 0.012, 0.02);
@@ -853,7 +813,6 @@ export function createStory(C) {
     ['flotilla', 'Flotilla + tow', 175, 'flotilla'],
     ['tandems', 'Tandem kayaks', 335, 'tandems'],
     ['picnic', 'Picnic table tow', route.sVia * 0.6, 'picnic'],
-    ['quake', 'Earthquake', COL ? firstS((r) => sAx(r.x, r.z) > COL_TRIG + 3) : route.sVia * 0.3, null],
     ['island', 'Island boys / beef', firstS((r) => Math.hypot(r.x - route.BIG.c[0], r.z - route.BIG.c[1]) < bigR + 140), 'island'],
     ['camp', 'Ghost campsite (cards, hammock)', Math.max(0, (S.campS || route.sVia * 0.8) - 70), null],
     ['race', 'Race to the tree', sTree - 145, 'race'],
@@ -951,9 +910,6 @@ export function createStory(C) {
   function end() {
     S.ended = true; G.mode = 'ending'; audio.chime();
     const veil = $('veil'); veil.style.transition = 'opacity 5s ease, background-color 5s ease'; veil.style.background = '#d9dbd8';
-    // v0.12.0: with oil paint on, the world first goes back to the sketch and then to bare canvas (main.js runs uBlank over 7 s),
-    // and only then the veil - the colour of that canvas - settles over it
-    if (PAINT.on) { veil.style.transition = 'opacity 3s ease 6s'; veil.style.background = '#ddd5c4'; }
     veil.style.opacity = 1;
     const q = $('quote'); q.classList.add('on');
     [...q.querySelectorAll('span')].forEach((el, i) => setTimeout(() => el.classList.add('on'), 5200 + i * 2300));

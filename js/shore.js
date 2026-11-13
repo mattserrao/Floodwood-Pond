@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.12.0';
-import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP } from './world.js?v=0.12.0';
-import { sampleDabs, dabMaterial, attachDabs } from './paint.js?v=0.12.0';
+import { MAP } from './mapdata.js?v=0.13.0';
+import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP } from './world.js?v=0.13.0';
+import { sampleDabs, dabMaterial, attachDabs } from './paint.js?v=0.13.0';
 
 // v0.6: what a real Adirondack shoreline is made of - dead silver snags, leaning trees, granite boulders,
 // driftwood, stumps, a few docks. Everything lives within ~14 m of the water's edge, where the eye actually looks.

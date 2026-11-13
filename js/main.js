@@ -1,23 +1,23 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.12.0';
-import { AmbientAudio } from './audio.js?v=0.12.0';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.12.0';
-import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.12.0';
-import { createPost } from './post.js?v=0.12.0';
-import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.12.0';
-import { WIND, gustAt, updateWind } from './wind.js?v=0.12.0';
-import { Q } from './quality.js?v=0.12.0';
-import { WX } from './weather.js?v=0.12.0';
-import { createWildlife } from './wildlife.js?v=0.12.0';
-import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.12.0';
-import { createStory } from './story.js?v=0.12.0';
-import { buildShore } from './shore.js?v=0.12.0';
-import { loadModels } from './models.js?v=0.12.0';
-import { buildCamp } from './camp.js?v=0.12.0';
-import { createNearField } from './nearfield.js?v=0.12.0';
-import { setModels } from './story.js?v=0.12.0';
-import { createCollapse, patchScene, COLLAPSE } from './collapse.js?v=0.12.0';
-import { PAINT, paintScene, updatePaint, setPaintQuality, paintAround, setPaper, setPalette } from './paint.js?v=0.12.0';
+import { MAP } from './mapdata.js?v=0.13.0';
+import { AmbientAudio } from './audio.js?v=0.13.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.13.0';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.13.0';
+import { createPost } from './post.js?v=0.13.0';
+import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.13.0';
+import { WIND, gustAt, updateWind } from './wind.js?v=0.13.0';
+import { Q } from './quality.js?v=0.13.0';
+import { WX } from './weather.js?v=0.13.0';
+import { createWildlife } from './wildlife.js?v=0.13.0';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.13.0';
+import { createStory } from './story.js?v=0.13.0';
+import { buildShore } from './shore.js?v=0.13.0';
+import { loadModels } from './models.js?v=0.13.0';
+import { buildCamp } from './camp.js?v=0.13.0';
+import { createNearField } from './nearfield.js?v=0.13.0';
+import { setModels } from './story.js?v=0.13.0';
+import { COLLAPSE } from './collapse.js?v=0.13.0';
+import { PAINT, paintScene, updatePaint, setPaintQuality, setPalette } from './paint.js?v=0.13.0';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -97,11 +97,9 @@ function build() {
   // v0.5: the journey of memories (disable with ?free=1 for the old free-roam game)
   if (!new URLSearchParams(location.search).has('free')) { document.body.classList.add('story'); $('pRestart').textContent = 'Begin again'; }
   setModels(world.models);
-  world.collapse = createCollapse(scene);
-  if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag, collapse: world.collapse });
+  if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag, collapse: null });   // v0.13.0: no earthquake
   paintScene(scene);   // v0.11.0: every lit surface is laid in the painter's three mixes
   refl.hide.push(...PAINT.dabs.map((d) => d.mesh));   // the low-res mirror shows the painted underlayer, not every dab
-  patchScene(scene);   // v0.10.0: every material learns to fall (compiled now, not mid-quake)
 }
 // ------------------------------------------------------------------ quality tiers
 function applyQuality() {
@@ -122,7 +120,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.12.0';
+const VERSION = '0.13.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -533,7 +531,6 @@ function titleCamera(dt) {
 function updateCamera(dt, t) {
   if (G.debugCam) { camera.position.set(...G.debugCam.pos); camera.lookAt(...G.debugCam.look); return; }
   if (G.mode === 'title' && TITLE.shots.length) { titleCamera(dt); return; }
-  if (G.mode === 'intro' && story) { if (story.introCamera(dt)) { story.endIntro(); cam.pos.copy(camera.position); cam.heading = P.psi; G.mode = 'launch'; G.launchT = 0; document.body.classList.add('play'); } return; }
   let targetYaw = cam.yaw;
   if (G.mode === 'title') {
     cam.heading = launchInfo.psi; cam.yaw = 0.9 + Math.sin(t * 0.07) * 0.5; cam.pitch = 0.2; cam.dist = 15 + Math.sin(t * 0.05) * 2; targetYaw = cam.yaw;
@@ -722,12 +719,8 @@ function frame(now) {
   updateCamera(dt, G.time);
   updateEnvironment(dt, G.time);
   updateDrips(dt);
-  // v0.12.0: the painting spreads out from wherever you are; the canvas follows the light; each hour has its paints
-  if (PAINT.on) {
-    if (G.mode !== 'title') paintAround(P.x, P.z, dt, G.mode === 'intro' ? 0.8 : 1);
-    setPaper(hemi, scene.fog.color); setPalette(G.hour);
-    if (G.mode === 'ending') PAINT.uniforms.uBlank.value = Math.min(1, PAINT.uniforms.uBlank.value + dt / 7);
-  }
+  // v0.12.0: each hour has its paints
+  if (PAINT.on) setPalette(G.hour);
   if (G.mode === 'play' || G.mode === 'launch') drawMini();
   if (story && G.mode !== 'play' && G.mode !== 'ending') story.update(0, G.time);
   // cinematic mode: simulate every frame, but only render ~30 times a second (even on 60/120 Hz screens)
@@ -770,8 +763,9 @@ function startGame() {
   }
   started = true;
   $('title').classList.add('hide'); $('cut').style.opacity = 0;
-  if (story) { G.mode = 'intro'; story.startIntro(); if (SKIP_AT) setTimeout(() => story.skipTo(SKIP_AT), 50); return; }
-  G.mode = 'launch'; G.launchT = 0;
+  // v0.13.0: straight into the canoe at the dock - no tent scene
+  if (story) { story.begin(); if (SKIP_AT) setTimeout(() => story.skipTo(SKIP_AT), 50); }
+  G.mode = 'launch'; G.launchT = 0; G.splashed = false; G.snap = true;
   document.body.classList.add('play');
 }
 const onTitleGesture = (e) => { if (!$('title').classList.contains('hide')) { e.preventDefault(); startGame(); } };

@@ -4,20 +4,15 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
-## v0.12.0 (test branch): painted as you go + the painter's day
-Builds on the oil paint below (v0.11.0's look is all here).
-- **Painted as you go.** The brush strokes aren't there until you are: the painting spreads outward from the canoe
-  (fastest close in) and each tree takes its strokes one by one as the front reaches it. Places you've been keep their
-  strokes. (A 256 x 256 map over the world, `paintAround()` in `js/paint.js`.) The rest of the world keeps the painted
-  underlayer, so nothing looks unfinished at a distance.
-- **The mist is bare canvas.**
-- **The ending goes back to canvas**: in the creek fog the painting fades to blank canvas, then the veil (now
-  canvas-coloured) settles.
+## v0.13.0 (test branch): the painter's day
+Builds on the oil paint below (v0.11.0's look is all here), from v0.10.0.
+- **Starts in the canoe** at the dock: the tent opening scene is gone (the tent is still up on the bank).
+- **No earthquake**: the collapse, the waterfall edge and the push toward Big Island are gone; paddle where you like.
 - **The painter's day.** Each time of day is painted with six paints (`PALETTES` in `js/paint.js`); every colour is pulled
   to the nearest one, keeping its value, with shadows and lights leaning to the hour's shadow and light paints. Golden hour
   and sunset go wild: violet shadows, orange and red water, green-gold sky.
 - **Thick light**: the sun, the glitter and the brightest cloud edges stand up off the canvas and throw a small shadow.
-- `?painted=1` starts with everything painted. "Oil paint off" turns all of it off.
+- "Oil paint off" in the pause menu turns all of it off.
 
 ## v0.11.0 (test branch): oil paint
 A painted look, inspired by [Oil Paint](https://patch.gg/blendi/oil-paint) by @blendi on Patch (MIT): the near world is built

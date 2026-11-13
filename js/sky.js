@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { EXT, sstep, clamp, lerp } from './world.js?v=0.12.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.12.0';
-import { COLLAPSE, COLLAPSE_GLSL } from './collapse.js?v=0.12.0';
-import { PAINT, PAINT_GLSL } from './paint.js?v=0.12.0';
+import { EXT, sstep, clamp, lerp } from './world.js?v=0.13.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.13.0';
+import { COLLAPSE, COLLAPSE_GLSL } from './collapse.js?v=0.13.0';
+import { PAINT, PAINT_GLSL } from './paint.js?v=0.13.0';
 
 // v0.11.0 oil paint on the water: world-pinned strokes that always run level across the screen (a short line-integral of
 // noise taken perpendicular to the line of sight), so the mirror breaks into horizontal touches of paint as a painter
@@ -64,7 +64,7 @@ export function createSky() {
       uSun: { value: new THREE.Vector3(0, 1, 0) }, uMoon: { value: new THREE.Vector3(0, -1, 0) }, uSunCol: { value: new THREE.Color() },
       uSunI: { value: 0 }, uGlow: { value: 1 }, uMoonI: { value: 0 }, uStars: { value: 0 }, uTime: { value: 0 },
       uCloudLit: { value: new THREE.Color() }, uCloudShade: { value: new THREE.Color() },
-      uPhase: { value: 0.5 }, uFogCol: { value: new THREE.Color() }, uFogMix: { value: 0 }, uCover: { value: 0 }, uColOn: COLLAPSE.uniforms.uColOn, uPaintOn: PAINT.uniforms.uPaintOn, uPaper: PAINT.uniforms.uPaper, uBlank: PAINT.uniforms.uBlank, uPaintMap: PAINT.uniforms.uPaintMap, uMapExt: PAINT.uniforms.uMapExt,
+      uPhase: { value: 0.5 }, uFogCol: { value: new THREE.Color() }, uFogMix: { value: 0 }, uCover: { value: 0 }, uColOn: COLLAPSE.uniforms.uColOn, uPaintOn: PAINT.uniforms.uPaintOn,
     },
     vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * p; gl_Position.z = gl_Position.w * 0.99999; }`,
     fragmentShader: `
@@ -142,7 +142,6 @@ export function createWater(depthTex) {
       tRefl: { value: null }, uReflOn: { value: 0 }, uTexMat: { value: new THREE.Matrix4() }, uTreeCol: { value: new THREE.Color(0x0c1a10) },
       uRain: { value: 0 }, uCover: { value: 0 }, uReflRes: { value: new THREE.Vector2(4, 4) },
       ...WIND.uniforms, ...COLLAPSE.uniforms, uPaintOn: PAINT.uniforms.uPaintOn,
-      uPaper: PAINT.uniforms.uPaper, uBlank: PAINT.uniforms.uBlank, uPaintMap: PAINT.uniforms.uPaintMap, uMapExt: PAINT.uniforms.uMapExt,
     },
     vertexShader: `uniform mat4 uTexMat; varying vec3 vW; varying vec4 vR;
       void main(){ vec4 w = modelMatrix*vec4(position,1.); vW = w.xyz; vR = uTexMat * w; gl_Position = projectionMatrix*viewMatrix*w; }`,
