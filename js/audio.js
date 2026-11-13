@@ -1,19 +1,15 @@
-// Procedural ambience for Floodwood Pond: generative music (eerie since v0.13.0) + nature sounds, all synthesized with Web Audio.
+// Procedural ambience for Floodwood Pond: generative calm music + nature sounds, all synthesized with Web Audio.
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
-// v0.13.0: eerie. The day theme drifts between chords that don't quite belong together - D minor with a rubbing ninth,
-// a Bb with a tritone E on top, a sudden F# minor (a chromatic mediant: the floor shifts), G minor over D, a diminished
-// chord that never resolves - and the melody walks D phrygian with a flattened fifth.
 const CHORDS = [
-  [38, 50, 53, 57, 64],   // Dm(add9)
-  [34, 46, 53, 57, 64],   // Bbmaj7#11
-  [42, 54, 57, 61, 66],   // F#m - the shift
-  [38, 50, 55, 58, 69],   // Gm(add9)/D
-  [40, 49, 55, 58, 64],   // C#dim7/E
+  [50, 57, 64, 66],       // Dsus2/F#
+  [47, 54, 57, 62, 66],   // Bm7
+  [43, 50, 54, 59, 66],   // Gmaj7
+  [45, 52, 57, 59, 64],   // A6sus
 ];
-const PENTA = [62, 63, 65, 67, 68, 70, 72, 74, 75, 77, 80]; // D phrygian with a b5 (name kept for the old code paths)
+const PENTA = [62, 64, 66, 69, 71, 74, 76, 78, 81, 83, 86]; // D major pentatonic
 // v0.7.0: the night crossing from Big Island to the creek - D minor, falling, i - VI - iv - V
 const DARK_CHORDS = [
   [38, 50, 57, 62, 65],   // Dm
@@ -268,9 +264,7 @@ export class AmbientAudio {
     // hull slaps: little wavelets clapping against the canoe, more of them when the wind is up
     if (s.play && Math.random() < 0.35 * (0.25 + 1.6 * gu)) this.slapTimer = (this.slapTimer || 0) - 1;
     if (this.slapTimer < 0) { this.slapTimer = 4 + Math.random() * 10; this.hullSlap(0.4 + gu); }
-    // creak: the hull and seat flex in a turn
-    const turn = Math.abs(s.turn || 0); this.creakT = (this.creakT || 0) - 1;
-    if (turn > 0.35 && this.creakT < 0 && Math.random() < 0.12) { this.creakT = 300 + Math.random() * 400; this.creak(turn); }
+    // v0.13.0: the hull creak is gone - its buzzy, pulsing tone sounded like a frog croaking (it fired on the first turn off the dock)
   }
 
   // ---------- one-shots ----------
@@ -350,14 +344,7 @@ export class AmbientAudio {
     src.connect(f); f.connect(g); g.connect(p); p.connect(this.natureBus); src.start(t, Math.random() * 4, 0.25);
     const o = this.osc('sine', rand(95, 130)), og = ctx.createGain(); og.gain.setValueAtTime(0.03 * power, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1); o.connect(og); og.connect(p); o.start(t); o.stop(t + 0.12);
   }
-  creak(k = 1) {
-    if (!this.ctx) return; const ctx = this.ctx, t = ctx.currentTime, dur = rand(0.35, 0.7);
-    const o = this.osc('sawtooth', rand(140, 190)), bp = ctx.createBiquadFilter(), g = ctx.createGain(), am = this.osc('square', rand(28, 45)), amg = ctx.createGain();
-    bp.type = 'bandpass'; bp.Q.value = 6; bp.frequency.setValueAtTime(rand(700, 1000), t); bp.frequency.linearRampToValueAtTime(rand(450, 650), t + dur);
-    o.frequency.linearRampToValueAtTime(o.frequency.value * 0.8, t + dur); amg.gain.value = 0.5; am.connect(amg); amg.connect(g.gain);
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.012 * k, t + 0.08); g.gain.linearRampToValueAtTime(0, t + dur);
-    o.connect(bp); bp.connect(g); g.connect(this.natureBus); o.start(t); am.start(t); o.stop(t + dur + 0.05); am.stop(t + dur + 0.05);
-  }
+
 
   // ---------- v0.4: wildlife voices, placed in the world ----------
   _tone(out, t, f0, f1, len, vol, type = 'sine', vib = 0, vibHz = 6) {
@@ -406,8 +393,8 @@ export class AmbientAudio {
   chime() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    [74, 76, 78, 80, 82, 84, 86].forEach((m, i) => this.pluck(t + 0.1 + i * 0.42, mtof(m), 0.05));   // v0.13.0: a whole-tone climb that goes nowhere
-    this.pad(t + 0.2, [62, 68, 74, 76], 9);
+    [74, 78, 81, 86, 90, 93, 98].forEach((m, i) => this.pluck(t + 0.1 + i * 0.32, mtof(m), 0.06));
+    this.pad(t + 0.2, [62, 69, 74, 78], 9);
   }
 
   // ---------- scheduled generative layers ----------
@@ -423,27 +410,24 @@ export class AmbientAudio {
       else { const chord = CHORDS[this.chordIdx++ % CHORDS.length]; this.pad(this.t.chord, chord, 15); }
       this.t.chord += period;
     }
-    if (!this.drone) { const ctx2 = this.ctx, g = ctx2.createGain(); g.gain.value = 0; const lp = ctx2.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300; lp.connect(g); g.connect(this.musicBus);
-      // v0.13.0: always on, soft by day - D, a beating D, its octave, and a faint G# (the tritone underneath everything)
-      [36.7, 36.95, 73.4, 51.9].forEach((f, i) => { const o = this.osc(i < 2 ? 'sawtooth' : 'sine', f); const og = ctx2.createGain(); og.gain.value = i < 2 ? 0.25 : i === 2 ? 0.4 : 0.12; o.connect(og); og.connect(lp); o.start(); });
+    // a low D drone under the night theme
+    if (dk > 0.05 && !this.drone) { const ctx2 = this.ctx, g = ctx2.createGain(); g.gain.value = 0; const lp = ctx2.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300; lp.connect(g); g.connect(this.musicBus);
+      [36.7, 36.95, 73.4].forEach((f, i) => { const o = this.osc(i < 2 ? 'sawtooth' : 'sine', f); const og = ctx2.createGain(); og.gain.value = i < 2 ? 0.25 : 0.4; o.connect(og); og.connect(lp); o.start(); });
       this.drone = { g, lp }; }
-    if (this.drone) { this.drone.g.gain.setTargetAtTime(0.022 + 0.02 * s.night + dk * (0.03 + 0.1 * di), now, 1.5); this.drone.lp.frequency.setTargetAtTime(220 + 500 * di, now, 2); }
+    if (this.drone) { this.drone.g.gain.setTargetAtTime(dk * (0.05 + 0.1 * di), now, 1.5); this.drone.lp.frequency.setTargetAtTime(220 + 500 * di, now, 2); }
     // Melody
     if (now + 0.4 > this.t.note) {
-      const rest = Math.random() < (darkOn ? 0.2 : 0.38 + 0.2 * s.night);   // v0.13.0: sparser
+      const rest = Math.random() < (darkOn ? 0.12 : 0.18 + 0.25 * s.night);
       if (!rest) {
         const SC = darkOn ? MINOR : PENTA;
         this.melIdx = Math.max(0, Math.min(SC.length - 1, this.melIdx + pick(darkOn ? [-2, -1, -1, -1, 0, 1, 2] : [-2, -1, -1, 0, 1, 1, 2])));
         let m = SC[this.melIdx] - (s.night > 0.5 && !darkOn ? 12 : 0);
         this.pluck(this.t.note, mtof(m), rand(0.07, 0.14) * (darkOn ? 1 + 0.8 * di : 1 - 0.3 * s.night));
         if (darkOn && di > 0.5 && Math.random() < 0.4) this.pluck(this.t.note, mtof(m - 12), 0.06 * di);
-        if (Math.random() < 0.22) this.pluck(this.t.note + 0.5, mtof(m + pick([1, 6, 11])), 0.045);   // a semitone, a tritone, a major seventh: the answer is always a little wrong
+        if (Math.random() < 0.18) this.pluck(this.t.note + 0.34, mtof(m + pick([2, 5, 7])), 0.05);
       }
-      this.t.note += darkOn ? rand(1.4, 3.2) - 0.6 * di : rand(2.2, 5.0) + s.night * 1.6;
+      this.t.note += darkOn ? rand(1.0, 2.6) - 0.6 * di : rand(1.3, 3.4) + s.night * 1.4;
     }
-    // v0.13.0: now and then something rises out of the quiet - a breathy swell, or a thin tone that slides up and stops
-    if (this.t.eerie === undefined) this.t.eerie = now + rand(25, 45);
-    if (now > this.t.eerie) { this.eerie(now + 0.1); this.t.eerie = now + rand(35, 75); }
     // Birds (day / dawn)
     if (now > this.t.bird) {
       const lvl = Math.max(0, s.day * 0.7 + s.dawn * 1.0 - s.night);
@@ -463,32 +447,15 @@ export class AmbientAudio {
     }
   }
 
-  eerie(t) {
-    const ctx = this.ctx;
-    if (Math.random() < 0.5) {   // breath: filtered noise that swells and sinks, sweeping down
-      const n = ctx.createBufferSource(); n.buffer = this.pink || this.white; n.loop = true;
-      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 6; bp.frequency.setValueAtTime(rand(900, 1400), t); bp.frequency.exponentialRampToValueAtTime(rand(250, 400), t + 7);
-      const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.05, t + 3.5); g.gain.linearRampToValueAtTime(0.0001, t + 7.5);
-      const p = this.panner(rand(-0.8, 0.8)); n.connect(bp); bp.connect(g); g.connect(p); p.connect(this.musicBus); n.start(t); n.stop(t + 8);
-    } else {                     // a thin tone sliding up a tritone, then simply gone
-      const f = mtof(pick([74, 75, 80, 81])), o = this.osc('sine', f), o2 = this.osc('sine', f * 1.004), g = ctx.createGain();
-      o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 1.414, t + 6); o2.frequency.setValueAtTime(f * 1.004, t); o2.frequency.exponentialRampToValueAtTime(f * 1.42, t + 6);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.03, t + 5.8); g.gain.linearRampToValueAtTime(0.0001, t + 6.05);
-      const p = this.panner(rand(-0.6, 0.6)); o.connect(g); o2.connect(g); g.connect(p); p.connect(this.musicBus); o.start(t); o2.start(t); o.stop(t + 6.2); o2.stop(t + 6.2);
-    }
-  }
-
   pad(t, midis, dur, k = 1, cut = null) {
     const ctx = this.ctx;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = cut || 700 - 250 * this.s.night; lp.Q.value = 0.9;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = cut || 900 - 250 * this.s.night; lp.Q.value = 0.3;
     const g = ctx.createGain(), a = Math.min(4, dur * 0.35), v = 0.11 * k;
     g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + a); g.gain.setValueAtTime(v, t + Math.max(a, dur - 5)); g.gain.linearRampToValueAtTime(0.0001, t + dur);
     lp.connect(g); g.connect(this.musicBus);
     midis.forEach((m, i) => {
-      [['triangle', 0, 0.5], ['sine', 14, 0.7], ['sine', -12, 0.5]].forEach(([type, det, vol]) => {   // v0.13.0: wider, beating detune
+      [['triangle', 0, 0.5], ['sine', 7, 0.7], ['sine', -6, 0.5]].forEach(([type, det, vol]) => {
         const o = this.osc(type, mtof(m)); o.detune.value = det + i * 1.5;
-        // ...and each voice wanders slowly off pitch and back, so the chord never quite settles
-        const w = this.osc('sine', rand(0.04, 0.11)), wg = ctx.createGain(); wg.gain.value = rand(6, 14); w.connect(wg); wg.connect(o.detune); w.start(t); w.stop(t + dur + 0.2);
         const og = ctx.createGain(); og.gain.value = vol / midis.length * 1.6;
         o.connect(og); og.connect(lp); o.start(t); o.stop(t + dur + 0.2);
       });
@@ -515,8 +482,8 @@ export class AmbientAudio {
     const n = ctx.createBufferSource(); n.buffer = this.white; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8; bp.frequency.setValueAtTime(800, t); bp.frequency.exponentialRampToValueAtTime(6000, t + L);
     const ng = ctx.createGain(); ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.05, t + L - 0.2); ng.gain.linearRampToValueAtTime(0.0001, t + L + 0.3); n.connect(bp); bp.connect(ng); ng.connect(this.musicBus); n.start(t, 0, L + 0.5);
     // the turn: D major opens out, long and bright, then the home theme carries on from here
-    this.pad(t + L, [38, 50, 57, 62, 64, 69, 75], 16, 2.2, 1800); this.strings(t + L, [62, 64, 69, 75], 12, 1);   // v0.13.0: open, no third, a b9 on top
-    [74, 75, 81, 80].forEach((m, i) => this.pluck(t + L + 0.4 + i * 0.6, mtof(m), 0.1));
+    this.pad(t + L, [38, 50, 57, 62, 66, 69, 74], 16, 2.2, 2400); this.strings(t + L, [62, 66, 69, 74], 12, 1);
+    [74, 78, 81, 86].forEach((m, i) => this.pluck(t + L + 0.4 + i * 0.45, mtof(m), 0.12));
     this.t.chord = t + L + 12; this.chordIdx = 1; this.t.note = t + L + 2.5; this.melIdx = 6;
   }
 
@@ -525,9 +492,8 @@ export class AmbientAudio {
     hp.type = 'highpass'; hp.frequency.value = 180;
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
     const p = this.panner(rand(-0.4, 0.4));
-    [['sine', 1, 1], ['sine', 2.76, 0.1], ['sine', 5.4, 0.04]].forEach(([type, mult, amp]) => {   // v0.13.0: inharmonic partials - glass, not string
+    [['sine', 1, 1], ['triangle', 2, 0.18], ['sine', 3.01, 0.06]].forEach(([type, mult, amp]) => {
       const o = this.osc(type, f * mult), og = ctx.createGain(); og.gain.value = amp;
-      o.detune.setValueAtTime(0, t); o.detune.linearRampToValueAtTime(-28, t + 3.2);   // each note sags as it rings
       o.connect(og); og.connect(hp); o.start(t); o.stop(t + 3.4);
     });
     hp.connect(g); g.connect(p); p.connect(this.musicBus);

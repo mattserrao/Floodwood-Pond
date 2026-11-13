@@ -11,11 +11,8 @@ Builds on the oil paint below (v0.11.0's look is all here), from v0.10.0.
 - **No memories**: the ghost memories, the ghost campsite, their voices and sounds, their models and the
   `audio/memories/` clip folder are all gone (the deer in the creek is real, so it stays). The test-build "Skip to" list in
   the pause menu is now just: on the water, Big Island, the deer, the creek mouth, the ending.
-- **Eerie music** (`js/audio.js`): the day chords drift between keys that don't quite belong together (D minor with a
-  rubbing ninth, Bb with a tritone on top, a sudden F# minor, a diminished chord that never resolves); the melody is sparse,
-  in D phrygian with a flattened fifth, in glassy notes that sag in pitch as they ring; pads beat and wander off pitch;
-  a low drone with a faint tritone runs all the time; now and then a breathy swell or a thin tone sliding up a tritone.
-  The creek's big moment opens onto a bare fifth (no third) instead of D major, and the ending chime is a whole-tone climb.
+- **Music** is back to the original calm theme (an eerie version was tried and dropped).
+- **No hull creak**: it sounded like a frog croaking as you turned off the dock.
 - **The painter's day.** Each time of day is painted with six paints (`PALETTES` in `js/paint.js`); every colour is pulled
   to the nearest one, keeping its value, with shadows and lights leaning to the hour's shadow and light paints. Golden hour
   and sunset go wild: violet shadows, orange and red water, green-gold sky.
