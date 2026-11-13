@@ -8,8 +8,9 @@ from a pre-dawn sky through day, golden hour and a starry night.
 Builds on the oil paint below (v0.11.0's look is all here), from v0.10.0.
 - **Starts in the canoe** at the dock: the tent opening scene is gone (the tent is still up on the bank).
 - **No earthquake**: the collapse, the waterfall edge and the push toward Big Island are gone; paddle where you like.
-- **No memories**: the ghost memories and the ghost campsite are gone (the deer in the creek is real, so it stays).
-  Skip-to points are now just: on the water, Big Island, the deer, the creek mouth, the ending.
+- **No memories**: the ghost memories, the ghost campsite, their voices and sounds, their models and the
+  `audio/memories/` clip folder are all gone (the deer in the creek is real, so it stays). The test-build "Skip to" list in
+  the pause menu is now just: on the water, Big Island, the deer, the creek mouth, the ending.
 - **Eerie music** (`js/audio.js`): the day chords drift between keys that don't quite belong together (D minor with a
   rubbing ninth, Bb with a tritone on top, a sudden F# minor, a diminished chord that never resolves); the melody is sparse,
   in D phrygian with a flattened fifth, in glassy notes that sag in pitch as they ring; pads beat and wander off pitch;

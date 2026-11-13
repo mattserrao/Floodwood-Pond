@@ -774,7 +774,8 @@ $('endcard').addEventListener('click', () => location.reload());
 $('title').addEventListener('touchend', onTitleGesture, { passive: false });
 addEventListener('keydown', (e) => { if ((!started || G.menu) && !['escape', 'm', 'p'].includes(e.key.toLowerCase())) onTitleGesture(e); });
 
-loadModels(['tent', 'paddler', 'kayaker', 'boyStand', 'boyLeap', 'kayak1', 'kayak2', 'canoe', 'paddleDouble', 'paddleSingle', 'picnicTable', 'cantaloupe', 'rowboat', 'dock', 'launchDock', 'rower', 'canoeAlu', 'deer', 'fisher']).then((m) => { world.models = m; boot(); });
+// v0.13.0: the memories' models are no longer loaded
+loadModels(['tent', 'paddler', 'canoe', 'paddleSingle', 'rowboat', 'dock', 'launchDock', 'rower', 'canoeAlu', 'deer']).then((m) => { world.models = m; boot(); });
 function boot() {
   try {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap(); buildTitleShots(); buildSkips();
