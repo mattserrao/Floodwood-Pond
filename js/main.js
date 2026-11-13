@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js?v=0.13.0';
 import { AmbientAudio } from './audio.js?v=0.13.0';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.13.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, MOUNTAINS, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.13.0';
 import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.13.0';
 import { createPost } from './post.js?v=0.13.0';
 import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.13.0';
@@ -34,7 +34,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure
 renderer.info.autoReset = false; // reset once per frame so the counts cover every pass (reflection + main + post)
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xaabbcc, 0.0007);
-const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 9000);
+const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 30000);   // v0.13.0: far enough for the mountains (26 km)
 function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 const post = createPost(renderer);
@@ -626,6 +626,7 @@ function updateEnvironment(dt, t) {
     U.uLift.value = Math.max(0.85 * sstep(0.12, 0.5, sunV.y) * (1 - WXF), 0.9 * lift); U.uBay.value = 1;
     U.uHaze.value.copy(pal.hor).lerp(greyB.copy(pal.mid), 0.35).lerp(greyA.setRGB(0.62, 0.66, 0.72), 0.3 * cover);
     U.uHazeK.value = (1.6 + 0.8 * dawnHaze * (1 - lift) + 0.6 * nightHaze + 0.7 * cover + 1.4 * WXF) * (1 - 0.35 * lift);
+    MOUNTAINS.uniforms.uMtnHaze.value.copy(U.uHaze.value); MOUNTAINS.uniforms.uMtnHazeL.value = 13000 / Math.max(U.uHazeK.value, 0.5);   // v0.13.0: the mountains' own layered haze
     U.uSunDir.value.copy(sunV.y > -0.05 ? sunV : moonV); U.uSunCol.value.copy(pal.sun).multiplyScalar(sstep(-0.05, 0.15, sunV.y));
     U.uWake.value.set(Math.sin(P.psi), Math.cos(P.psi)); U.uSpeed.value = Math.hypot(P.vx, P.vz); }
   // the fog decides how far you can see; whole forest tiles past that are skipped

@@ -728,24 +728,103 @@ function buildLitter(scene) {
   return pts.length;
 }
 
-// ---------- far mountains ring (St. Regis Mtn & friends, stylised) ----------
+// ---------- far mountains (v0.13.0) ----------
+// The old ring of scaled blobs (26 spheres 2.6-3.9 km out, all about the same size) read as nearby lumps. Now one
+// continuous heightfield from just past the forest out to ~26 km, so the hills stack up in ranges the way they do from
+// an Adirondack pond: low forested hills close behind the shore (150-250 m above the water), a higher range a few
+// km back, and a thin, sharp line of high peaks far off (a stand-in for the High Peaks, scaled to look right from here),
+// with the earth's curve dropping the farthest ridges. The one rounded peak seen across the pond from camp stays.
+// Aerial perspective is its own (MOUNTAINS.uniforms), so ranges separate into paler, bluer layers with distance.
+export const MOUNTAINS = { uniforms: { uMtnHaze: { value: new THREE.Color(0.62, 0.68, 0.76) }, uMtnHazeL: { value: 11000 } } };
+function mHash(x, y) { let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function mNoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = mHash(xi, yi), b = mHash(xi + 1, yi), c = mHash(xi, yi + 1), d = mHash(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function mFbm(x, y, o = 5) { let s = 0, a = 0.5, f = 1; for (let i = 0; i < o; i++) { s += a * mNoise(x * f, y * f); f *= 2.03; a *= 0.5; } return s; }
+// ridged: sharp crests, soft valleys; each octave weighted by the one before so crests carry the detail
+function mRidged(x, y, o = 6, sharp = 2) { let s = 0, a = 0.55, f = 1, w = 1;
+  for (let i = 0; i < o; i++) { let n = 1 - Math.abs(mNoise(x * f + i * 17.3, y * f - i * 9.1) * 2 - 1); n = Math.pow(n, sharp); s += n * a * w; w = Math.min(1, n * 1.6); f *= 2.1; a *= 0.5; }
+  return s; }
+const mStep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 export function buildMountains(scene) {
-  const g = new THREE.Group();
-  const geo = new THREE.IcosahedronGeometry(1, 1);
-  const mats = [0x1d3a33, 0x23443a, 0x2a4a3c].map((c) => new THREE.MeshStandardMaterial({ color: c, flatShading: true, roughness: 1 }));
-  for (let i = 0; i < 26; i++) {
-    const a = (i / 26) * Math.PI * 2 + rnd() * 0.15, r = 2600 + rnd() * 1300, w = 500 + rnd() * 700, hh = 220 + rnd() * 420;
-    const m = new THREE.Mesh(geo, mats[i % 3]); m.scale.set(w, hh, w * (0.7 + rnd() * 0.5));
-    m.position.set(Math.cos(a) * r * 1.15, hh * 0.25 - 40, Math.sin(a) * r); m.rotation.y = rnd() * 6; g.add(m);
+  const ring = MAP.pond[0]; let cx = 0, cz = 0; ring.forEach((p) => { cx += p[0]; cz += p[1]; }); cx /= ring.length; cz /= ring.length;
+  let dx = cx - CAMP.q[0], dz = cz - CAMP.q[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+  const PK = { x: cx + dx * 2900 + dz * 300, z: cz + dz * 2900 - dx * 300 }; WORLD.peak = PK;   // the peak seen across the pond from camp
+  const heroA = Math.atan2(PK.z - cz, PK.x - cx), farA = heroA + 0.9;                            // the far high peaks sit off to one side of it
+  const R0 = 2250, R1 = 26000;
+  const H = (x, z) => {
+    const ex = x - cx, ez = z - cz, r = Math.hypot(ex, ez), a = Math.atan2(ez, ex);
+    // near hills: rounded, forested, 100-400 m above the water, starting right behind the forest
+    let h = 40 + (mFbm(x / 1500, z / 1500, 5) * 1.35 - 0.15) * 280 * mStep(R0, 3100, r) + mRidged(x / 2400, z / 2400, 4, 1.4) * 130 * mStep(R0 + 200, 3600, r);
+    // the next range back: higher and more broken
+    h += mRidged(x / 5200 + 3.1, z / 5200 - 1.7, 6, 1.8) * 700 * mStep(4200, 9000, r) * (0.55 + 0.6 * mFbm(x / 9000, z / 9000, 2));
+    // the peak across the pond: a rounded summit on long shoulders
+    const pr = Math.hypot((x - PK.x) / 1150, (z - PK.z) / 1500);
+    h += 420 * Math.exp(-pr * pr * 1.3) * (0.8 + 0.3 * mRidged(x / 900 + 2, z / 900, 4, 1.5)) + 110 * Math.exp(-Math.pow(Math.hypot((x - PK.x - dz * 1500) / 1100, (z - PK.z + dx * 1500) / 1300), 2));
+    // far high peaks: a sharp, jagged band 17-25 km out across ~70 degrees of the horizon
+    let da = Math.abs(((a - farA + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    h += mRidged(x / 3800 - 5.3, z / 3800 + 2.2, 7, 2.6) * 1250 * mStep(15500, 19500, r) * (1 - mStep(24000, R1, r)) * (1 - mStep(0.5, 0.75, da));
+    // the canopy: a few metres of lumpy treetops everywhere, so the skyline is ragged, not a smooth curve
+    h += (mFbm(x / 70, z / 70, 3) - 0.5) * 14 * mStep(R0 + 200, R0 + 900, r) * (1 - mStep(8000, 14000, r));
+    // the earth's curve (with refraction) drops the far ridges
+    h -= r * r / 12.742e6 * 0.87;
+    // start just above the water at the edge of the terrain (under the forest canopy), never dipping under the water plane
+    return Math.max(4, 4 + (h - 4) * mStep(R0, R0 + 500, r));
+  };
+  const NA = 1024, NR = 150, pos = new Float32Array(NA * NR * 3), col = new Float32Array(NA * NR * 3), rs = new Float32Array(NR);
+  for (let k = 0; k < NR; k++) { const t = k / (NR - 1); rs[k] = R0 * Math.pow(R1 / R0, Math.pow(t, 1.15)); }
+  const c = new THREE.Color(), cA = new THREE.Color(0x1f3a2c), cB = new THREE.Color(0x2c4a32), cFall = new THREE.Color(0x6b5a2e), cRust = new THREE.Color(0x6a3a22), cRock = new THREE.Color(0x5c6268), cSnow = new THREE.Color(0xb9c0c8);
+  for (let k = 0; k < NR; k++) for (let i = 0; i < NA; i++) {
+    const a = (i / NA) * Math.PI * 2 + (k % 2) * Math.PI / NA, x = cx + Math.cos(a) * rs[k], z = cz + Math.sin(a) * rs[k], y = H(x, z), o = (k * NA + i) * 3;
+    pos[o] = x; pos[o + 1] = y; pos[o + 2] = z;
+    // forest, with autumn hardwoods mottling the lower slopes and bare rock (and a dusting) on the high far peaks
+    const n = mFbm(x / 260, z / 260, 3), m = mFbm(x / 90 + 3, z / 90, 2), hr = y + rs[k] * rs[k] / 12.742e6 * 0.87;
+    c.copy(cA).lerp(cB, n);
+    if (rs[k] < 12000) c.lerp(m > 0.55 ? cFall : cRust, mStep(0.45, 0.75, m) * 0.55 * (1 - mStep(250, 450, hr)));
+    c.lerp(cRock, mStep(700, 1000, hr) * 0.7); c.lerp(cSnow, mStep(1050, 1250, hr) * 0.6);
+    col[o] = c.r; col[o + 1] = c.g; col[o + 2] = c.b;
   }
-  // v0.7.0 (photos 1, 19-21): one distinct rounded peak standing behind the far shore, seen across the pond from camp
-  { const ring = MAP.pond[0]; let cx = 0, cz = 0; ring.forEach((p) => { cx += p[0]; cz += p[1]; }); cx /= ring.length; cz /= ring.length;
-    let dx = cx - CAMP.q[0], dz = cz - CAMP.q[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-    const px = cx + dx * 2300 + dz * 300, pz = cz + dz * 2300 - dx * 300, peakMat = new THREE.MeshStandardMaterial({ color: 0x24403a, flatShading: true, roughness: 1 });
-    const peak = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), peakMat); peak.scale.set(820, 360, 700); peak.position.set(px, -60, pz); peak.rotation.y = Math.atan2(dx, dz); g.add(peak);
-    const sh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), peakMat); sh.scale.set(700, 250, 600); sh.position.set(px + dz * 650, -40, pz - dx * 650); g.add(sh);
-    WORLD.peak = { x: px, z: pz }; }
-  scene.add(g); return g;
+  const idx = new Uint32Array((NR - 1) * NA * 6); let q = 0;
+  for (let k = 0; k < NR - 1; k++) for (let i = 0; i < NA; i++) {
+    const a = k * NA + i, b = k * NA + (i + 1) % NA, cc = (k + 1) * NA + i, d = (k + 1) * NA + (i + 1) % NA;
+    idx[q++] = a; idx[q++] = b; idx[q++] = cc; idx[q++] = b; idx[q++] = d; idx[q++] = cc;   // wound so the faces (and normals) point up
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals(); geo.computeBoundingSphere();
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, fog: false });
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, MOUNTAINS.uniforms);
+    sh.vertexShader = 'varying vec3 vMtnW, vMtnN;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n vMtnW = (modelMatrix * vec4(transformed, 1.)).xyz; vMtnN = normalize(mat3(modelMatrix) * objectNormal);');
+    sh.fragmentShader = 'uniform vec3 uMtnHaze; uniform float uMtnHazeL; varying vec3 vMtnW, vMtnN;\n' + `
+      float mH(vec2 p){ p = fract(p * vec2(.1031, .1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
+      float mN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(mH(i), mH(i + vec2(1, 0)), f.x), mix(mH(i + vec2(0, 1)), mH(i + 1.), f.x), f.y); }
+      // treetops: each crown a lit top and a shaded underside, fading to an even tone where they'd be sub-pixel
+      float crowns(vec2 p){ vec2 c = floor(p), f = fract(p) - .5; float o = mH(c) - .5; return smoothstep(.5, .1, length(f + vec2(o, mH(c + 7.) - .5) * .4)) * (.6 + .4 * f.y + .3 * o); }
+    ` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      { float d = length(vMtnW - cameraPosition), slope = 1. - clamp(vMtnN.y, 0., 1.);
+        float near = 1. - smoothstep(3500., 9000., d);
+        float cr = crowns(vMtnW.xz / 16.) * .5 + crowns(vMtnW.xz / 31. + 3.7) * .5;
+        // autumn: crowns are spruce green, birch gold or maple rust, in stands (sparser up high)
+        float pick = mH(floor(vMtnW.xz / 16.) + 11.), fall = mN(vMtnW.xz / 220. + 5.) * (1. - smoothstep(380., 650., vMtnW.y));
+        vec3 tint = pick < .45 + .4 * (1. - fall) ? vec3(1.) : pick < .8 ? vec3(2.1, 1.75, .8) : vec3(2.2, 1.05, .6);
+        diffuseColor.rgb *= mix(vec3(1.), tint, near * .8 + .25 * (1. - near));
+        diffuseColor.rgb *= mix(1., .62 + .7 * cr, near * .85);
+        // groves and stands: big patches of darker spruce and paler hardwood
+        float st = mN(vMtnW.xz / 380.) * .6 + mN(vMtnW.xz / 120.) * .4;
+        diffuseColor.rgb *= .8 + .4 * st;
+        // steep faces break into grey rock slides
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.2, .205, .21), smoothstep(.55, .8, slope + (mN(vMtnW.xz / 60.) - .5) * .3) * .7); }`).replace('#include <fog_fragment>', `
+      { float d = length(vMtnW - cameraPosition);
+        // layered aerial perspective: each range further back paler and bluer; the valleys hold more haze than the crests
+        float k = (1. - exp(-max(d - 400., 0.) / uMtnHazeL)) * mix(1., .78, smoothstep(150., 900., vMtnW.y));
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, uMtnHaze, clamp(k * .92, 0., .92)); }`);
+  };
+  mat.customProgramCacheKey = () => 'mtn13';
+  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = -5; mesh.userData.tag = 'mountains';
+  scene.add(mesh); return mesh;
 }
 
 // ---------- campsites, tents, dock ----------

@@ -14,6 +14,12 @@ Builds on the oil paint below (v0.11.0's look is all here), from v0.10.0.
 - **Music** is back to the original calm theme (an eerie version was tried and dropped).
 - **No frog-like noises**: the hull creak is gone, and the water 'plop' (a long falling 'bloop' at the launch and
   for every fish rise) is now a short, real-sounding drop; fish rises are a third as frequent.
+- **New mountains** (`buildMountains` in `js/world.js`): the ring of scaled blobs is replaced by one heightfield from the
+  forest's edge out to 26 km (150k vertices, one draw call): forested hills 100-400 m high close behind the shore, a higher,
+  more broken range a few km back, a jagged line of high peaks 17-25 km off, the earth's curve dropping the farthest
+  ridges, and the rounded peak across the pond from camp (now 420 m, on long shoulders). Close up the slopes show
+  treetops in autumn colours, darker and paler stands, and grey rock on the steep faces; each range further back is
+  paler and bluer (the mountains have their own aerial haze). Camera far plane 9 km -> 30 km.
 - **The painter's day.** Each time of day is painted with six paints (`PALETTES` in `js/paint.js`); every colour is pulled
   to the nearest one, keeping its value, with shadows and lights leaning to the hour's shadow and light paints. Golden hour
   and sunset go wild: violet shadows, orange and red water, green-gold sky.

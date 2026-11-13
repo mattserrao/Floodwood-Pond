@@ -268,7 +268,9 @@ export function createPost(renderer) {
           float f = (1. - exp(-density * uMist)) * smoothstep(8., 70., dist); // keep the canoe crisp
           f = max(f, wisp / 6. * uMist * .9 * smoothstep(3., 12., dist));
           // far layer: aerial perspective - everything fades toward the sky at the horizon with distance and low height
-          float haze = 1. - exp(-dist * uHazeK * 5.5e-4); haze *= mix(1., .3, smoothstep(0., 400., wp.y));
+          float haze = 1. - exp(-min(dist, 2000.) * uHazeK * 5.5e-4); haze *= mix(1., .3, smoothstep(0., 400., wp.y));
+          // v0.13.0: past the forest's edge it's the mountains, which lay on their own, layered haze - only a little more here
+          haze *= mix(1., .45, smoothstep(2100., 3200., dist));
           float sunward = pow(max(dot(dir, uSunDir), 0.), 8.);
           // v0.5: the mist that follows you - a swirling wall over everything behind the canoe
           if (uBehind > 0.) {
