@@ -297,15 +297,19 @@ export class AmbientAudio {
     o.connect(g); g.connect(p); p.connect(this.natureBus); o.start(t); o.stop(t + 0.15);
   }
   plop(pan = 0, pos) {
+    // v0.13.0: was a long sine falling 900 -> 220 Hz (a cartoon 'bloop' that read as a frog). Now a real drop of water:
+    // a tiny slap of noise and a very short bubble 'plink' that rises in pitch, as a closing air pocket does
     if (!this.ctx) return;
-    const ctx = this.ctx, t = ctx.currentTime, o = this.osc('sine', 700), g = ctx.createGain();
-    if (pos) { o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(220, t + 0.14); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.12, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2); o.connect(g); g.connect(this.at(pos)); o.start(t); o.stop(t + 0.25); return; }
-    const p = this.panner(pan);
-    o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(220, t + 0.14);
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.1, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-    o.connect(g); g.connect(p); p.connect(this.natureBus); p.connect(this.send); o.start(t); o.stop(t + 0.25);
-    this.ping(t + 0.1, 1900, 0.02, pan);
+    const ctx = this.ctx, t = ctx.currentTime, out = pos ? this.at(pos, { wet: 0.6 }) : (() => { const p = this.panner(pan); p.connect(this.natureBus); p.connect(this.send); return p; })();
+    const n = ctx.createBufferSource(); n.buffer = this.white; const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.05, t + 0.003); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    n.connect(hp); hp.connect(ng); ng.connect(out); n.start(t, Math.random() * 2, 0.07);
+    const f = rand(900, 1400), o = this.osc('sine', f), g = ctx.createGain();
+    o.frequency.setValueAtTime(f, t + 0.012); o.frequency.exponentialRampToValueAtTime(f * 1.8, t + 0.05);
+    g.gain.setValueAtTime(0, t + 0.012); g.gain.linearRampToValueAtTime(0.035, t + 0.016); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.08);
   }
+
   honkFlock(pan = 0, pos) {
     if (!this.ctx) return;
     const ctx = this.ctx, t0 = ctx.currentTime, n = 7 + Math.floor(Math.random() * 6);

@@ -12,7 +12,8 @@ Builds on the oil paint below (v0.11.0's look is all here), from v0.10.0.
   `audio/memories/` clip folder are all gone (the deer in the creek is real, so it stays). The test-build "Skip to" list in
   the pause menu is now just: on the water, Big Island, the deer, the creek mouth, the ending.
 - **Music** is back to the original calm theme (an eerie version was tried and dropped).
-- **No hull creak**: it sounded like a frog croaking as you turned off the dock.
+- **No frog-like noises**: the hull creak is gone, and the water 'plop' (a long falling 'bloop' at the launch and
+  for every fish rise) is now a short, real-sounding drop; fish rises are a third as frequent.
 - **The painter's day.** Each time of day is painted with six paints (`PALETTES` in `js/paint.js`); every colour is pulled
   to the nearest one, keeping its value, with shadows and lights leaning to the hour's shadow and light paints. Golden hour
   and sunset go wild: violet shadows, orange and red water, green-gold sky.

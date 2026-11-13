@@ -652,7 +652,7 @@ function updateEnvironment(dt, t) {
   rain.update(dt, camera.position, WX.rain, greyA.copy(fogCol).lerp(greyB.setRGB(1, 1, 1), 0.4));
   if (WX.rain > 0.05 && rnd() < dt * 40 * WX.rain) { const a = rnd() * 6.28, r = 3 + rnd() * 30, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 0.5) ripples.spawn(x, z, 0.5 + rnd() * 0.4, 1, 0.25, 0.05); }
   // fish rising
-  if (G.mode === 'play' && rnd() < dt * 0.18) { const a = rnd() * 6.28, r = 12 + rnd() * 70, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 6) { ripples.spawn(x, z, 3.2, 3, 0.55, 0.2); ripples.spawn(x, z, 1.6, 1.6, 0.4, 0.1); audio.plop(clamp((x - P.x) / 80, -1, 1)); } }
+  if (G.mode === 'play' && rnd() < dt * 0.06) {   /* v0.13.0: rarer (was every ~5 s) */ const a = rnd() * 6.28, r = 12 + rnd() * 70, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 6) { ripples.spawn(x, z, 3.2, 3, 0.55, 0.2); ripples.spawn(x, z, 1.6, 1.6, 0.4, 0.1); audio.plop(clamp((x - P.x) / 80, -1, 1)); } }
   // audio state + HUD
   const dawn = sstep(4.6, 5.8, h) * (1 - sstep(7.5, 9.5, h)), dusk = sstep(16.5, 18, h) * (1 - sstep(19.8, 21, h));
   camera.getWorldDirection(tmpV); audio.setListener(camera.position, tmpV, camera.up);
