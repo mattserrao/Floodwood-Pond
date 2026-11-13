@@ -632,6 +632,9 @@ export function createStory(C) {
     };
   });
 
+  // v0.13.0: no memories - of the events only the deer (real, not a memory) is left
+  S.events = S.events.filter((e) => e.name === 'deer');
+
   // ---------- the ghost campsite on Big Island: glows into view as you approach, there all along ----------
   {
     // the stretch of island shore the route passes closest to (before the turn), so it is seen from ~30-40 m
@@ -668,8 +671,9 @@ export function createStory(C) {
         for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); pos.setFromMatrixPosition(m4); if (Math.hypot(pos.x - inX, pos.z - inZ) < 14) { m4.decompose(pos, q, sc); m4.compose(pos, q, sc.set(0, 0, 0)); o.setMatrixAt(i, m4); hit = true; } }
         if (hit) o.instanceMatrix.needsUpdate = true; });
     }
-    S.ghostCamp = camp;
-    S.updateGhostCamp = (T) => {
+    S.ghostCamp = camp; camp.visible = false;   // v0.13.0: no memories (the clearing stays)
+    S.updateGhostCamp = () => {};   // v0.13.0: no memories
+    S._oldGhostCamp = (T) => {
       const d = Math.hypot(P.x - inX, P.z - inZ), k = sstep(330, 160, d) * (1 - sstep(route.sVia + 60, route.sVia + 200, S.sNow));
       fadeGhost(camp, k * 0.75, T); fire.scale.setScalar(4 * (0.9 + 0.12 * Math.sin(T * 9) * Math.sin(T * 5.3)));
       if (k > 0.3 && !S._campSound) { S._campSound = true; voices.memoryIn({ x: inX, y: 1, z: inZ }); }
@@ -808,16 +812,7 @@ export function createStory(C) {
   const creekAt = (k) => firstS((r) => { creekSD(r.x, r.z); return creekSD(r.x, r.z) > -2 && CQ.s > CREEK.L * k; });
   S.skips = [
     ['start', 'On the water', 0, null],
-    ['cantaloupe', 'Cantaloupe', 0, 'cantaloupe'],
-    ['kayaker', 'Kayaker flips', 60, 'kayaker'],
-    ['flotilla', 'Flotilla + tow', 175, 'flotilla'],
-    ['tandems', 'Tandem kayaks', 335, 'tandems'],
-    ['picnic', 'Picnic table tow', route.sVia * 0.6, 'picnic'],
-    ['island', 'Island boys / beef', firstS((r) => Math.hypot(r.x - route.BIG.c[0], r.z - route.BIG.c[1]) < bigR + 140), 'island'],
-    ['camp', 'Ghost campsite (cards, hammock)', Math.max(0, (S.campS || route.sVia * 0.8) - 70), null],
-    ['race', 'Race to the tree', sTree - 145, 'race'],
-    ['binoculars', 'Binoculars', sBino - 35, 'binoculars'],
-    ['catch', 'The catch', sCatch - 25, 'catch'],
+    ['island', 'Big Island', firstS((r) => Math.hypot(r.x - route.BIG.c[0], r.z - route.BIG.c[1]) < bigR + 140), null],
     ['deer', 'Deer in the creek', creekAt(0.25), 'deer'],
     ['creek', 'Creek mouth', (route.sCreek || route.L) - 30, null],
     ['ending', 'Ending', creekAt(0.8), null],
