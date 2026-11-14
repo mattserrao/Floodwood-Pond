@@ -18,20 +18,20 @@ export function createPost(renderer) {
   const U = {
     tColor: { value: rt.texture }, tDepth: { value: rt.depthTexture }, uRes: { value: size.clone() }, uTime: { value: 0 },
     uNear: { value: 0.3 }, uFar: { value: 9000 }, uProjInv: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() }, uCamPos: { value: new THREE.Vector3() },
-    uGrade: { value: 1 }, uVignette: { value: 0.8 }, uGrain: { value: 0 }, uMist: { value: 1 }, uPaint: { value: 0 }, uRays: { value: 0 },
+    uGrade: { value: 1 }, uVignette: { value: 0.5 }, uGrain: { value: 0 }, uMist: { value: 1 }, uPaint: { value: 0 }, uRays: { value: 0 },
     tMist: { value: mistRT.texture }, uMistRes: { value: new THREE.Vector2(mistRT.width, mistRT.height) },
     uBlur: { value: 0 }, uPrevVP: { value: new THREE.Matrix4() }, uDim: { value: 0 },
     uFxaa: { value: 0 },
     uDark: { value: 0 }, uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
     tShelter: { value: null }, uExt: { value: new THREE.Vector4(-1700, -1400, 3400, 2800) }, uBay: { value: 1 }, uLift: { value: 0 }, uHaze: { value: new THREE.Color(0.6, 0.66, 0.74) }, uHazeK: { value: 0.9 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.8, 0.6) }, uWake: { value: new THREE.Vector2(0, 1) }, uSpeed: { value: 0 },
-    uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
+    uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uCloudSh: { value: 0 }, uCloudSun: { value: new THREE.Vector2() }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
   };
   const mat = new THREE.ShaderMaterial({
     uniforms: U, depthTest: false, depthWrite: false,
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`,
     fragmentShader: /* glsl */`
       uniform sampler2D tColor, tDepth, tMist; uniform vec2 uRes, uLightPos, uMistRes; uniform float uTime, uNear, uFar, uGrade, uVignette, uGrain, uMist, uPaint, uRays, uLightVis, uBlur, uDim;
-      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol, uPlayer; uniform vec2 uAway; uniform float uFxaa, uDark, uBehind; varying vec2 vUv;
+      uniform mat4 uProjInv, uCamWorld, uPrevVP; uniform vec3 uCamPos, uMistCol, uLightCol, uHaze, uSunCol, uPlayer; uniform vec2 uAway, uCloudSun; uniform float uFxaa, uDark, uBehind, uCloudSh; varying vec2 vUv;
       // FXAA (Lottes 3.11 'console' style, compact): smooths geometric edges when MSAA is off (Low tier / phones)
       vec3 fxaa(vec2 uv){
         vec2 px = 1. / uRes; vec3 L = vec3(.299, .587, .114);
@@ -89,6 +89,12 @@ export function createPost(renderer) {
           }
         }
         if (uPaint > 0.) col = mix(col, kuwahara(uv), uPaint);
+        // ---- v0.14.0: cloud shadows sweeping over the hills, forest and water (projected along the sun)
+        if (uCloudSh > 0. && !sky) {
+          vec2 cp = (wp.xz + uCloudSun * (900. - wp.y)) * .0011 + vec2(uTime * .0045, uTime * .0017);
+          float cl = smoothstep(.5, .66, fbm(cp + vec2(fbm(cp*.7+3.1), fbm(cp*.7-1.7))*.8));
+          col *= 1. - uCloudSh * cl * mix(.55, 1., smoothstep(-.5, 2., wp.y));
+        }
         // ---- ground mist (computed at half resolution, depth-aware upsample)
         if (uMist > 0.) {
           vec2 hp = 1. / uMistRes; float fs = 0., ws = 0.;
@@ -148,11 +154,11 @@ export function createPost(renderer) {
         if (uGrade > 0.) {
           col *= 1. - .22 * uDim;
           float l = luma(col);
-          vec3 g = mix(col, vec3(l), .38 + .22 * uDim);
+          vec3 g = mix(col, vec3(l), .1 + .3 * uDim);
           g = mix(g * vec3(.92, .98, 1.08), g, smoothstep(.0, .6, l));        // cool shadows
-          g += vec3(.012, .018, .03);                                           // lifted, bluish blacks
+          g += vec3(.002, .003, .006);                                          // v0.14.0: deep blacks
           g = mix(g, g * vec3(1.05, 1.0, .9), smoothstep(.45, 1.2, l) * .6);   // faded warm highlights
-          g = (g - .18) * .92 + .18;                                            // soften contrast
+          g = (g - .18) * 1.1 + .18;                                            // v0.14.0: more contrast, like the photo
           col = mix(col, g, uGrade);
         }
         if (uVignette > 0.) {

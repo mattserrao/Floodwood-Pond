@@ -617,12 +617,13 @@ function updateEnvironment(dt, t) {
   wu.uFog.value.copy(fogCol); wu.uFogD.value = fogD; wu.uRain.value = WX.rain; wu.uCover.value = cover;
   wu.uTreeCol.value.setRGB(0.04, 0.08, 0.05).multiplyScalar(0.3 + 0.7 * clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y), 0, 1)).lerp(fogCol, clamp(1 - Math.exp(-Math.pow(450 * fogD, 2)), 0, 1));
   wu.tRefl.value = refl.rt.texture; wu.uReflRes.value.set(refl.rt.width, refl.rt.height); wu.uTexMat.value = refl.texMat; // same object: refl.render() updates it just before the main pass
-  post.uniforms.uMist.value = (1 + WXF * 0.8 + WX.wet * 0.6) * (1 - 0.85 * lift); post.uniforms.uDim.value = cover * 0.6 + WX.rain * 0.4;
+  post.uniforms.uMist.value = (0.06 + 0.94 * Math.max(dawnHaze, 1 - day) + WXF * 0.8 + WX.wet * 0.6) * (1 - 0.85 * lift);   // v0.14.0: clear days are clear; mist belongs to dawn, dusk and weather
+  post.uniforms.uCloudSh.value = 0.42 * sstep(0.05, 0.3, sunV.y) * (1 - cover) * (1 - WXF); post.uniforms.uCloudSun.value.set(sunV.x / Math.max(sunV.y, 0.15), sunV.z / Math.max(sunV.y, 0.15)); post.uniforms.uDim.value = cover * 0.6 + WX.rain * 0.4;
   // v0.6 layered atmosphere: fog pools in bays and lifts as the sun climbs; aerial haze toward the sky colour, warmed sunward
   { const U = post.uniforms; U.tShelter.value = WORLD.shelterTex; U.uExt.value.set(EXT.minX, EXT.minZ, EXT.W, EXT.D);
     U.uLift.value = Math.max(0.85 * sstep(0.12, 0.5, sunV.y) * (1 - WXF), 0.9 * lift); U.uBay.value = 1;
     U.uHaze.value.copy(pal.hor).lerp(greyB.copy(pal.mid), 0.35).lerp(greyA.setRGB(0.62, 0.66, 0.72), 0.3 * cover);
-    U.uHazeK.value = (1.6 + 0.8 * dawnHaze * (1 - lift) + 0.6 * nightHaze + 0.7 * cover + 1.4 * WXF) * (1 - 0.35 * lift);
+    U.uHazeK.value = (0.75 + 0.85 * (1 - day) + 0.8 * dawnHaze * (1 - lift) + 0.6 * nightHaze + 0.7 * cover + 1.4 * WXF) * (1 - 0.35 * lift);
     MOUNTAINS.uniforms.uMtnHaze.value.copy(U.uHaze.value); MOUNTAINS.uniforms.uMtnHazeL.value = 13000 / Math.max(U.uHazeK.value, 0.5);   // v0.13.0: the mountains' own layered haze
     U.uSunDir.value.copy(sunV.y > -0.05 ? sunV : moonV); U.uSunCol.value.copy(pal.sun).multiplyScalar(sstep(-0.05, 0.15, sunV.y));
     U.uWake.value.set(Math.sin(P.psi), Math.cos(P.psi)); U.uSpeed.value = Math.hypot(P.vx, P.vz); }

@@ -9,9 +9,9 @@ const KEYS = [
   K(4.4,  0x07123a, 0x1a2a5c, 0x3a4380, 0x1e2a52, 0x33467f, 0x0e1424, 0x000000, 0.00095, 0.55),
   K(5.5,  0x1c3374, 0x6b5a98, 0xf29a78, 0x9c7a88, 0x8a84b8, 0x4a4a52, 0xff9d6a, 0.0012,  1.0),
   K(6.4,  0x3a6fc0, 0x9dbce0, 0xffcf9c, 0xd9b8a0, 0xa8c0e0, 0x58584a, 0xffcb94, 0.0010,  1.0),
-  K(8.5,  0x3b7fd6, 0x8ec3ee, 0xd2e6f4, 0xbcd4e6, 0xa6c8f0, 0x55583a, 0xfff0d8, 0.00062, 0.95),
-  K(12,   0x2d72cf, 0x7db8ee, 0xc0e0f4, 0xaecbe2, 0xa0c8f2, 0x5a5c3c, 0xfffbe8, 0.00055, 1.0),
-  K(16,   0x3578cc, 0x86bbe8, 0xd8e6ee, 0xc0d2e0, 0xa0c4ee, 0x5a5636, 0xfff0cc, 0.00062, 0.95),
+  K(8.5,  0x2a6ccc, 0x6fa8e4, 0xc4dcee, 0xb0c8dc, 0x9cc0ec, 0x4a4c32, 0xfff0d8, 0.00030, 0.8),
+  K(12,   0x1f5fc4, 0x5f9fe2, 0xb4d4ee, 0xa4c0da, 0x98c0f0, 0x4c4e34, 0xfffbe8, 0.00024, 0.8),
+  K(16,   0x2668c4, 0x6aa6e0, 0xcadcea, 0xb4c8da, 0x98bcea, 0x4c4a30, 0xfff0cc, 0.00030, 0.8),
   K(17.6, 0x3c64b0, 0xc0a0a8, 0xffc088, 0xd2a888, 0xa8a8cc, 0x504430, 0xffb470, 0.0009,  0.8),
   K(18.3, 0x3a3f86, 0xd0708a, 0xff8650, 0xb86e6a, 0x8c7ab0, 0x3a2a30, 0xff7a3a, 0.0011,  0.7),
   K(19.1, 0x1b2456, 0x6a4a8a, 0xdc7a6c, 0x6a4a6c, 0x5a5c9c, 0x20203a, 0xff6a40, 0.0011,  0.6),
@@ -82,13 +82,22 @@ export function createSky() {
           col += vec3(.10,.12,.22) * band * (0.4+fbm(d.xz*9.)) * uStars * smoothstep(0.,.2,d.y);
         }
         if (d.y > 0.) {
-          vec2 uv = d.xz/(d.y+0.18)*0.75 + vec2(uTime*0.006, uTime*0.002);
-          float c = fbm(uv*1.4);
-          float cov = smoothstep(.50 - .42*uCover, .60 - .3*uCover, c);
-          float lit = floor(fbm(uv*1.4+vec2(1.7,.3)+vec2(-d.x,d.z)*.2)*4.)/3.;
-          vec3 cc = mix(uCloudShade, uCloudLit, clamp(lit*.8+.25,0.,1.));
-          cc += uSunCol * pow(sd,3.)*0.25*(1.-uCover);
-          col = mix(col, cc, cov * smoothstep(0.,.16,d.y) * mix(.92, 1., uCover));
+          // v0.14.0: cumulus - domain-warped heaps, sunlit crowns and edges, dark flat bases, thinning toward the zenith
+          vec2 uv = d.xz/(d.y+0.06)*0.42 + vec2(uTime*0.004, uTime*0.0015);
+          vec2 w = vec2(fbm(uv*.8+3.1), fbm(uv*.8-1.7));
+          float big = fbm(uv*1.5 + w*.45);
+          float bl = 0., ba = .5; vec2 bp = uv*6. + w; for (int i = 0; i < 3; i++) { bl += ba*(1. - abs(2.*n2(bp) - 1.)); bp *= 2.1; ba *= .5; }   // cauliflower billows
+          float c = big + (bl - .55)*.22;
+          float cov = smoothstep(.55 - .4*uCover, .6 - .3*uCover, c);
+          vec2 sdir = normalize(uSun.xz + vec2(1e-4));
+          float cs = fbm((uv + sdir*.04)*1.5 + w*.45) + (bl - .55)*.22;
+          float lit = clamp(.6 + (c - cs)*7. + (bl - .55)*.8, 0., 1.);
+          float base = smoothstep(.0, .25, c - .58);
+          vec3 cc = mix(uCloudShade, uCloudLit*1.12, lit);
+          cc = mix(cc, uCloudShade*.8, base*.45*(1.-lit));
+          float rim = (1. - smoothstep(.0, .06, c - (.55 - .4*uCover))) * cov;   // silver lining on the thin edges, sunward
+          cc += uSunCol * (rim*.6 + pow(sd,4.)*.35) * (1.-uCover) * uGlow;
+          col = mix(col, cc, cov * smoothstep(0.,.1,d.y) * mix(.95, 1., uCover));
         }
         col = mix(col, mix(uCloudShade*1.25, uFogCol, .35), uCover*.55*smoothstep(-.05,.2,d.y));
         col = mix(col, uFogCol, uFogMix);
@@ -109,7 +118,7 @@ export function createWater(depthTex) {
     uniforms: {
       uTime: { value: 0 }, uSun: { value: new THREE.Vector3() }, uMoon: { value: new THREE.Vector3() }, uSunCol: { value: new THREE.Color() },
       uSunI: { value: 1 }, uMoonI: { value: 0 }, uSkyTop: { value: new THREE.Color() }, uSkyHor: { value: new THREE.Color() },
-      uDeep: { value: new THREE.Color(0x061d26) }, uShallow: { value: new THREE.Color(0x4a2a0c) }, uFog: { value: new THREE.Color() }, uFogD: { value: 0.0007 },
+      uDeep: { value: new THREE.Color(0x020a0e) }, uShallow: { value: new THREE.Color(0x4a2a0c) }, uFog: { value: new THREE.Color() }, uFogD: { value: 0.0007 },
       uLight: { value: 1 }, uDepth: { value: depthTex }, uExt: { value: new THREE.Vector4(EXT.minX, EXT.minZ, EXT.W, EXT.D) },
       uLantern: { value: new THREE.Vector3() }, uLanternI: { value: 0 },
       // v0.4: mirrored treeline, wind roughness, rain rings
@@ -140,6 +149,10 @@ export function createWater(depthTex) {
         vec2 p = vW.xz;
         float dist = length(cameraPosition - vW);
         float gu = gustAt(p);                                   // cat's-paws: wind roughens patches of the surface
+        // v0.14.0: long ripple bands drifting across the glass, like a breeze line on a still lake
+        vec2 bq = (p - uWindOff*.6) * .006; float bu = dot(bq, uWindDir), bv = dot(bq, vec2(-uWindDir.y, uWindDir.x));
+        float band = smoothstep(.58, .74, wn2(vec2(bu*.35 + 7.3, bv*4.2))) * (.5 + .5*wn2(vec2(bu*2.1, bv*1.3) + 2.2));
+        gu = max(gu, band * (.35 + .5*uWindGust));
         float calm = 1. - smoothstep(.2, .7, gu);
         vec2 g = wv(p,vec2(1.,.3),.55,.018,1.1) + wv(p,vec2(-.4,1.),.8,.012,1.4) + wv(p,vec2(.7,-.8),1.3,.008,1.9) + wv(p,vec2(-1.,-.2),2.3,.005,2.6) + wv(p,vec2(.2,1.),3.7,.003,3.3);
         g *= .55 + .9 * gu;
@@ -154,7 +167,7 @@ export function createWater(depthTex) {
         if (uReflOn > .5) {
           // true mirror (low-res render from below the surface), wobbled by the wave normal
           vec4 rc = vR; rc.xy += n.xz * rc.w * (.06 + .12 * smoothstep(.2, .8, gu)) * (1. - .7*(1.-far));
-          vec2 ruv = rc.xy / rc.w, rt = 0.8 / uReflRes;   // 4 taps soften the low-res mirror into a natural blur
+          vec2 ruv = rc.xy / rc.w, rt = 0.45 / uReflRes;   // 4 taps soften the low-res mirror into a natural blur
           vec3 mir = .25 * (texture2D(tRefl, ruv + vec2(rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(-rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(rt.x, -rt.y)).rgb + texture2D(tRefl, ruv - rt).rgb);
           refl = mix(mir, refl * .8, smoothstep(.35, .85, gu) * .8);   // gusts scatter the image into a soft, darker sheen
         } else {
@@ -169,13 +182,13 @@ export function createWater(depthTex) {
         float shal = 1. - smoothstep(.2, 2.6, depth);
         vec3 body = mix(uShallow, uDeep, 1.-exp(-depth*.55)) * uLight;
         body += vec3(.42,.22,.06) * shal * (.35 + .65*uSunI) * uLight * .55;
-        vec3 col = mix(body, refl, clamp(fr*mix(.62, 1.15, 1. - shal),0.,1.));
+        vec3 col = mix(body, refl, clamp((.32 + .68*fr)*mix(.7, 1.15, 1. - shal),0.,1.));   // v0.14.0: a dark lake is mostly mirror
         float sp = pow(max(dot(R,uSun),0.),400.)*3.2 + pow(max(dot(R,uSun),0.),40.)*.22;
         col += uSunCol * sp * uSunI * (1. - .85*uCover);
         float mp = pow(max(dot(R,uMoon),0.),500.)*2.0 + pow(max(dot(R,uMoon),0.),60.)*.12;
         col += vec3(.7,.8,1.) * mp * uMoonI * (1. - .9*uCover);
         // rough patches read darker / matte against the mirror-calm water around them
-        col = mix(col, mix(body, uSkyTop * .5 + uSkyHor * .15, .45), smoothstep(.3, .85, gu) * .45);
+        col = mix(col, mix(body, uSkyTop * .45 + uSkyHor * .35, .6), smoothstep(.3, .85, gu) * .5);   // ruffled water catches the sky: pale bands
         col *= 1. - .12 * uRain;
         float ld = length(p - uLantern.xz);
         col += vec3(1.,.62,.28) * uLanternI * (exp(-ld*ld/5.)*.42 + exp(-ld*ld/30.)*.07);
