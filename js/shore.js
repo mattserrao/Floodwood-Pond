@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.13.0';
-import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP } from './world.js?v=0.13.0';
-import { sampleDabs, dabMaterial, attachDabs } from './paint.js?v=0.13.0';
+import { MAP } from './mapdata.js?v=0.14.0';
+import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP } from './world.js?v=0.14.0';
 
 // v0.6: what a real Adirondack shoreline is made of - dead silver snags, leaning trees, granite boulders,
 // driftwood, stumps, a few docks. Everything lives within ~14 m of the water's edge, where the eye actually looks.
@@ -23,18 +22,11 @@ function shorePoints(step) {
 
 function instanced(scene, geo, mat, items, tag = 'shore') {
   if (!items.length) return null;
-  // v0.11.0: split into ~200 m tiles (so the far ones are culled whole, and only nearby tiles carry brush dabs)
-  const buckets = new Map(), T = 200;
-  items.forEach((it) => { const k = Math.floor(it.pos.x / T) + ',' + Math.floor(it.pos.z / T); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(it); });
-  const out = [], m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
-  buckets.forEach((list) => {
-    const im = new THREE.InstancedMesh(geo, mat, list.length);
-    list.forEach((it, i) => { q.setFromEuler(it.rot); m.compose(it.pos, q, it.scl); im.setMatrixAt(i, m); if (it.col) im.setColorAt(i, c.setRGB(...it.col)); });
-    im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
-    im.computeBoundingSphere(); im.userData.tag = tag; im.userData.full = list.length; im.frustumCulled = true;
-    scene.add(im); TILES.push(im); out.push(im);
-  });
-  return out;
+  const im = new THREE.InstancedMesh(geo, mat, items.length), m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
+  items.forEach((it, i) => { q.setFromEuler(it.rot); m.compose(it.pos, q, it.scl); im.setMatrixAt(i, m); if (it.col) im.setColorAt(i, c.setRGB(...it.col)); });
+  im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+  im.computeBoundingSphere(); im.userData.tag = tag; im.userData.full = items.length; im.frustumCulled = true;
+  scene.add(im); TILES.push(im); return im;
 }
 
 export function buildShore(scene, M = {}) {
@@ -79,16 +71,12 @@ export function buildShore(scene, M = {}) {
   const stumpGeo = (() => { const c = new THREE.CylinderGeometry(0.42, 0.55, 1.1, 7); c.translate(0, 0.55, 0); const tip = new THREE.ConeGeometry(0.42, 0.5, 7); tip.translate(0, 1.35, 0); return merge([c, tip]); })();
   const rootGeo = (() => { const g = []; const plate = new THREE.CylinderGeometry(1.6, 1.4, 0.5, 9); plate.rotateX(Math.PI / 2 + 0.3); g.push(plate); for (let i = 0; i < 8; i++) { const r = new THREE.CylinderGeometry(0.03, 0.1, 0.8 + rnd() * 0.8, 4); const a = (i / 8) * 6.28; r.translate(0, 0.5, 0); r.rotateX(Math.PI / 2 + (rnd() - 0.5) * 0.4); r.rotateZ(a); r.translate(Math.cos(a) * 1.3, Math.sin(a) * 1.3, 0); g.push(r); } return merge(g); })();
 
-  // v0.11.0 oil paint: each kind of shore prop also gets a set of brush dabs (drawn only inside the dab ring)
-  const dm = dabMaterial({ back: 0.2 }), lc = (m) => [m.color.r, m.color.g, m.color.b];
-  const withDabs = (ims, o) => { if (!ims) return ims; const g = sampleDabs(ims[0].geometry, { ...o, color: o.color || lc(ims[0].material) }); ims.forEach((im) => attachDabs(scene, im, g, o.mat || dm)); return ims; };
-  const leanMat = new THREE.MeshStandardMaterial({ color: 0x3b5a3a, flatShading: true, roughness: 1 });
-  withDabs(instanced(scene, snagGeo, silver, snags), { dir: 'up', spread: 0.15, size: [0.35, 0.7], aspect: 0.18, density: 16, max: 260, lift: [0, 0.01], seed: 3 });
-  withDabs(instanced(scene, leanGeo, leanMat, leaners.map((l) => ({ ...l, scl: l.scl }))), { dir: 'down', spread: 0.8, size: [0.45, 0.8], aspect: 0.32, density: 5, max: 400, lift: [0, 0.04], seed: 5 });
-  withDabs(instanced(scene, rockGeo, gran, rocks), { dir: 'flat', spread: 0.6, size: [0.3, 0.55], aspect: 0.55, density: 8, max: 70, lift: [0, 0.03], seed: 7 });
-  withDabs(instanced(scene, driftGeo, silver, drift), { dir: new THREE.Vector3(1, 0, 0), spread: 0.2, size: [0.4, 0.75], aspect: 0.3, density: 12, max: 160, seed: 9 });
-  withDabs(instanced(scene, stumpGeo, bark, stumps), { dir: 'up', spread: 0.3, size: [0.25, 0.4], aspect: 0.4, density: 22, max: 120, seed: 11 });
-  withDabs(instanced(scene, rootGeo, bark, roots), { dir: 'flat', spread: 1, size: [0.25, 0.45], aspect: 0.4, density: 14, max: 160, seed: 13 });
+  instanced(scene, snagGeo, silver, snags);
+  instanced(scene, leanGeo, new THREE.MeshStandardMaterial({ color: 0x3b5a3a, flatShading: true, roughness: 1 }), leaners.map((l) => ({ ...l, scl: l.scl })));
+  instanced(scene, rockGeo, gran, rocks);
+  instanced(scene, driftGeo, silver, drift);
+  instanced(scene, stumpGeo, bark, stumps);
+  instanced(scene, rootGeo, bark, roots);
   // chewed stumps get a pale chewed tip: separate little cones in silver
   const chewed = stumps.map((s) => ({ pos: s.pos.clone().add(V(0, 1.1 * s.scl.y, 0)), rot: s.rot, scl: V(s.scl.x, s.scl.y * 0.5, s.scl.z) }));
   instanced(scene, new THREE.ConeGeometry(0.42, 0.5, 7).translate(0, 0.25, 0), flat(0xd8c7a0), chewed);
@@ -128,7 +116,7 @@ export function buildShore(scene, M = {}) {
     if (rnd() < 0.7 * k) for (let i = 0; i < 40; i++) { const d = 1 + rnd() * 11 * k, x = p.x + p.nx * d + (rnd() - 0.5) * 5, z = p.z + p.nz * d + (rnd() - 0.5) * 5; if (pondSD(x, z) < 0.3 || pondSD(x, z) > 13) continue;
       const j = 0.8 + rnd() * 0.35; beds.push({ pos: V(x, -0.05, z), rot: E((rnd() - 0.5) * 0.25, rnd() * 6.3, (rnd() - 0.5) * 0.25), scl: V(1, 0.6 + rnd() * 0.8, 1), col: [0.7 * j, 0.6 * j, 0.32 * j] }); }
   });
-  withDabs(instanced(scene, shrubGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), shrubs, 'shrub'), { dir: 'down', spread: 2.4, size: [0.22, 0.4], aspect: 0.6, density: 14, max: 120, lift: [0, 0.08], seed: 15 });
+  instanced(scene, shrubGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), shrubs, 'shrub');
   instanced(scene, reedBed, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), beds, 'reed');
   return { shrubs: shrubs.length, beds: beds.length, snags: snags.length, leaners: leaners.length, rocks: rocks.length, drift: drift.length, stumps: stumps.length, roots: roots.length, docks: docks.length };
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp, rnd, pondSD, inPond, NQ, glowTexture } from './world.js?v=0.13.0';
+import { clamp, lerp, rnd, pondSD, inPond, NQ, glowTexture } from './world.js?v=0.14.0';
 
 const flat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, ...extra });
 /** v0.4: bake a set of static child meshes into one vertex-coloured mesh (one draw call instead of many) */
@@ -317,21 +317,6 @@ export function createFireflies(scene, n = 140) {
   } };
 }
 
-export function createMist(scene) {
-  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
-  const gr = x.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-  x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(c), group = new THREE.Group(), mats = [];
-  for (let i = 0; i < 46; i++) {
-    const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, color: 0xffffff });
-    const s = 260 + rnd() * 380, q = new THREE.Mesh(new THREE.PlaneGeometry(s, s * 0.7), m);
-    q.rotation.x = -Math.PI / 2; q.rotation.z = rnd() * 6; q.position.set(lerp(-1100, 1100, rnd()), 2 + rnd() * 5, lerp(-800, 800, rnd())); q.renderOrder = 4;
-    q.userData = { v: [(rnd() - 0.5) * 0.6, (rnd() - 0.5) * 0.4], base: 0.5 + rnd() * 0.5 }; group.add(q); mats.push(m);
-  }
-  scene.add(group);
-  // v0.4: a sheet fades out as the camera nears its height (seen edge-on it showed as a hard line across the view)
-  return { group, update(dt, level, color, camY = 99) { group.children.forEach((q) => { q.position.x += q.userData.v[0] * dt; q.position.z += q.userData.v[1] * dt; const k = Math.min(1, Math.max(0, (camY - q.position.y - 0.8) / 3)); q.material.opacity = level * 0.32 * q.userData.base * k * k; q.material.color.copy(color); }); group.visible = level > 0.01; } };
-}
 
 // ------------------------------------------------------------------ towed swimmer (easter egg)
 export function createSwimmer(scene) {

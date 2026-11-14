@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.13.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.13.0';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.13.0';
+import { MAP } from './mapdata.js?v=0.14.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.14.0';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.14.0';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -531,7 +531,6 @@ export function swayMaterial(mat, hScale = 30, amp = 1) {
         float bend = hy * hy * ${amp.toFixed(2)};
         float osc = .55 * sin(uTime * 1.3 + ph) + .3 * sin(uTime * 2.9 + ph * 1.7);
         mvPosition.xz += uWindDir * bend * (gu * 1.1 + osc * (.12 + .5 * gu)) + vec2(-uWindDir.y, uWindDir.x) * bend * .15 * sin(uTime * 2.2 + ph * 2.3) * gu;
-        mvPosition.xz += vec2(sin(uTime * 17. + ph * 3.), cos(uTime * 13. + ph * 2.)) * hy * 1.6 * uSwayQ;   // v0.10.0: the quake whips the trees
       #endif
       mvPosition = modelViewMatrix * mvPosition;
       gl_Position = projectionMatrix * mvPosition;`);
