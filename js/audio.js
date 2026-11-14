@@ -31,32 +31,6 @@ export class AmbientAudio {
   }
   /** v0.7.0: dark = 0..1 crossfade into the minor night theme, intensity = 0..1 how far it has swelled */
   setDark(dark, intensity) { this.dark = dark; this.darkI = intensity; }
-  /** v0.10.0: the earthquake and the falls. k = shaking 0..1, roar = waterfall loudness 0..1 */
-  quake(k, roar, dt) {
-    const ctx = this.ctx; if (!ctx || !this.pink) return; const t = ctx.currentTime;
-    if (!this.qk) {
-      const rumble = ctx.createBufferSource(); rumble.buffer = this.pink; rumble.loop = true;
-      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 110; lp.Q.value = 1.2;
-      const rg = ctx.createGain(); rg.gain.value = 0; rumble.connect(lp); lp.connect(rg); rg.connect(this.master); rumble.start();
-      const sub = this.osc('sine', 33), sg = ctx.createGain(); sg.gain.value = 0; sub.connect(sg); sg.connect(this.master); sub.start();
-      const lfo = this.osc('sine', 3.3), lg = ctx.createGain(); lg.gain.value = 9; lfo.connect(lg); lg.connect(sub.frequency); lfo.start();
-      const fall = ctx.createBufferSource(); fall.buffer = this.white; fall.loop = true;
-      const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 900; const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 120;
-      const fg = ctx.createGain(); fg.gain.value = 0; fall.connect(lp2); lp2.connect(hp); hp.connect(fg); fg.connect(this.master); fg.connect(this.send); fall.start();
-      this.qk = { rg, sg, fg };
-    }
-    const Qn = this.qk;
-    Qn.rg.gain.setTargetAtTime(1.6 * k, t, 0.15); Qn.sg.gain.setTargetAtTime(0.5 * k, t, 0.2); Qn.fg.gain.setTargetAtTime(0.22 * roar, t, 0.5);
-    if (k > 0.05 && Math.random() < dt * (0.6 + 3 * k)) this.crack(k);
-  }
-  crack(k) {
-    const ctx = this.ctx, t = ctx.currentTime, src = ctx.createBufferSource(); src.buffer = this.white;
-    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = rand(300, 2400); f.Q.value = 0.8;
-    const g = ctx.createGain(), dur = rand(0.08, 0.5); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(rand(0.15, 0.5) * k, t + 0.005); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    const p = this.panner(rand(-0.9, 0.9)); src.connect(f); f.connect(g); g.connect(p); p.connect(this.master); p.connect(this.send); src.start(t, rand(0, 2)); src.stop(t + dur + 0.05);
-    if (Math.random() < 0.5) { const o = this.osc('sine', rand(45, 70)), og = ctx.createGain(); o.frequency.exponentialRampToValueAtTime(28, t + 0.6); og.gain.setValueAtTime(0.5 * k, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.8); o.connect(og); og.connect(this.master); o.start(t); o.stop(t + 0.9); }
-  }
-
   // iOS: must run synchronously inside a user tap. Web Audio on iPhone is muted by the ring/silent switch
   // unless the page's audio session is "playback", so we request that and keep a silent <audio> element playing.
   unlockIOS() {
@@ -264,9 +238,7 @@ export class AmbientAudio {
     // hull slaps: little wavelets clapping against the canoe, more of them when the wind is up
     if (s.play && Math.random() < 0.35 * (0.25 + 1.6 * gu)) this.slapTimer = (this.slapTimer || 0) - 1;
     if (this.slapTimer < 0) { this.slapTimer = 4 + Math.random() * 10; this.hullSlap(0.4 + gu); }
-    // creak: the hull and seat flex in a turn
-    const turn = Math.abs(s.turn || 0); this.creakT = (this.creakT || 0) - 1;
-    if (turn > 0.35 && this.creakT < 0 && Math.random() < 0.12) { this.creakT = 300 + Math.random() * 400; this.creak(turn); }
+    // v0.13.0: the hull creak is gone - its buzzy, pulsing tone sounded like a frog croaking (it fired on the first turn off the dock)
   }
 
   // ---------- one-shots ----------
@@ -299,15 +271,19 @@ export class AmbientAudio {
     o.connect(g); g.connect(p); p.connect(this.natureBus); o.start(t); o.stop(t + 0.15);
   }
   plop(pan = 0, pos) {
+    // v0.13.0: was a long sine falling 900 -> 220 Hz (a cartoon 'bloop' that read as a frog). Now a real drop of water:
+    // a tiny slap of noise and a very short bubble 'plink' that rises in pitch, as a closing air pocket does
     if (!this.ctx) return;
-    const ctx = this.ctx, t = ctx.currentTime, o = this.osc('sine', 700), g = ctx.createGain();
-    if (pos) { o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(220, t + 0.14); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.12, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2); o.connect(g); g.connect(this.at(pos)); o.start(t); o.stop(t + 0.25); return; }
-    const p = this.panner(pan);
-    o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(220, t + 0.14);
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.1, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-    o.connect(g); g.connect(p); p.connect(this.natureBus); p.connect(this.send); o.start(t); o.stop(t + 0.25);
-    this.ping(t + 0.1, 1900, 0.02, pan);
+    const ctx = this.ctx, t = ctx.currentTime, out = pos ? this.at(pos, { wet: 0.6 }) : (() => { const p = this.panner(pan); p.connect(this.natureBus); p.connect(this.send); return p; })();
+    const n = ctx.createBufferSource(); n.buffer = this.white; const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.05, t + 0.003); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    n.connect(hp); hp.connect(ng); ng.connect(out); n.start(t, Math.random() * 2, 0.07);
+    const f = rand(900, 1400), o = this.osc('sine', f), g = ctx.createGain();
+    o.frequency.setValueAtTime(f, t + 0.012); o.frequency.exponentialRampToValueAtTime(f * 1.8, t + 0.05);
+    g.gain.setValueAtTime(0, t + 0.012); g.gain.linearRampToValueAtTime(0.035, t + 0.016); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.08);
   }
+
   honkFlock(pan = 0, pos) {
     if (!this.ctx) return;
     const ctx = this.ctx, t0 = ctx.currentTime, n = 7 + Math.floor(Math.random() * 6);
@@ -346,14 +322,7 @@ export class AmbientAudio {
     src.connect(f); f.connect(g); g.connect(p); p.connect(this.natureBus); src.start(t, Math.random() * 4, 0.25);
     const o = this.osc('sine', rand(95, 130)), og = ctx.createGain(); og.gain.setValueAtTime(0.03 * power, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1); o.connect(og); og.connect(p); o.start(t); o.stop(t + 0.12);
   }
-  creak(k = 1) {
-    if (!this.ctx) return; const ctx = this.ctx, t = ctx.currentTime, dur = rand(0.35, 0.7);
-    const o = this.osc('sawtooth', rand(140, 190)), bp = ctx.createBiquadFilter(), g = ctx.createGain(), am = this.osc('square', rand(28, 45)), amg = ctx.createGain();
-    bp.type = 'bandpass'; bp.Q.value = 6; bp.frequency.setValueAtTime(rand(700, 1000), t); bp.frequency.linearRampToValueAtTime(rand(450, 650), t + dur);
-    o.frequency.linearRampToValueAtTime(o.frequency.value * 0.8, t + dur); amg.gain.value = 0.5; am.connect(amg); amg.connect(g.gain);
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.012 * k, t + 0.08); g.gain.linearRampToValueAtTime(0, t + dur);
-    o.connect(bp); bp.connect(g); g.connect(this.natureBus); o.start(t); am.start(t); o.stop(t + dur + 0.05); am.stop(t + dur + 0.05);
-  }
+
 
   // ---------- v0.4: wildlife voices, placed in the world ----------
   _tone(out, t, f0, f1, len, vol, type = 'sine', vib = 0, vibHz = 6) {

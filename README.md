@@ -4,6 +4,75 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.14.1 (test branch): steady reflections
+
+The reflections no longer shimmer:
+- Small waves fade out once they're finer than a pixel, so distant water can't break up into sparkling noise.
+- Calm water far away lies still as glass.
+- Calm water barely bends the reflection; only breeze bands and gusts break it up.
+- The reflection stays crisp up close and softens with distance.
+- Breeze bands have softer edges and drift more slowly; the sharp sun glint fades with distance.
+
+In a test from the launch, frame-to-frame flicker on the far water dropped by about 57% and on the near water by about 19%. No performance cost.
+
+## v0.14.0 (test branch): realistic, and much lighter
+
+Look (after a photo of a still mountain lake):
+- Oil paint and the painter's day are gone; the look is realistic again, still autumn.
+- Clear daylight: much less haze and no midday mist. Mist now belongs to dawn, dusk, night and fog weather.
+- Cumulus sky with sunlit edges; cloud shadows drift over the hills, forest and water.
+- Dark, glassy water that is mostly mirror, with a crisper reflection and pale breeze bands drifting across it.
+- Natural colour grade: fuller colour, more contrast, deep blacks, lighter vignette.
+- The peak across the pond is taller and steeper, with a pale granite face toward the water and a forested shoulder behind. The pond stays wild.
+
+Performance (same view, High tier): about 1,960 draw calls per frame down to about 510.
+- Trees that can't be seen from the water are dropped at load (~28% of them).
+- Detailed trees and ground detail are built only along the shore.
+- Static props are merged into a few meshes per material.
+- The reflection pass uses a coarse copy of the mountains and skips ground clutter.
+- Only near props cast shadows.
+- Render resolution is lower on High (1.5x) and Medium (1.25x); things look a little softer in exchange for speed on phones and laptops.
+
+## v0.13.0 (test branch): the painter's day
+Builds on the oil paint below (v0.11.0's look is all here), from v0.10.0.
+- **Starts in the canoe** at the dock: the tent opening scene is gone (the tent is still up on the bank).
+- **No earthquake**: the collapse, the waterfall edge and the push toward Big Island are gone; paddle where you like.
+- **No memories**: the ghost memories, the ghost campsite, their voices and sounds, their models and the
+  `audio/memories/` clip folder are all gone (the deer in the creek is real, so it stays). The test-build "Skip to" list in
+  the pause menu is now just: on the water, Big Island, the deer, the creek mouth, the ending.
+- **Music** is back to the original calm theme (an eerie version was tried and dropped).
+- **No frog-like noises**: the hull creak is gone, and the water 'plop' (a long falling 'bloop' at the launch and
+  for every fish rise) is now a short, real-sounding drop; fish rises are a third as frequent.
+- **New mountains** (`buildMountains` in `js/world.js`): the ring of scaled blobs is replaced by one heightfield from the
+  forest's edge out to 26 km (150k vertices, one draw call): forested hills 100-400 m high close behind the shore, a higher,
+  more broken range a few km back, a jagged line of high peaks 17-25 km off, the earth's curve dropping the farthest
+  ridges, and the rounded peak across the pond from camp (now 420 m, on long shoulders). Close up the slopes show
+  treetops in autumn colours, darker and paler stands, and grey rock on the steep faces; each range further back is
+  paler and bluer (the mountains have their own aerial haze). Camera far plane 9 km -> 30 km.
+- **The painter's day.** Each time of day is painted with six paints (`PALETTES` in `js/paint.js`); every colour is pulled
+  to the nearest one, keeping its value, with shadows and lights leaning to the hour's shadow and light paints. Golden hour
+  and sunset go wild: violet shadows, orange and red water, green-gold sky.
+- **Thick light**: the sun, the glitter and the brightest cloud edges stand up off the canvas and throw a small shadow.
+- "Oil paint off" in the pause menu turns all of it off.
+
+## v0.11.0 (test branch): oil paint
+A painted look, inspired by [Oil Paint](https://patch.gg/blendi/oil-paint) by @blendi on Patch (MIT): the near world is built
+from brush dabs, and everything else is laid in the same painter's palette. Code is in `js/paint.js`.
+- **Brush dabs** on the detailed near-field trees (spruce, white pine, maple, birch), the larger ground detail (rocks, stumps, logs,
+  roots, ferns, shrubs, saplings) and the shoreline props (snags, leaning trees, boulders, driftwood, root plates, shrub islands).
+  Each dab is one touch of mixed colour pinned to the model's surface and laid along a direction (down a whorl, up a trunk, along a
+  log), with a brush mark from an 8-mark atlas generated in code (raking light from the upper left across the paint's thickness).
+  Dabs ride the existing instance matrices, so they sway with the wind, fall with the collapse and take the sun's shadow.
+  On screen a dab is clamped between a min and max size; with distance fewer, larger dabs stand in for the rest, thinning to
+  nothing at the edge of the dab ring, where the painted underlayer carries on.
+- **Painted tone** on every lit surface: light, half-tone and shade mixes with stroke-broken edges, cool shades and warm lights.
+- **Water**: level, broken touches (strokes run across the line of sight but stay pinned to the world), the mirror dragged into
+  soft vertical smears, sun glitter as separate bright dabs. **Sky**: long level strokes.
+- **Canvas**: paint relief catches a raking light, a fine weave shows through the darks; High also runs a light Kuwahara pass.
+- **Cost by tier**: Low has no dabs (painted tone, water, sky and canvas only); Medium draws dabs within 60 m, High within 95 m.
+  Shore props are now split into 200 m tiles, so far ones are culled whole (a saving with paint off too).
+- **Off switch**: "Oil paint on/off" in the pause menu, or `?paint=0`. `?dabdebug` paints every dab red.
+
 ## v0.5.0 (test branch): Memories
 You wake in a tent on the north shore, climb out, look back, walk down to the canoe and push off.
 Ghost memories play alongside you and fade: a cantaloupe tossed in the water, a kayaker who tips over,

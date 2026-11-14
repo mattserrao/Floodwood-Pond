@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { EXT, sstep, clamp, lerp } from './world.js?v=0.10.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.10.0';
-import { COLLAPSE, COLLAPSE_GLSL } from './collapse.js?v=0.10.0';
+import { EXT, sstep, clamp, lerp } from './world.js?v=0.14.1';
+import { WIND, GUST_GLSL } from './wind.js?v=0.14.1';
 
 // ------------------------------------------------------------------ day/night palette
 const K = (h, top, mid, hor, fog, hemiS, hemiG, sun, fogD, hemiI) => ({ h, top: new THREE.Color(top), mid: new THREE.Color(mid), hor: new THREE.Color(hor), fog: new THREE.Color(fog), hemiS: new THREE.Color(hemiS), hemiG: new THREE.Color(hemiG), sun: new THREE.Color(sun), fogD, hemiI });
@@ -10,9 +9,9 @@ const KEYS = [
   K(4.4,  0x07123a, 0x1a2a5c, 0x3a4380, 0x1e2a52, 0x33467f, 0x0e1424, 0x000000, 0.00095, 0.55),
   K(5.5,  0x1c3374, 0x6b5a98, 0xf29a78, 0x9c7a88, 0x8a84b8, 0x4a4a52, 0xff9d6a, 0.0012,  1.0),
   K(6.4,  0x3a6fc0, 0x9dbce0, 0xffcf9c, 0xd9b8a0, 0xa8c0e0, 0x58584a, 0xffcb94, 0.0010,  1.0),
-  K(8.5,  0x3b7fd6, 0x8ec3ee, 0xd2e6f4, 0xbcd4e6, 0xa6c8f0, 0x55583a, 0xfff0d8, 0.00062, 0.95),
-  K(12,   0x2d72cf, 0x7db8ee, 0xc0e0f4, 0xaecbe2, 0xa0c8f2, 0x5a5c3c, 0xfffbe8, 0.00055, 1.0),
-  K(16,   0x3578cc, 0x86bbe8, 0xd8e6ee, 0xc0d2e0, 0xa0c4ee, 0x5a5636, 0xfff0cc, 0.00062, 0.95),
+  K(8.5,  0x2a6ccc, 0x6fa8e4, 0xc4dcee, 0xb0c8dc, 0x9cc0ec, 0x4a4c32, 0xfff0d8, 0.00030, 0.8),
+  K(12,   0x1f5fc4, 0x5f9fe2, 0xb4d4ee, 0xa4c0da, 0x98c0f0, 0x4c4e34, 0xfffbe8, 0.00024, 0.8),
+  K(16,   0x2668c4, 0x6aa6e0, 0xcadcea, 0xb4c8da, 0x98bcea, 0x4c4a30, 0xfff0cc, 0.00030, 0.8),
   K(17.6, 0x3c64b0, 0xc0a0a8, 0xffc088, 0xd2a888, 0xa8a8cc, 0x504430, 0xffb470, 0.0009,  0.8),
   K(18.3, 0x3a3f86, 0xd0708a, 0xff8650, 0xb86e6a, 0x8c7ab0, 0x3a2a30, 0xff7a3a, 0.0011,  0.7),
   K(19.1, 0x1b2456, 0x6a4a8a, 0xdc7a6c, 0x6a4a6c, 0x5a5c9c, 0x20203a, 0xff6a40, 0.0011,  0.6),
@@ -46,12 +45,12 @@ export function createSky() {
       uSun: { value: new THREE.Vector3(0, 1, 0) }, uMoon: { value: new THREE.Vector3(0, -1, 0) }, uSunCol: { value: new THREE.Color() },
       uSunI: { value: 0 }, uGlow: { value: 1 }, uMoonI: { value: 0 }, uStars: { value: 0 }, uTime: { value: 0 },
       uCloudLit: { value: new THREE.Color() }, uCloudShade: { value: new THREE.Color() },
-      uPhase: { value: 0.5 }, uFogCol: { value: new THREE.Color() }, uFogMix: { value: 0 }, uCover: { value: 0 }, uColOn: COLLAPSE.uniforms.uColOn,
+      uPhase: { value: 0.5 }, uFogCol: { value: new THREE.Color() }, uFogMix: { value: 0 }, uCover: { value: 0 },
     },
     vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * p; gl_Position.z = gl_Position.w * 0.99999; }`,
     fragmentShader: `
       varying vec3 vDir;
-      uniform vec3 uTop,uMid,uHor,uSun,uMoon,uSunCol,uCloudLit,uCloudShade,uFogCol; uniform float uSunI,uGlow,uMoonI,uStars,uTime,uPhase,uFogMix,uCover,uColOn;
+      uniform vec3 uTop,uMid,uHor,uSun,uMoon,uSunCol,uCloudLit,uCloudShade,uFogCol; uniform float uSunI,uGlow,uMoonI,uStars,uTime,uPhase,uFogMix,uCover;
       float h3(vec3 p){ p=fract(p*0.3183099+.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
       float h2(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
       float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h2(i),h2(i+vec2(1,0)),f.x), mix(h2(i+vec2(0,1)),h2(i+vec2(1,1)),f.x), f.y); }
@@ -83,17 +82,25 @@ export function createSky() {
           col += vec3(.10,.12,.22) * band * (0.4+fbm(d.xz*9.)) * uStars * smoothstep(0.,.2,d.y);
         }
         if (d.y > 0.) {
-          vec2 uv = d.xz/(d.y+0.18)*0.75 + vec2(uTime*0.006, uTime*0.002);
-          float c = fbm(uv*1.4);
-          float cov = smoothstep(.50 - .42*uCover, .60 - .3*uCover, c);
-          float lit = floor(fbm(uv*1.4+vec2(1.7,.3)+vec2(-d.x,d.z)*.2)*4.)/3.;
-          vec3 cc = mix(uCloudShade, uCloudLit, clamp(lit*.8+.25,0.,1.));
-          cc += uSunCol * pow(sd,3.)*0.25*(1.-uCover);
-          col = mix(col, cc, cov * smoothstep(0.,.16,d.y) * mix(.92, 1., uCover));
+          // v0.14.0: cumulus - domain-warped heaps, sunlit crowns and edges, dark flat bases, thinning toward the zenith
+          vec2 uv = d.xz/(d.y+0.06)*0.42 + vec2(uTime*0.004, uTime*0.0015);
+          vec2 w = vec2(fbm(uv*.8+3.1), fbm(uv*.8-1.7));
+          float big = fbm(uv*1.5 + w*.45);
+          float bl = 0., ba = .5; vec2 bp = uv*6. + w; for (int i = 0; i < 3; i++) { bl += ba*(1. - abs(2.*n2(bp) - 1.)); bp *= 2.1; ba *= .5; }   // cauliflower billows
+          float c = big + (bl - .55)*.22;
+          float cov = smoothstep(.55 - .4*uCover, .6 - .3*uCover, c);
+          vec2 sdir = normalize(uSun.xz + vec2(1e-4));
+          float cs = fbm((uv + sdir*.04)*1.5 + w*.45) + (bl - .55)*.22;
+          float lit = clamp(.6 + (c - cs)*7. + (bl - .55)*.8, 0., 1.);
+          float base = smoothstep(.0, .25, c - .58);
+          vec3 cc = mix(uCloudShade, uCloudLit*1.12, lit);
+          cc = mix(cc, uCloudShade*.8, base*.45*(1.-lit));
+          float rim = (1. - smoothstep(.0, .06, c - (.55 - .4*uCover))) * cov;   // silver lining on the thin edges, sunward
+          cc += uSunCol * (rim*.6 + pow(sd,4.)*.35) * (1.-uCover) * uGlow;
+          col = mix(col, cc, cov * smoothstep(0.,.1,d.y) * mix(.95, 1., uCover));
         }
         col = mix(col, mix(uCloudShade*1.25, uFogCol, .35), uCover*.55*smoothstep(-.05,.2,d.y));
         col = mix(col, uFogCol, uFogMix);
-        if (uColOn > .5) col = mix(col, vec3(.006, .008, .011), smoothstep(.004, -.05, d.y));   // v0.10.0: below the horizon is the void now
         gl_FragColor = vec4(col,1.);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -111,13 +118,13 @@ export function createWater(depthTex) {
     uniforms: {
       uTime: { value: 0 }, uSun: { value: new THREE.Vector3() }, uMoon: { value: new THREE.Vector3() }, uSunCol: { value: new THREE.Color() },
       uSunI: { value: 1 }, uMoonI: { value: 0 }, uSkyTop: { value: new THREE.Color() }, uSkyHor: { value: new THREE.Color() },
-      uDeep: { value: new THREE.Color(0x061d26) }, uShallow: { value: new THREE.Color(0x4a2a0c) }, uFog: { value: new THREE.Color() }, uFogD: { value: 0.0007 },
+      uDeep: { value: new THREE.Color(0x020a0e) }, uShallow: { value: new THREE.Color(0x4a2a0c) }, uFog: { value: new THREE.Color() }, uFogD: { value: 0.0007 },
       uLight: { value: 1 }, uDepth: { value: depthTex }, uExt: { value: new THREE.Vector4(EXT.minX, EXT.minZ, EXT.W, EXT.D) },
       uLantern: { value: new THREE.Vector3() }, uLanternI: { value: 0 },
       // v0.4: mirrored treeline, wind roughness, rain rings
       tRefl: { value: null }, uReflOn: { value: 0 }, uTexMat: { value: new THREE.Matrix4() }, uTreeCol: { value: new THREE.Color(0x0c1a10) },
       uRain: { value: 0 }, uCover: { value: 0 }, uReflRes: { value: new THREE.Vector2(4, 4) },
-      ...WIND.uniforms, ...COLLAPSE.uniforms,
+      ...WIND.uniforms,
     },
     vertexShader: `uniform mat4 uTexMat; varying vec3 vW; varying vec4 vR;
       void main(){ vec4 w = modelMatrix*vec4(position,1.); vW = w.xyz; vR = uTexMat * w; gl_Position = projectionMatrix*viewMatrix*w; }`,
@@ -125,8 +132,9 @@ export function createWater(depthTex) {
       uniform float uTime,uSunI,uMoonI,uFogD,uLight,uLanternI,uReflOn,uRain,uCover; uniform vec2 uReflRes; uniform vec3 uSun,uMoon,uSunCol,uSkyTop,uSkyHor,uDeep,uShallow,uFog,uLantern,uTreeCol;
       uniform sampler2D uDepth, tRefl; uniform vec4 uExt; varying vec3 vW; varying vec4 vR;
       ${GUST_GLSL}
-      ${COLLAPSE_GLSL}
-      vec2 wv(vec2 p, vec2 dir, float k, float a, float sp){ return normalize(dir)*k*a*cos(dot(normalize(dir),p)*k + uTime*sp); }
+      // v0.14.1: each wave fades out once it is finer than a pixel (FP = metres per pixel), so far water can't sparkle into noise
+      float FP;
+      vec2 wv(vec2 p, vec2 dir, float k, float a, float sp){ return normalize(dir)*k*a*cos(dot(normalize(dir),p)*k + uTime*sp) * (1. - smoothstep(.35, 1.1, k*FP)); }
       // rain: each 0.7 m cell holds one expanding ring at a random phase
       vec2 rainRings(vec2 p){
         vec2 acc = vec2(0.);
@@ -142,14 +150,17 @@ export function createWater(depthTex) {
       void main(){
         vec2 p = vW.xz;
         float dist = length(cameraPosition - vW);
-        // v0.10.0: behind the collapse front the pond has gone over the edge
-        vec2 cq = colQ(p); float cfr = uColFront + colWob(cq.y); if (uColOn > .5 && cq.x < cfr) discard;
+        vec2 fw = fwidth(p); FP = max(fw.x, fw.y);
         float gu = gustAt(p);                                   // cat's-paws: wind roughens patches of the surface
+        // v0.14.0: long ripple bands drifting across the glass, like a breeze line on a still lake
+        vec2 bq = (p - uWindOff*.35) * .006; float bu = dot(bq, uWindDir), bv = dot(bq, vec2(-uWindDir.y, uWindDir.x));
+        float band = smoothstep(.55, .82, wn2(vec2(bu*.35 + 7.3, bv*4.2))) * (.5 + .5*wn2(vec2(bu*2.1, bv*1.3) + 2.2));
+        gu = max(gu, band * (.35 + .5*uWindGust));
         float calm = 1. - smoothstep(.2, .7, gu);
         vec2 g = wv(p,vec2(1.,.3),.55,.018,1.1) + wv(p,vec2(-.4,1.),.8,.012,1.4) + wv(p,vec2(.7,-.8),1.3,.008,1.9) + wv(p,vec2(-1.,-.2),2.3,.005,2.6) + wv(p,vec2(.2,1.),3.7,.003,3.3);
         g *= .55 + .9 * gu;
-        g += (wv(p, vec2(.3,1.), 4.7, .02, 11.) + wv(p, vec2(-1.,.4), 6.3, .016, 13.)) * uQuake;   // the quake shivers the surface
         float far = 1. - smoothstep(25., 140., dist);
+        g *= 1. - .75 * smoothstep(60., 400., dist) * (1. - smoothstep(.3, .8, gu));   // v0.14.1: far calm water lies still as glass
         g += (wv(p, uWindDir + vec2(.2,-.1), 6.1, .006, 2.4) + wv(p, uWindDir + vec2(-.3,.25), 9.3, .004, 3.1)) * smoothstep(.15, .6, gu) * (.3 + .7*far);
         if (uRain > .01) g += rainRings(p) * .045 * uRain * (1. - smoothstep(20., 70., dist));
         vec3 n = normalize(vec3(-g.x, 1., -g.y));
@@ -159,8 +170,8 @@ export function createWater(depthTex) {
         vec3 refl = mix(uSkyHor, uSkyTop, pow(ry,.55));
         if (uReflOn > .5) {
           // true mirror (low-res render from below the surface), wobbled by the wave normal
-          vec4 rc = vR; rc.xy += n.xz * rc.w * (.06 + .12 * smoothstep(.2, .8, gu)) * (1. - .7*(1.-far));
-          vec2 ruv = rc.xy / rc.w, rt = 0.8 / uReflRes;   // 4 taps soften the low-res mirror into a natural blur
+          vec4 rc = vR; rc.xy += n.xz * rc.w * (.015 + .14 * smoothstep(.25, .8, gu)) * (1. - .7*(1.-far));   // v0.14.1: calm water holds a steady image; only the breeze breaks it up
+          vec2 ruv = rc.xy / rc.w, rt = (.7 + 1.3 * smoothstep(40., 400., dist)) / uReflRes;   // v0.14.1: crisp near, soft and stable far   // 4 taps soften the low-res mirror into a natural blur
           vec3 mir = .25 * (texture2D(tRefl, ruv + vec2(rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(-rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(rt.x, -rt.y)).rgb + texture2D(tRefl, ruv - rt).rgb);
           refl = mix(mir, refl * .8, smoothstep(.35, .85, gu) * .8);   // gusts scatter the image into a soft, darker sheen
         } else {
@@ -175,25 +186,19 @@ export function createWater(depthTex) {
         float shal = 1. - smoothstep(.2, 2.6, depth);
         vec3 body = mix(uShallow, uDeep, 1.-exp(-depth*.55)) * uLight;
         body += vec3(.42,.22,.06) * shal * (.35 + .65*uSunI) * uLight * .55;
-        vec3 col = mix(body, refl, clamp(fr*mix(.62, 1.15, 1. - shal),0.,1.));
-        float sp = pow(max(dot(R,uSun),0.),400.)*3.2 + pow(max(dot(R,uSun),0.),40.)*.22;
+        vec3 col = mix(body, refl, clamp((.32 + .68*fr)*mix(.7, 1.15, 1. - shal),0.,1.));   // v0.14.0: a dark lake is mostly mirror
+        float sp = pow(max(dot(R,uSun),0.),400.)*3.2*(1. - .75*smoothstep(60., 300., dist)) + pow(max(dot(R,uSun),0.),40.)*.22;   // v0.14.1: no far twinkle
         col += uSunCol * sp * uSunI * (1. - .85*uCover);
         float mp = pow(max(dot(R,uMoon),0.),500.)*2.0 + pow(max(dot(R,uMoon),0.),60.)*.12;
         col += vec3(.7,.8,1.) * mp * uMoonI * (1. - .9*uCover);
         // rough patches read darker / matte against the mirror-calm water around them
-        col = mix(col, mix(body, uSkyTop * .5 + uSkyHor * .15, .45), smoothstep(.3, .85, gu) * .45);
+        col = mix(col, mix(body, uSkyTop * .45 + uSkyHor * .35, .6), smoothstep(.3, .85, gu) * .5);   // ruffled water catches the sky: pale bands
         col *= 1. - .12 * uRain;
         float ld = length(p - uLantern.xz);
         col += vec3(1.,.62,.28) * uLanternI * (exp(-ld*ld/5.)*.42 + exp(-ld*ld/30.)*.07);
         float edge = smoothstep(.45,.0,depth);
         col = mix(col, vec3(.8,.78,.7)*uLight, edge*.18);
         float alpha = mix(.62, 1., smoothstep(.0,.9,depth)); alpha = max(alpha, fr);
-        if (uColOn > .5) {   // white water racing for the lip
-          float lipD = cq.x - cfr, fo = 1. - smoothstep(0., 10., lipD);
-          float st = wn2(vec2(cq.y * .35, (cq.x + uTime * 3.2) * .45)) * .6 + wn2(vec2(cq.y * 1.1, (cq.x + uTime * 4.5) * 1.3)) * .4;
-          col = mix(col, vec3(.84, .88, .88) * uLight, fo * smoothstep(.25, .75, st + fo * .3) * .85);
-          alpha = mix(alpha, 1., fo * .6);
-        }
         float f = 1.-exp(-pow(dist*uFogD,2.));
         col = mix(col, uFog, clamp(f,0.,1.));
         gl_FragColor = vec4(col, alpha);
@@ -216,7 +221,7 @@ export function createReflection(renderer) {
   const mirrorPos = new THREE.Vector3(0, 0, 0), camPos = new THREE.Vector3(), rot = new THREE.Matrix4(), look = new THREE.Vector3(0, 0, -1), view = new THREE.Vector3(), target = new THREE.Vector3(), q = new THREE.Vector4();
   const texMat = new THREE.Matrix4();
   const api = {
-    rt, scale: 0, texMat, hide: [], far: 0,
+    rt, scale: 0, texMat, hide: [], show: [], far: 0,   // show: stand-ins drawn only in the mirror (v0.14.0: a coarse copy of the mountains)
     setScale(s) { api.scale = s; api.resize(); },
     resize() { if (!api.scale) return; const v = renderer.getDrawingBufferSize(new THREE.Vector2()); rt.setSize(Math.max(4, Math.round(v.x * api.scale)), Math.max(4, Math.round(v.y * api.scale))); },
     /** sky: the sky dome (moved to the mirror camera), hide: objects that must not appear in the mirror */
@@ -235,7 +240,7 @@ export function createReflection(renderer) {
       // clip everything below the water with a real clipping plane (an oblique near plane skews the frustum and
       // three.js then culls the reflected treeline at the sides of wide screens)
       clipWorld.set(normal, -0.03);
-      const vis = api.hide.map((o) => o.visible); api.hide.forEach((o) => (o.visible = false));
+      const vis = api.hide.map((o) => o.visible); api.hide.forEach((o) => (o.visible = false)); api.show.forEach((o) => (o.visible = true));
       const skyPos = sky.position.clone(); sky.position.copy(cam.position);
       const prevT = renderer.getRenderTarget(), prevXr = renderer.xr.enabled, prevShadow = renderer.shadowMap.autoUpdate;
       renderer.xr.enabled = false; renderer.shadowMap.autoUpdate = false;
@@ -243,7 +248,7 @@ export function createReflection(renderer) {
       renderer.setRenderTarget(rt); renderer.state.buffers.depth.setMask(true); renderer.clear(); renderer.render(scene, cam);
       renderer.clippingPlanes = prevClip;
       renderer.xr.enabled = prevXr; renderer.shadowMap.autoUpdate = prevShadow; renderer.setRenderTarget(prevT);
-      sky.position.copy(skyPos); api.hide.forEach((o, i) => (o.visible = vis[i]));
+      sky.position.copy(skyPos); api.hide.forEach((o, i) => (o.visible = vis[i])); api.show.forEach((o) => (o.visible = false));
       return true;
     },
   };

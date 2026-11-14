@@ -1,22 +1,22 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.10.0';
-import { AmbientAudio } from './audio.js?v=0.10.0';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.10.0';
-import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.10.0';
-import { createPost } from './post.js?v=0.10.0';
-import { createCanoe, Ripples, Loons, Geese, createFireflies, createMist, createSwimmer } from './canoe.js?v=0.10.0';
-import { WIND, gustAt, updateWind } from './wind.js?v=0.10.0';
-import { Q } from './quality.js?v=0.10.0';
-import { WX } from './weather.js?v=0.10.0';
-import { createWildlife } from './wildlife.js?v=0.10.0';
-import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.10.0';
-import { createStory } from './story.js?v=0.10.0';
-import { buildShore } from './shore.js?v=0.10.0';
-import { loadModels } from './models.js?v=0.10.0';
-import { buildCamp } from './camp.js?v=0.10.0';
-import { createNearField } from './nearfield.js?v=0.10.0';
-import { setModels } from './story.js?v=0.10.0';
-import { createCollapse, patchScene, COLLAPSE } from './collapse.js?v=0.10.0';
+import { MAP } from './mapdata.js?v=0.14.1';
+import { AmbientAudio } from './audio.js?v=0.14.1';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, MOUNTAINS, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees , TILES } from './world.js?v=0.14.1';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.14.1';
+import { createPost } from './post.js?v=0.14.1';
+import { mergeStatic } from './merge.js?v=0.14.1';
+import { createCanoe, Ripples, Loons, Geese, createFireflies, createSwimmer } from './canoe.js?v=0.14.1';
+import { WIND, gustAt, updateWind } from './wind.js?v=0.14.1';
+import { Q } from './quality.js?v=0.14.1';
+import { WX } from './weather.js?v=0.14.1';
+import { createWildlife } from './wildlife.js?v=0.14.1';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.14.1';
+import { createStory } from './story.js?v=0.14.1';
+import { buildShore } from './shore.js?v=0.14.1';
+import { loadModels } from './models.js?v=0.14.1';
+import { buildCamp } from './camp.js?v=0.14.1';
+import { createNearField } from './nearfield.js?v=0.14.1';
+import { setModels } from './story.js?v=0.14.1';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -33,7 +33,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure
 renderer.info.autoReset = false; // reset once per frame so the counts cover every pass (reflection + main + post)
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xaabbcc, 0.0007);
-const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 9000);
+const camera = new THREE.PerspectiveCamera(58, 1, 0.3, 30000);   // v0.13.0: far enough for the mountains (26 km)
 function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 const post = createPost(renderer);
@@ -54,7 +54,8 @@ function build() {
   const { depthTex, mesh: terrainMesh } = buildTerrain(scene); world.terrain = terrainMesh;
   sky = createSky(); scene.add(sky);
   water = createWater(depthTex); scene.add(water);
-  buildPaths(scene); buildMountains(scene);
+  buildPaths(scene); world.mtn = buildMountains(scene);
+  world.mtnRefl = buildMountains(scene, 320, 64); world.mtnRefl.visible = false;   // v0.14.0: the mirror gets a coarse copy
   world.stats = buildTrees(scene); shadeUnderTrees(terrainMesh);
   world.isle = buildIsland(scene);
   world.shore = buildShore(scene, world.models);
@@ -79,26 +80,31 @@ function build() {
     const bow = new THREE.Vector3(st[0] + nx * 2.35, 0.42, st[1] + nz * 2.35), pts = [];
     for (let i = 0; i <= 12; i++) { const k = i / 12, v = cl.clone().lerp(bow, k); v.y -= Math.sin(k * Math.PI) * 0.22; pts.push(v); }
     world.bowLine = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.012, 4), new THREE.MeshStandardMaterial({ color: 0x8a7a58, roughness: 1 })); scene.add(world.bowLine); void D; }
+  // v0.14.0: everything built so far that's opaque and never moves gets merged into a few big meshes (see merge.js)
+  world.merge = mergeStatic(scene, scene.children.filter((o) => o !== sky && o !== water && o !== world.terrain));
   canoe = createCanoe(world.models); scene.add(canoe.root);
   canoe.root.traverse((o) => { if (o.isMesh && o !== canoe.mask && o.material && !o.material.transparent && o.material.colorWrite !== false) o.castShadow = true; });
   // the canoe and paddler read as a silhouette against the water and sky (lantern still glows)
   canoe.sil = new THREE.MeshBasicMaterial({ color: 0x0b0d10, side: THREE.DoubleSide });
   canoe.body.traverse((o) => { if (o.isMesh && o !== canoe.lantern && o.material.colorWrite !== false) o.material = canoe.sil; });
-  ripples = new Ripples(scene, 160); swimmer = createSwimmer(scene); loons = new Loons(scene, 3); geese = new Geese(scene); flies = createFireflies(scene); mist = createMist(scene);
+  ripples = new Ripples(scene, 160); swimmer = createSwimmer(scene); loons = new Loons(scene, 3); geese = new Geese(scene); flies = createFireflies(scene);   // v0.14.0: the 46 floating mist sheets are gone (the post-process ground mist does that job)
   loons.onRun = (l) => { audio.wings({ x: l.x, y: 0.5, z: l.z }, 1.2); if (rnd() < 0.12 && audio.ctx) audio.loon(audio.ctx.currentTime + 0.3, { x: l.x, y: 1, z: l.z }); };
   loons.onLand = (l) => audio.splash(0, 0.9, { x: l.x, y: 0, z: l.z });
   audio.loonPos = () => { const v = loons.list.filter((l) => l.g.visible); const l = v.length ? v[Math.floor(rnd() * v.length)] : null; return l ? { x: l.x, y: 1, z: l.z } : audio.woods(150, 500, 1); };
   wild = createWildlife(scene, Q.s.wildlife);
   floatLeaves = createFloatingLeaves(scene, 300); fallLeaves = createFallingLeaves(scene, floatLeaves); drips = createDrips(scene); rain = createRain(scene, 1400);
   // things that must not show up in the mirrored treeline
-  refl.hide.push(water, ripples.mesh, mist.group, rain.lines, drips.points, floatLeaves.mesh, canoe.mask, WORLD.pads);
+  refl.hide.push(water, ripples.mesh, rain.lines, drips.points, floatLeaves.mesh, canoe.mask, WORLD.pads);
+  // v0.14.0: the low-res mirror doesn't need the ground clutter or the leaf litter (it's mostly the shoreline trees,
+  // the hills and the sky); and only the near-field things cast shadows (shore props and shrubs span the whole pond)
+  refl.hide.push(world.mtn); refl.show.push(world.mtnRefl);
+  refl.hide.push(...world.near.groundMeshes(), ...TILES.filter((t) => t.userData.tag === 'litter'));
+  TILES.forEach((t) => { if (t.userData.tag === 'shore' || t.userData.tag === 'shrub') t.castShadow = false; });
   applyQuality();
   // v0.5: the journey of memories (disable with ?free=1 for the old free-roam game)
   if (!new URLSearchParams(location.search).has('free')) { document.body.classList.add('story'); $('pRestart').textContent = 'Begin again'; }
   setModels(world.models);
-  world.collapse = createCollapse(scene);
-  if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag, collapse: world.collapse });
-  patchScene(scene);   // v0.10.0: every material learns to fall (compiled now, not mid-quake)
+  if (!new URLSearchParams(location.search).has('free')) story = createStory({ scene, camera, P, G, audio, ripples, canoe, launchInfo, post, dragging: () => !!drag, collapse: null });   // v0.13.0: no earthquake
 }
 // ------------------------------------------------------------------ quality tiers
 function applyQuality() {
@@ -119,7 +125,7 @@ Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.10.0';
+const VERSION = '0.14.1';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -451,7 +457,6 @@ function poseCanoe(dt, t, speed) {
   const groundY = Math.max(heightAt(P.x, P.z), 0);
   c.root.position.set(P.x, 0.1 + bob + (groundY > 0.05 ? groundY : 0), P.z);
   c.root.rotation.set(P.pitch, P.psi, P.roll, 'YXZ');
-  { const qk = COLLAPSE.uniforms.uQuake.value; if (qk > 0.002) { c.root.position.y += Math.sin(t * 17.3) * 0.05 * qk; c.root.rotation.x += Math.sin(t * 7.9) * 0.035 * qk; c.root.rotation.z += Math.sin(t * 9.1 + 1) * 0.05 * qk; } }
   c.mask.position.y = 0.1 - c.root.position.y; // above ripples (y 0.06) and the water plane, below the inner floor
   // lantern swings like a pendulum, pushed by surges, turns and the bob of the hull
   const vfNow = P.vx * Math.sin(P.psi) + P.vz * Math.cos(P.psi), accel = (vfNow - (P.vfPrev ?? vfNow)) / Math.max(dt, 1e-3); P.vfPrev = vfNow;
@@ -527,7 +532,6 @@ function titleCamera(dt) {
 function updateCamera(dt, t) {
   if (G.debugCam) { camera.position.set(...G.debugCam.pos); camera.lookAt(...G.debugCam.look); return; }
   if (G.mode === 'title' && TITLE.shots.length) { titleCamera(dt); return; }
-  if (G.mode === 'intro' && story) { if (story.introCamera(dt)) { story.endIntro(); cam.pos.copy(camera.position); cam.heading = P.psi; G.mode = 'launch'; G.launchT = 0; document.body.classList.add('play'); } return; }
   let targetYaw = cam.yaw;
   if (G.mode === 'title') {
     cam.heading = launchInfo.psi; cam.yaw = 0.9 + Math.sin(t * 0.07) * 0.5; cam.pitch = 0.2; cam.dist = 15 + Math.sin(t * 0.05) * 2; targetYaw = cam.yaw;
@@ -553,10 +557,6 @@ function updateCamera(dt, t) {
   cam.look.set(P.x + Math.sin(P.psi) * 3 * (1 - 2.2 * lb - 6 * gl), 1.0 + 1.5 * lb - 3.5 * gl, P.z + Math.cos(P.psi) * 3 * (1 - 2.2 * lb - 6 * gl));
   if (G.focusK > 0 && G.mode === 'play') { const k = G.focusK * 0.35, fp = G.focusP; cam.look.set(lerp(cam.look.x, fp.x, k), lerp(cam.look.y, 0.7, k), lerp(cam.look.z, fp.z, k)); }
   camera.lookAt(cam.look);
-  // v0.10.0: the earthquake shakes the view
-  const qk = COLLAPSE.uniforms.uQuake.value;
-  if (qk > 0.002) { camera.position.x += (Math.sin(t * 31) + Math.sin(t * 47.3)) * 0.08 * qk; camera.position.y += (Math.sin(t * 39.1) + Math.sin(t * 21.7)) * 0.07 * qk; camera.position.z += (Math.sin(t * 27.7 + 1) + Math.sin(t * 43.9)) * 0.08 * qk;
-    camera.lookAt(cam.look); camera.rotateZ((Math.sin(t * 23.3) + Math.sin(t * 9.7)) * 0.014 * qk); }
 }
 
 // ------------------------------------------------------------------ day / night
@@ -617,18 +617,19 @@ function updateEnvironment(dt, t) {
   wu.uFog.value.copy(fogCol); wu.uFogD.value = fogD; wu.uRain.value = WX.rain; wu.uCover.value = cover;
   wu.uTreeCol.value.setRGB(0.04, 0.08, 0.05).multiplyScalar(0.3 + 0.7 * clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y), 0, 1)).lerp(fogCol, clamp(1 - Math.exp(-Math.pow(450 * fogD, 2)), 0, 1));
   wu.tRefl.value = refl.rt.texture; wu.uReflRes.value.set(refl.rt.width, refl.rt.height); wu.uTexMat.value = refl.texMat; // same object: refl.render() updates it just before the main pass
-  post.uniforms.uMist.value = (1 + WXF * 0.8 + WX.wet * 0.6) * (1 - 0.85 * lift); post.uniforms.uDim.value = cover * 0.6 + WX.rain * 0.4;
+  post.uniforms.uMist.value = (0.06 + 0.94 * Math.max(dawnHaze, 1 - day) + WXF * 0.8 + WX.wet * 0.6) * (1 - 0.85 * lift);   // v0.14.0: clear days are clear; mist belongs to dawn, dusk and weather
+  post.uniforms.uCloudSh.value = 0.42 * sstep(0.05, 0.3, sunV.y) * (1 - cover) * (1 - WXF); post.uniforms.uCloudSun.value.set(sunV.x / Math.max(sunV.y, 0.15), sunV.z / Math.max(sunV.y, 0.15)); post.uniforms.uDim.value = cover * 0.6 + WX.rain * 0.4;
   // v0.6 layered atmosphere: fog pools in bays and lifts as the sun climbs; aerial haze toward the sky colour, warmed sunward
   { const U = post.uniforms; U.tShelter.value = WORLD.shelterTex; U.uExt.value.set(EXT.minX, EXT.minZ, EXT.W, EXT.D);
     U.uLift.value = Math.max(0.85 * sstep(0.12, 0.5, sunV.y) * (1 - WXF), 0.9 * lift); U.uBay.value = 1;
     U.uHaze.value.copy(pal.hor).lerp(greyB.copy(pal.mid), 0.35).lerp(greyA.setRGB(0.62, 0.66, 0.72), 0.3 * cover);
-    U.uHazeK.value = (1.6 + 0.8 * dawnHaze * (1 - lift) + 0.6 * nightHaze + 0.7 * cover + 1.4 * WXF) * (1 - 0.35 * lift);
+    U.uHazeK.value = (0.75 + 0.85 * (1 - day) + 0.8 * dawnHaze * (1 - lift) + 0.6 * nightHaze + 0.7 * cover + 1.4 * WXF) * (1 - 0.35 * lift);
+    MOUNTAINS.uniforms.uMtnHaze.value.copy(U.uHaze.value); MOUNTAINS.uniforms.uMtnHazeL.value = 13000 / Math.max(U.uHazeK.value, 0.5);   // v0.13.0: the mountains' own layered haze
     U.uSunDir.value.copy(sunV.y > -0.05 ? sunV : moonV); U.uSunCol.value.copy(pal.sun).multiplyScalar(sstep(-0.05, 0.15, sunV.y));
     U.uWake.value.set(Math.sin(P.psi), Math.cos(P.psi)); U.uSpeed.value = Math.hypot(P.vx, P.vz); }
   // the fog decides how far you can see; whole forest tiles past that are skipped
   G.visDist = Math.min(9000, 2.4 / Math.max(fogD, 1e-5));
   cullTiles(camera.position, G.visDist, Math.min(G.visDist, 320), 900); wu.uLight.value = clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y) + 0.14 * moonVis, 0, 1);
-  if (world.collapse) world.collapse.update(dt, t, P.x, P.z, fogCol, fogD, wu.uLight.value); SWAY.uSwayQ.value = COLLAPSE.uniforms.uQuake.value;
   if (world.camp) { camera.getWorldDirection(tmpV); world.camp.update(t, sunV.y, tmpV.dot(sunV), sunV); }
   // lanterns
   const lamp = 1 - sstep(-0.06, 0.14, sunV.y), flick = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 5.3);
@@ -640,7 +641,6 @@ function updateEnvironment(dt, t) {
   const bothTw = twilight;
   flies.update(P, t, clamp((night * 0.9 + bothTw * 0.6) * (h > 17 || h < 5 ? 1 : 0.2), 0, 0.95));
   const mistLevel = (sstep(4.6, 5.6, h) * (1 - sstep(7.2, 9.6, h)) * 1.0 + 0.12 * twilight + WXF * 0.6 + WX.wet * 0.5) * (1 - lift);
-  mist.update(dt, clamp(mistLevel + fogA, 0, 1), tintC.copy(pal.fog).lerp(greyB.setRGB(1, 1, 1), 0.35), camera.position.y);
   ripples.update(dt, tintC.copy(pal.hor).lerp(new THREE.Color(1, 1, 1), 0.35 * day + 0.1));
   loons.update(dt, t, P, ripples, (x, z) => audio.plop(clamp((x - P.x) / 200, -1, 1)));
   geese.update(dt, t, P, () => audio.honkFlock(0, { x: geese.start.x, y: geese.start.y, z: geese.start.z }), day + (h > 5 && h < 8 ? 1 : 0) > 0.5);
@@ -649,7 +649,7 @@ function updateEnvironment(dt, t) {
   rain.update(dt, camera.position, WX.rain, greyA.copy(fogCol).lerp(greyB.setRGB(1, 1, 1), 0.4));
   if (WX.rain > 0.05 && rnd() < dt * 40 * WX.rain) { const a = rnd() * 6.28, r = 3 + rnd() * 30, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 0.5) ripples.spawn(x, z, 0.5 + rnd() * 0.4, 1, 0.25, 0.05); }
   // fish rising
-  if (G.mode === 'play' && rnd() < dt * 0.18) { const a = rnd() * 6.28, r = 12 + rnd() * 70, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 6) { ripples.spawn(x, z, 3.2, 3, 0.55, 0.2); ripples.spawn(x, z, 1.6, 1.6, 0.4, 0.1); audio.plop(clamp((x - P.x) / 80, -1, 1)); } }
+  if (G.mode === 'play' && rnd() < dt * 0.06) {   /* v0.13.0: rarer (was every ~5 s) */ const a = rnd() * 6.28, r = 12 + rnd() * 70, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; if (pondSD(x, z) > 6) { ripples.spawn(x, z, 3.2, 3, 0.55, 0.2); ripples.spawn(x, z, 1.6, 1.6, 0.4, 0.1); audio.plop(clamp((x - P.x) / 80, -1, 1)); } }
   // audio state + HUD
   const dawn = sstep(4.6, 5.8, h) * (1 - sstep(7.5, 9.5, h)), dusk = sstep(16.5, 18, h) * (1 - sstep(19.8, 21, h));
   camera.getWorldDirection(tmpV); audio.setListener(camera.position, tmpV, camera.up);
@@ -758,8 +758,9 @@ function startGame() {
   }
   started = true;
   $('title').classList.add('hide'); $('cut').style.opacity = 0;
-  if (story) { G.mode = 'intro'; story.startIntro(); if (SKIP_AT) setTimeout(() => story.skipTo(SKIP_AT), 50); return; }
-  G.mode = 'launch'; G.launchT = 0;
+  // v0.13.0: straight into the canoe at the dock - no tent scene
+  if (story) { story.begin(); if (SKIP_AT) setTimeout(() => story.skipTo(SKIP_AT), 50); }
+  G.mode = 'launch'; G.launchT = 0; G.splashed = false; G.snap = true;
   document.body.classList.add('play');
 }
 const onTitleGesture = (e) => { if (!$('title').classList.contains('hide')) { e.preventDefault(); startGame(); } };
@@ -768,7 +769,8 @@ $('endcard').addEventListener('click', () => location.reload());
 $('title').addEventListener('touchend', onTitleGesture, { passive: false });
 addEventListener('keydown', (e) => { if ((!started || G.menu) && !['escape', 'm', 'p'].includes(e.key.toLowerCase())) onTitleGesture(e); });
 
-loadModels(['tent', 'paddler', 'kayaker', 'boyStand', 'boyLeap', 'kayak1', 'kayak2', 'canoe', 'paddleDouble', 'paddleSingle', 'picnicTable', 'cantaloupe', 'rowboat', 'dock', 'launchDock', 'rower', 'canoeAlu', 'deer', 'fisher']).then((m) => { world.models = m; boot(); });
+// v0.13.0: the memories' models are no longer loaded
+loadModels(['tent', 'paddler', 'canoe', 'paddleSingle', 'rowboat', 'dock', 'launchDock', 'rower', 'canoeAlu', 'deer']).then((m) => { world.models = m; boot(); });
 function boot() {
   try {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap(); buildTitleShots(); buildSkips();
