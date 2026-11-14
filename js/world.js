@@ -624,6 +624,34 @@ export function buildTrees(scene) {
       if (d < 26 && !isBroad) rec[6] = 4; // shoreline: more tamarack
     }
   }
+  // v0.14.0: the player never leaves the water, so trees nobody can see from it are dropped. For each inland tree,
+  // look back toward the water in 8 directions; wherever that reaches the pond (or creek) within 1.4 km, stand on the
+  // water just off that shore, close (40 m), mid (350 m) and far (1.2 km) out, and test whether its top clears the forest
+  // canopy in between. Inland trees are shorter by design, so nearly everything past the first rows is hidden - except
+  // where the ground rises enough to show over them. (?cull=0 keeps every tree.)
+  if (QS.get('cull') !== '0') {
+    const t0 = performance.now(), TOP = 10.5, EYE = 1.6;
+    const canopy = (x, z) => { const sd = bil(SD, x, z); return sd > 0 ? -1e9 : bil(H, x, z) + TOP * 0.8 * treeHeight(-sd); };
+    const DIRS = Array.from({ length: 8 }, (_, i) => [Math.cos(i * Math.PI / 4), Math.sin(i * Math.PI / 4)]);
+    const seen = (r) => {
+      const d = -bil(SD, r[0], r[2]); if (d < 110) return true;
+      const top = r[1] + TOP * r[3] * r[7] * 0.9;
+      for (const [dx, dz] of DIRS) {
+        let L = 0; for (L = 15; L < 1400; L += 15) if (bil(SD, r[0] + dx * L, r[2] + dz * L) > 0) break;
+        if (L >= 1400) continue;
+        for (const far of [40, 350, 1200]) {
+          const vx = r[0] + dx * (L + far), vz = r[2] + dz * (L + far); if (bil(SD, vx, vz) <= 0 && far > 40) continue;
+          const D = L + far; let hidden = false;
+          for (let u = 12; u < L; u += 10) { const y = EYE + (top - EYE) * (D - u) / D; if (canopy(r[0] + dx * u, r[2] + dz * u) > y + 1.5) { hidden = true; break; } }
+          if (!hidden) return true;
+        }
+      }
+      return false;
+    };
+    const before = conAt.length + broadAt.length;
+    for (const list of [conAt, broadAt]) { let w = 0; for (let i = 0; i < list.length; i++) if (seen(list[i])) list[w++] = list[i]; list.length = w; }
+    WORLD.treeCull = { before, after: conAt.length + broadAt.length, ms: Math.round(performance.now() - t0) };
+  }
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), Y = new THREE.Vector3(0, 1, 0), P3 = new THREE.Vector3(), S3 = new THREE.Vector3();
   const mk = (geo, list, cols, tamarack, tag, lodGeo) => {
     list.forEach((r) => {

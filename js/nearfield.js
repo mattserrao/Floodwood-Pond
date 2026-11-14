@@ -6,7 +6,7 @@
 //  - soft contact shadows under trunks, rocks and stumps
 // Everything is instanced (one draw call per kind) and rebuilt only when the canoe has moved a few metres.
 import * as THREE from 'three';
-import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE } from './world.js?v=0.14.0';
+import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE, gridSD } from './world.js?v=0.14.0';
 
 // ------------------------------------------------------------------ geometry helpers
 /** a mesh builder that collects triangles with colours and a bark flag */
@@ -133,7 +133,8 @@ export function createNearField(scene, opts = {}) {
     const yellow = r[8] && r[8][0] > 0.6 && r[8][1] > 0.35; return yellow && r[5] > 0.4 ? 'birch0' : 'maple' + (Math.floor(r[5] * 89) % 2); };
   const byKey = Object.fromEntries(kinds.map((k) => [k.key, k]));
   // spatial grid of tree records
-  const GC = 40, grid = new Map(); recs.forEach((r) => { if (!r.im) return; const k = Math.floor(r[0] / GC) + ',' + Math.floor(r[2] / GC); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(r); });
+  // v0.14.0: only trees within 70 m of the water swap to detailed models - deeper in, the front rows hide them from the canoe
+  const GC = 40, grid = new Map(); recs.forEach((r) => { if (!r.im || -gridSD(r[0], r[2]) > 70) return; const k = Math.floor(r[0] / GC) + ',' + Math.floor(r[2] / GC); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(r); });
   const around = (x, z, R2) => { const out = [], g0x = Math.floor((x - R2) / GC), g1x = Math.floor((x + R2) / GC), g0z = Math.floor((z - R2) / GC), g1z = Math.floor((z + R2) / GC);
     for (let gx = g0x; gx <= g1x; gx++) for (let gz = g0z; gz <= g1z; gz++) { const l = grid.get(gx + ',' + gz); if (l) for (const r of l) if ((r[0] - x) ** 2 + (r[2] - z) ** 2 < R2 * R2) out.push(r); } return out; };
   const nearestTree = (x, z) => { let best = 1e9; for (const r of around(x, z, 7)) best = Math.min(best, Math.hypot(r[0] - x, r[2] - z)); return best; };
@@ -156,6 +157,7 @@ export function createNearField(scene, opts = {}) {
   const landY = (x, z) => (inPatch(x, z) ? fullHeight(x, z) : heightAt(x, z));
   function genCell(cx, cz) {
     const R = seeded((cx * 73856093) ^ (cz * 19349663)), items = [], x0 = cx * CELL, z0 = cz * CELL;
+    if (-gridSD(x0 + CELL / 2, z0 + CELL / 2) > 55) return items;   // v0.14.0: ground detail only in the strip you can see from the water
     const put = (type, x, z, s, rotY, col, tilt = 0, dy = 0) => { const y = landY(x, z); items.push([type, x, y + dy, z, s, rotY, col, tilt]); };
     const N = (k) => Math.floor(k + R());
     const tries = 64;
