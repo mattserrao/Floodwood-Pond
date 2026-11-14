@@ -4,6 +4,17 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.14.1 (test branch): steady reflections
+
+The reflections no longer shimmer:
+- Small waves fade out once they're finer than a pixel, so distant water can't break up into sparkling noise.
+- Calm water far away lies still as glass.
+- Calm water barely bends the reflection; only breeze bands and gusts break it up.
+- The reflection stays crisp up close and softens with distance.
+- Breeze bands have softer edges and drift more slowly; the sharp sun glint fades with distance.
+
+In a test from the launch, frame-to-frame flicker on the far water dropped by about 57% and on the near water by about 19%. No performance cost.
+
 ## v0.14.0 (test branch): realistic, and much lighter
 
 Look (after a photo of a still mountain lake):

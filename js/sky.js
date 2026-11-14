@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { EXT, sstep, clamp, lerp } from './world.js?v=0.14.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.14.0';
+import { EXT, sstep, clamp, lerp } from './world.js?v=0.14.1';
+import { WIND, GUST_GLSL } from './wind.js?v=0.14.1';
 
 // ------------------------------------------------------------------ day/night palette
 const K = (h, top, mid, hor, fog, hemiS, hemiG, sun, fogD, hemiI) => ({ h, top: new THREE.Color(top), mid: new THREE.Color(mid), hor: new THREE.Color(hor), fog: new THREE.Color(fog), hemiS: new THREE.Color(hemiS), hemiG: new THREE.Color(hemiG), sun: new THREE.Color(sun), fogD, hemiI });
@@ -132,7 +132,9 @@ export function createWater(depthTex) {
       uniform float uTime,uSunI,uMoonI,uFogD,uLight,uLanternI,uReflOn,uRain,uCover; uniform vec2 uReflRes; uniform vec3 uSun,uMoon,uSunCol,uSkyTop,uSkyHor,uDeep,uShallow,uFog,uLantern,uTreeCol;
       uniform sampler2D uDepth, tRefl; uniform vec4 uExt; varying vec3 vW; varying vec4 vR;
       ${GUST_GLSL}
-      vec2 wv(vec2 p, vec2 dir, float k, float a, float sp){ return normalize(dir)*k*a*cos(dot(normalize(dir),p)*k + uTime*sp); }
+      // v0.14.1: each wave fades out once it is finer than a pixel (FP = metres per pixel), so far water can't sparkle into noise
+      float FP;
+      vec2 wv(vec2 p, vec2 dir, float k, float a, float sp){ return normalize(dir)*k*a*cos(dot(normalize(dir),p)*k + uTime*sp) * (1. - smoothstep(.35, 1.1, k*FP)); }
       // rain: each 0.7 m cell holds one expanding ring at a random phase
       vec2 rainRings(vec2 p){
         vec2 acc = vec2(0.);
@@ -148,15 +150,17 @@ export function createWater(depthTex) {
       void main(){
         vec2 p = vW.xz;
         float dist = length(cameraPosition - vW);
+        vec2 fw = fwidth(p); FP = max(fw.x, fw.y);
         float gu = gustAt(p);                                   // cat's-paws: wind roughens patches of the surface
         // v0.14.0: long ripple bands drifting across the glass, like a breeze line on a still lake
-        vec2 bq = (p - uWindOff*.6) * .006; float bu = dot(bq, uWindDir), bv = dot(bq, vec2(-uWindDir.y, uWindDir.x));
-        float band = smoothstep(.58, .74, wn2(vec2(bu*.35 + 7.3, bv*4.2))) * (.5 + .5*wn2(vec2(bu*2.1, bv*1.3) + 2.2));
+        vec2 bq = (p - uWindOff*.35) * .006; float bu = dot(bq, uWindDir), bv = dot(bq, vec2(-uWindDir.y, uWindDir.x));
+        float band = smoothstep(.55, .82, wn2(vec2(bu*.35 + 7.3, bv*4.2))) * (.5 + .5*wn2(vec2(bu*2.1, bv*1.3) + 2.2));
         gu = max(gu, band * (.35 + .5*uWindGust));
         float calm = 1. - smoothstep(.2, .7, gu);
         vec2 g = wv(p,vec2(1.,.3),.55,.018,1.1) + wv(p,vec2(-.4,1.),.8,.012,1.4) + wv(p,vec2(.7,-.8),1.3,.008,1.9) + wv(p,vec2(-1.,-.2),2.3,.005,2.6) + wv(p,vec2(.2,1.),3.7,.003,3.3);
         g *= .55 + .9 * gu;
         float far = 1. - smoothstep(25., 140., dist);
+        g *= 1. - .75 * smoothstep(60., 400., dist) * (1. - smoothstep(.3, .8, gu));   // v0.14.1: far calm water lies still as glass
         g += (wv(p, uWindDir + vec2(.2,-.1), 6.1, .006, 2.4) + wv(p, uWindDir + vec2(-.3,.25), 9.3, .004, 3.1)) * smoothstep(.15, .6, gu) * (.3 + .7*far);
         if (uRain > .01) g += rainRings(p) * .045 * uRain * (1. - smoothstep(20., 70., dist));
         vec3 n = normalize(vec3(-g.x, 1., -g.y));
@@ -166,8 +170,8 @@ export function createWater(depthTex) {
         vec3 refl = mix(uSkyHor, uSkyTop, pow(ry,.55));
         if (uReflOn > .5) {
           // true mirror (low-res render from below the surface), wobbled by the wave normal
-          vec4 rc = vR; rc.xy += n.xz * rc.w * (.06 + .12 * smoothstep(.2, .8, gu)) * (1. - .7*(1.-far));
-          vec2 ruv = rc.xy / rc.w, rt = 0.45 / uReflRes;   // 4 taps soften the low-res mirror into a natural blur
+          vec4 rc = vR; rc.xy += n.xz * rc.w * (.015 + .14 * smoothstep(.25, .8, gu)) * (1. - .7*(1.-far));   // v0.14.1: calm water holds a steady image; only the breeze breaks it up
+          vec2 ruv = rc.xy / rc.w, rt = (.7 + 1.3 * smoothstep(40., 400., dist)) / uReflRes;   // v0.14.1: crisp near, soft and stable far   // 4 taps soften the low-res mirror into a natural blur
           vec3 mir = .25 * (texture2D(tRefl, ruv + vec2(rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(-rt.x, rt.y)).rgb + texture2D(tRefl, ruv + vec2(rt.x, -rt.y)).rgb + texture2D(tRefl, ruv - rt).rgb);
           refl = mix(mir, refl * .8, smoothstep(.35, .85, gu) * .8);   // gusts scatter the image into a soft, darker sheen
         } else {
@@ -183,7 +187,7 @@ export function createWater(depthTex) {
         vec3 body = mix(uShallow, uDeep, 1.-exp(-depth*.55)) * uLight;
         body += vec3(.42,.22,.06) * shal * (.35 + .65*uSunI) * uLight * .55;
         vec3 col = mix(body, refl, clamp((.32 + .68*fr)*mix(.7, 1.15, 1. - shal),0.,1.));   // v0.14.0: a dark lake is mostly mirror
-        float sp = pow(max(dot(R,uSun),0.),400.)*3.2 + pow(max(dot(R,uSun),0.),40.)*.22;
+        float sp = pow(max(dot(R,uSun),0.),400.)*3.2*(1. - .75*smoothstep(60., 300., dist)) + pow(max(dot(R,uSun),0.),40.)*.22;   // v0.14.1: no far twinkle
         col += uSunCol * sp * uSunI * (1. - .85*uCover);
         float mp = pow(max(dot(R,uMoon),0.),500.)*2.0 + pow(max(dot(R,uMoon),0.),60.)*.12;
         col += vec3(.7,.8,1.) * mp * uMoonI * (1. - .9*uCover);
