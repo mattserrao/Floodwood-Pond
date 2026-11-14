@@ -4,6 +4,24 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.14.0 (test branch): realistic, and much lighter
+
+Look (after a photo of a still mountain lake):
+- Oil paint and the painter's day are gone; the look is realistic again, still autumn.
+- Clear daylight: much less haze and no midday mist. Mist now belongs to dawn, dusk, night and fog weather.
+- Cumulus sky with sunlit edges; cloud shadows drift over the hills, forest and water.
+- Dark, glassy water that is mostly mirror, with a crisper reflection and pale breeze bands drifting across it.
+- Natural colour grade: fuller colour, more contrast, deep blacks, lighter vignette.
+- The peak across the pond is taller and steeper, with a pale granite face toward the water and a forested shoulder behind. The pond stays wild.
+
+Performance (same view, High tier): about 1,960 draw calls per frame down to about 510.
+- Trees that can't be seen from the water are dropped at load (~28% of them).
+- Detailed trees and ground detail are built only along the shore.
+- Static props are merged into a few meshes per material.
+- The reflection pass uses a coarse copy of the mountains and skips ground clutter.
+- Only near props cast shadows.
+- Render resolution is lower on High (1.5x) and Medium (1.25x); things look a little softer in exchange for speed on phones and laptops.
+
 ## v0.13.0 (test branch): the painter's day
 Builds on the oil paint below (v0.11.0's look is all here), from v0.10.0.
 - **Starts in the canoe** at the dock: the tent opening scene is gone (the tent is still up on the bank).

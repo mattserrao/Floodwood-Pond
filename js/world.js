@@ -778,7 +778,7 @@ const mStep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a)
 export function buildMountains(scene, NA = 768, NR = 120) {
   const ring = MAP.pond[0]; let cx = 0, cz = 0; ring.forEach((p) => { cx += p[0]; cz += p[1]; }); cx /= ring.length; cz /= ring.length;
   let dx = cx - CAMP.q[0], dz = cz - CAMP.q[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-  const PK = { x: cx + dx * 2900 + dz * 300, z: cz + dz * 2900 - dx * 300 }; WORLD.peak = PK;   // the peak seen across the pond from camp
+  const PK = { x: cx + dx * 3100 + dz * 300, z: cz + dz * 3100 - dx * 300 }; WORLD.peak = PK;   // the peak seen across the pond from camp
   const heroA = Math.atan2(PK.z - cz, PK.x - cx), farA = heroA + 0.9;                            // the far high peaks sit off to one side of it
   const R0 = 2250, R1 = 26000;
   const H = (x, z) => {
@@ -787,9 +787,12 @@ export function buildMountains(scene, NA = 768, NR = 120) {
     let h = 40 + (mFbm(x / 1500, z / 1500, 5) * 1.35 - 0.15) * 280 * mStep(R0, 3100, r) + mRidged(x / 2400, z / 2400, 4, 1.4) * 130 * mStep(R0 + 200, 3600, r);
     // the next range back: higher and more broken
     h += mRidged(x / 5200 + 3.1, z / 5200 - 1.7, 6, 1.8) * 700 * mStep(4200, 9000, r) * (0.55 + 0.6 * mFbm(x / 9000, z / 9000, 2));
-    // the peak across the pond: a rounded summit on long shoulders
-    const pr = Math.hypot((x - PK.x) / 1150, (z - PK.z) / 1500);
-    h += 420 * Math.exp(-pr * pr * 1.3) * (0.8 + 0.3 * mRidged(x / 900 + 2, z / 900, 4, 1.5)) + 110 * Math.exp(-Math.pow(Math.hypot((x - PK.x - dz * 1500) / 1100, (z - PK.z + dx * 1500) / 1300), 2));
+    // v0.14.0: the peak across the pond - exaggerated: a steep granite face toward the water, a long forested shoulder behind
+    { const u = (x - PK.x) * dx + (z - PK.z) * dz, v = -(x - PK.x) * dz + (z - PK.z) * dx;
+      const rr = Math.hypot(v / 1250, u / (u < 0 ? 720 : 1700));
+      const g = mRidged(x / 520 + 2, z / 520, 5, 1.9);                         // gullies and buttresses
+      h += 760 * Math.pow(Math.max(0, 1 - rr), 1.45) * (0.82 + 0.32 * g) + 60 * Math.exp(-rr * rr * 3);
+      h += 150 * Math.exp(-Math.pow(Math.hypot((v - 1500) / 1000, (u - 600) / 1200), 2)); }   // a lower shoulder off to one side
     // far high peaks: a sharp, jagged band 17-25 km out across ~70 degrees of the horizon
     let da = Math.abs(((a - farA + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
     h += mRidged(x / 3800 - 5.3, z / 3800 + 2.2, 7, 2.6) * 1250 * mStep(15500, 19500, r) * (1 - mStep(24000, R1, r)) * (1 - mStep(0.5, 0.75, da));
@@ -843,13 +846,16 @@ export function buildMountains(scene, NA = 768, NR = 120) {
         float st = mN(vMtnW.xz / 380.) * .6 + mN(vMtnW.xz / 120.) * .4;
         diffuseColor.rgb *= .8 + .4 * st;
         // steep faces break into grey rock slides
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.2, .205, .21), smoothstep(.55, .8, slope + (mN(vMtnW.xz / 60.) - .5) * .3) * .7); }`).replace('#include <fog_fragment>', `
+        // v0.14.0: pale Adirondack granite - streaky slides down the steep faces, catching the sun
+        float rk = smoothstep(.5, .72, slope + (mN(vMtnW.xz / 60.) - .5) * .3 + (mN(vec2(vMtnW.x / 25., vMtnW.z / 25.) + vMtnW.y / 40.) - .5) * .25);
+        vec3 granite = vec3(.36, .35, .33) * (.75 + .5 * mN(vMtnW.xz / 14. + vMtnW.y / 9.));
+        diffuseColor.rgb = mix(diffuseColor.rgb, granite, rk * .9); }`).replace('#include <fog_fragment>', `
       { float d = length(vMtnW - cameraPosition);
         // layered aerial perspective: each range further back paler and bluer; the valleys hold more haze than the crests
         float k = (1. - exp(-max(d - 400., 0.) / uMtnHazeL)) * mix(1., .78, smoothstep(150., 900., vMtnW.y));
         gl_FragColor.rgb = mix(gl_FragColor.rgb, uMtnHaze, clamp(k * .92, 0., .92)); }`);
   };
-  mat.customProgramCacheKey = () => 'mtn13';
+  mat.customProgramCacheKey = () => 'mtn14';
   const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = -5; mesh.userData.tag = 'mountains'; mesh.userData.keep = true;
   scene.add(mesh); MOUNTAINS.H = H; return mesh;
 }
