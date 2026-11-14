@@ -231,6 +231,7 @@ export function createNearField(scene, opts = {}) {
   const syncFade = () => { NEAR_FADE.uTreeR.value = S.enabled ? S.treeR : 0; NEAR_FADE.uGroundR.value = S.enabled ? S.groundR : 0; }; syncFade();
   return {
     meshes: () => [...kinds.map((k) => k.im), ...Object.values(G)],
+    groundMeshes: () => Object.values(G),   // v0.14.0: left out of the water's reflection
     setQuality(q) { S.treeR = q.nearTrees ?? 110; S.groundR = q.nearGround ?? 64; S.last = null; syncFade(); },
     update(pos) {
       if (!S.enabled) return;

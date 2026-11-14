@@ -775,7 +775,7 @@ function mRidged(x, y, o = 6, sharp = 2) { let s = 0, a = 0.55, f = 1, w = 1;
   for (let i = 0; i < o; i++) { let n = 1 - Math.abs(mNoise(x * f + i * 17.3, y * f - i * 9.1) * 2 - 1); n = Math.pow(n, sharp); s += n * a * w; w = Math.min(1, n * 1.6); f *= 2.1; a *= 0.5; }
   return s; }
 const mStep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-export function buildMountains(scene) {
+export function buildMountains(scene, NA = 768, NR = 120) {
   const ring = MAP.pond[0]; let cx = 0, cz = 0; ring.forEach((p) => { cx += p[0]; cz += p[1]; }); cx /= ring.length; cz /= ring.length;
   let dx = cx - CAMP.q[0], dz = cz - CAMP.q[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
   const PK = { x: cx + dx * 2900 + dz * 300, z: cz + dz * 2900 - dx * 300 }; WORLD.peak = PK;   // the peak seen across the pond from camp
@@ -800,7 +800,7 @@ export function buildMountains(scene) {
     // start just above the water at the edge of the terrain (under the forest canopy), never dipping under the water plane
     return Math.max(4, 4 + (h - 4) * mStep(R0, R0 + 500, r));
   };
-  const NA = 1024, NR = 150, pos = new Float32Array(NA * NR * 3), col = new Float32Array(NA * NR * 3), rs = new Float32Array(NR);
+  const pos = new Float32Array(NA * NR * 3), col = new Float32Array(NA * NR * 3), rs = new Float32Array(NR);
   for (let k = 0; k < NR; k++) { const t = k / (NR - 1); rs[k] = R0 * Math.pow(R1 / R0, Math.pow(t, 1.15)); }
   const c = new THREE.Color(), cA = new THREE.Color(0x1f3a2c), cB = new THREE.Color(0x2c4a32), cFall = new THREE.Color(0x6b5a2e), cRust = new THREE.Color(0x6a3a22), cRock = new THREE.Color(0x5c6268), cSnow = new THREE.Color(0xb9c0c8);
   for (let k = 0; k < NR; k++) for (let i = 0; i < NA; i++) {
@@ -850,8 +850,8 @@ export function buildMountains(scene) {
         gl_FragColor.rgb = mix(gl_FragColor.rgb, uMtnHaze, clamp(k * .92, 0., .92)); }`);
   };
   mat.customProgramCacheKey = () => 'mtn13';
-  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = -5; mesh.userData.tag = 'mountains';
-  scene.add(mesh); return mesh;
+  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = -5; mesh.userData.tag = 'mountains'; mesh.userData.keep = true;
+  scene.add(mesh); MOUNTAINS.H = H; return mesh;
 }
 
 // ---------- campsites, tents, dock ----------

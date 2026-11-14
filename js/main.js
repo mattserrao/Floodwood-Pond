@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js?v=0.14.0';
 import { AmbientAudio } from './audio.js?v=0.14.0';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, MOUNTAINS, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees } from './world.js?v=0.14.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, MOUNTAINS, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees , TILES } from './world.js?v=0.14.0';
 import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.14.0';
 import { createPost } from './post.js?v=0.14.0';
+import { mergeStatic } from './merge.js?v=0.14.0';
 import { createCanoe, Ripples, Loons, Geese, createFireflies, createSwimmer } from './canoe.js?v=0.14.0';
 import { WIND, gustAt, updateWind } from './wind.js?v=0.14.0';
 import { Q } from './quality.js?v=0.14.0';
@@ -53,7 +54,8 @@ function build() {
   const { depthTex, mesh: terrainMesh } = buildTerrain(scene); world.terrain = terrainMesh;
   sky = createSky(); scene.add(sky);
   water = createWater(depthTex); scene.add(water);
-  buildPaths(scene); buildMountains(scene);
+  buildPaths(scene); world.mtn = buildMountains(scene);
+  world.mtnRefl = buildMountains(scene, 320, 64); world.mtnRefl.visible = false;   // v0.14.0: the mirror gets a coarse copy
   world.stats = buildTrees(scene); shadeUnderTrees(terrainMesh);
   world.isle = buildIsland(scene);
   world.shore = buildShore(scene, world.models);
@@ -78,6 +80,8 @@ function build() {
     const bow = new THREE.Vector3(st[0] + nx * 2.35, 0.42, st[1] + nz * 2.35), pts = [];
     for (let i = 0; i <= 12; i++) { const k = i / 12, v = cl.clone().lerp(bow, k); v.y -= Math.sin(k * Math.PI) * 0.22; pts.push(v); }
     world.bowLine = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.012, 4), new THREE.MeshStandardMaterial({ color: 0x8a7a58, roughness: 1 })); scene.add(world.bowLine); void D; }
+  // v0.14.0: everything built so far that's opaque and never moves gets merged into a few big meshes (see merge.js)
+  world.merge = mergeStatic(scene, scene.children.filter((o) => o !== sky && o !== water && o !== world.terrain));
   canoe = createCanoe(world.models); scene.add(canoe.root);
   canoe.root.traverse((o) => { if (o.isMesh && o !== canoe.mask && o.material && !o.material.transparent && o.material.colorWrite !== false) o.castShadow = true; });
   // the canoe and paddler read as a silhouette against the water and sky (lantern still glows)
@@ -91,6 +95,11 @@ function build() {
   floatLeaves = createFloatingLeaves(scene, 300); fallLeaves = createFallingLeaves(scene, floatLeaves); drips = createDrips(scene); rain = createRain(scene, 1400);
   // things that must not show up in the mirrored treeline
   refl.hide.push(water, ripples.mesh, rain.lines, drips.points, floatLeaves.mesh, canoe.mask, WORLD.pads);
+  // v0.14.0: the low-res mirror doesn't need the ground clutter or the leaf litter (it's mostly the shoreline trees,
+  // the hills and the sky); and only the near-field things cast shadows (shore props and shrubs span the whole pond)
+  refl.hide.push(world.mtn); refl.show.push(world.mtnRefl);
+  refl.hide.push(...world.near.groundMeshes(), ...TILES.filter((t) => t.userData.tag === 'litter'));
+  TILES.forEach((t) => { if (t.userData.tag === 'shore' || t.userData.tag === 'shrub') t.castShadow = false; });
   applyQuality();
   // v0.5: the journey of memories (disable with ?free=1 for the old free-roam game)
   if (!new URLSearchParams(location.search).has('free')) { document.body.classList.add('story'); $('pRestart').textContent = 'Begin again'; }

@@ -204,7 +204,7 @@ export function createReflection(renderer) {
   const mirrorPos = new THREE.Vector3(0, 0, 0), camPos = new THREE.Vector3(), rot = new THREE.Matrix4(), look = new THREE.Vector3(0, 0, -1), view = new THREE.Vector3(), target = new THREE.Vector3(), q = new THREE.Vector4();
   const texMat = new THREE.Matrix4();
   const api = {
-    rt, scale: 0, texMat, hide: [], far: 0,
+    rt, scale: 0, texMat, hide: [], show: [], far: 0,   // show: stand-ins drawn only in the mirror (v0.14.0: a coarse copy of the mountains)
     setScale(s) { api.scale = s; api.resize(); },
     resize() { if (!api.scale) return; const v = renderer.getDrawingBufferSize(new THREE.Vector2()); rt.setSize(Math.max(4, Math.round(v.x * api.scale)), Math.max(4, Math.round(v.y * api.scale))); },
     /** sky: the sky dome (moved to the mirror camera), hide: objects that must not appear in the mirror */
@@ -223,7 +223,7 @@ export function createReflection(renderer) {
       // clip everything below the water with a real clipping plane (an oblique near plane skews the frustum and
       // three.js then culls the reflected treeline at the sides of wide screens)
       clipWorld.set(normal, -0.03);
-      const vis = api.hide.map((o) => o.visible); api.hide.forEach((o) => (o.visible = false));
+      const vis = api.hide.map((o) => o.visible); api.hide.forEach((o) => (o.visible = false)); api.show.forEach((o) => (o.visible = true));
       const skyPos = sky.position.clone(); sky.position.copy(cam.position);
       const prevT = renderer.getRenderTarget(), prevXr = renderer.xr.enabled, prevShadow = renderer.shadowMap.autoUpdate;
       renderer.xr.enabled = false; renderer.shadowMap.autoUpdate = false;
@@ -231,7 +231,7 @@ export function createReflection(renderer) {
       renderer.setRenderTarget(rt); renderer.state.buffers.depth.setMask(true); renderer.clear(); renderer.render(scene, cam);
       renderer.clippingPlanes = prevClip;
       renderer.xr.enabled = prevXr; renderer.shadowMap.autoUpdate = prevShadow; renderer.setRenderTarget(prevT);
-      sky.position.copy(skyPos); api.hide.forEach((o, i) => (o.visible = vis[i]));
+      sky.position.copy(skyPos); api.hide.forEach((o, i) => (o.visible = vis[i])); api.show.forEach((o) => (o.visible = false));
       return true;
     },
   };
