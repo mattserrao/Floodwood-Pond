@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.14.1';
-import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock } from './world.js?v=0.14.1';
-import { Voices } from './voices.js?v=0.14.1';
+import { MAP } from './mapdata.js?v=0.15.0';
+import { clamp, lerp, sstep, pondSD, NQ, heightAt, CREEK, CQ, creekSD, ISLE, glowTexture, CAMP, onDock, WORLD } from './world.js?v=0.15.0';
+import { Voices } from './voices.js?v=0.15.0';
 
 // v0.6.1: Blender-built models, loaded by main.js before the story is created (null entries fall back to primitives)
 let M = {};
@@ -110,6 +110,7 @@ export function createStory(C) {
       for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); pos.setFromMatrixPosition(m4); if (f(pos.x, pos.z)) { m4.decompose(pos, q, sc); m4.compose(pos, q, sc.set(0, 0, 0)); o.setMatrixAt(i, m4); touched = true; } }
       if (touched) o.instanceMatrix.needsUpdate = true;
     });
+    if (WORLD.trees) WORLD.trees.kill(kill.tree);   // v0.15.0: the tree engine's cards
   }
 
   // ---------------- the fallen tree, left of the route as it rounds Big Island toward the creek

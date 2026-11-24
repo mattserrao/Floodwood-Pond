@@ -3,7 +3,7 @@
 // again in the shadow pass. Opaque, non-instanced meshes with the same look and in the same 400 m cell become one
 // mesh; anything transparent, instanced, skinned, a sprite, a light or a custom shader is left alone.
 import * as THREE from 'three';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.14.1';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.15.0';
 
 const sig = (m) => [m.type, m.color ? m.color.getHexString() : '', m.emissive ? m.emissive.getHexString() : '', m.flatShading, m.vertexColors, m.roughness, m.metalness,
   m.side, m.map ? m.map.uuid : '', m.fog, m.toneMapped, m.onBeforeCompile ? m.onBeforeCompile.toString().length : 0].join('|');

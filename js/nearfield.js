@@ -6,7 +6,7 @@
 //  - soft contact shadows under trunks, rocks and stumps
 // Everything is instanced (one draw call per kind) and rebuilt only when the canoe has moved a few metres.
 import * as THREE from 'three';
-import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE, gridSD } from './world.js?v=0.14.1';
+import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE, gridSD } from './world.js?v=0.15.0';
 
 // ------------------------------------------------------------------ geometry helpers
 /** a mesh builder that collects triangles with colours and a bark flag */
@@ -127,14 +127,15 @@ export function createNearField(scene, opts = {}) {
     im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3); scene.add(im); return im; };
 
   // --- detailed trees
-  const V = { con: [0, 1, 2].map((i) => spruce(101 + i * 17)), pine: [0, 1].map((i) => whitePine(301 + i * 29)), maple: [0, 1].map((i) => maple(501 + i * 31)), birch: [birch(707)] };
+  // v0.15.0: with the tree engine every tree is a photographed card at any distance (bikefree's 2D trees): no detailed twins
+  const V = WORLD.trees ? {} : { con: [0, 1, 2].map((i) => spruce(101 + i * 17)), pine: [0, 1].map((i) => whitePine(301 + i * 29)), maple: [0, 1].map((i) => maple(501 + i * 31)), birch: [birch(707)] };
   const kinds = []; Object.entries(V).forEach(([k, list]) => list.forEach((g, i) => kinds.push({ key: k + i, kind: k, im: mkIM(g, nearMat, 1400) })));
   const kindFor = (r) => { if (r.kind === 'con') return r[5] < 0.3 && r[6] !== 4 ? 'pine' + (r[5] < 0.15 ? 0 : 1) : 'con' + (Math.floor(r[5] * 97) % 3);
     const yellow = r[8] && r[8][0] > 0.6 && r[8][1] > 0.35; return yellow && r[5] > 0.4 ? 'birch0' : 'maple' + (Math.floor(r[5] * 89) % 2); };
   const byKey = Object.fromEntries(kinds.map((k) => [k.key, k]));
   // spatial grid of tree records
   // v0.14.0: only trees within 70 m of the water swap to detailed models - deeper in, the front rows hide them from the canoe
-  const GC = 40, grid = new Map(); recs.forEach((r) => { if (!r.im || -gridSD(r[0], r[2]) > 70) return; const k = Math.floor(r[0] / GC) + ',' + Math.floor(r[2] / GC); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(r); });
+  const GC = 40, grid = new Map(); recs.forEach((r) => { if ((!r.im && !WORLD.trees) || -gridSD(r[0], r[2]) > 70) return; const k = Math.floor(r[0] / GC) + ',' + Math.floor(r[2] / GC); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(r); });
   const around = (x, z, R2) => { const out = [], g0x = Math.floor((x - R2) / GC), g1x = Math.floor((x + R2) / GC), g0z = Math.floor((z - R2) / GC), g1z = Math.floor((z + R2) / GC);
     for (let gx = g0x; gx <= g1x; gx++) for (let gz = g0z; gz <= g1z; gz++) { const l = grid.get(gx + ',' + gz); if (l) for (const r of l) if ((r[0] - x) ** 2 + (r[2] - z) ** 2 < R2 * R2) out.push(r); } return out; };
   const nearestTree = (x, z) => { let best = 1e9; for (const r of around(x, z, 7)) best = Math.min(best, Math.hypot(r[0] - x, r[2] - z)); return best; };
@@ -209,6 +210,11 @@ export function createNearField(scene, opts = {}) {
   }
 
   function rebuildTrees(x, z, radius) {
+    if (WORLD.trees) {   // v0.15.0: just the soft contact shadows under the near trunks
+      let nb = 0;
+      for (const r of around(x, z, radius)) { if (nb >= blobs.instanceMatrix.count) break; const bs = 2.2 * Math.max(r.ws, 0.6); M4.compose(V3.set(r[0], r[1] + 0.33, r[2]), Q.identity(), S3.set(bs, 1, bs)); blobs.setMatrixAt(nb++, M4); }
+      blobs.count = nb; blobs.instanceMatrix.needsUpdate = true; return;
+    }
     // detailed twins exist out to the ring edge; the far tree is only hidden well inside it,
     // so across the outer band both draw and the shaders cross-dissolve them (no pop)
     const now = new Set(around(x, z, radius)), inner = radius - 38;

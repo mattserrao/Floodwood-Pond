@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp, sstep, rnd, fbm, pondSD, heightAt, CAMP, campPath, LEAF_COLS, leafGeometry, glowTexture } from './world.js?v=0.14.1';
+import { clamp, lerp, sstep, rnd, fbm, pondSD, heightAt, CAMP, campPath, LEAF_COLS, leafGeometry, glowTexture, WORLD } from './world.js?v=0.15.0';
 
 // v0.6.2: the campsite at the start of the game - leaf litter and needle duff with a worn path, pine cones, twigs,
 // a fire ring with cold ash and a half-burnt log, split firewood, a camp chair, ferns and blueberry along the tree line,
@@ -115,8 +115,11 @@ export function buildCamp(scene, treePositions = [], post = null) {
     const sc = 0.85 + rnd() * 0.35; const tr = new THREE.Mesh(trunkGeo, barkG); tr.scale.set(sc, 1, sc); g.add(tr);
     [[19, 0.9, 0.3], [22.5, 1.0, -0.5], [25.5, 0.85, 0.6], [28.5, 0.55, 0]].forEach(([h, s, o]) => { const t = new THREE.Mesh(tierGeo, crownM); t.position.set(o, h + rnd() * 1.5, -o * 0.6); t.scale.set(s * (1 + rnd() * 0.4), 1, s * (1 + rnd() * 0.4)); g.add(t); });
     for (let k = 0; k < 3; k++) { const st = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.08, 0.9, 4), barkG); const hh = 5 + rnd() * 10, aa = rnd() * 6.28; st.position.set(Math.cos(aa) * 0.5 * sc, hh, Math.sin(aa) * 0.5 * sc); st.rotation.set(0, -aa, Math.PI / 2.3); g.add(st); }   // dead branch stubs
+    if (WORLD.trees) { bigPines.push({ x, z, r: 0.6 * sc, g, y, sc, rot: g.rotation.y }); return; }   // v0.15.0: drawn by the tree engine (below)
     scene.add(g); bigPines.push({ x, z, r: 0.6 * sc, g });
   });
+  // v0.15.0: the giant pines are kit white pines on the tree engine's cards, like every other tree (31-35 m)
+  if (WORLD.trees) WORLD.trees.addTrees(bigPines.map((p, i) => ({ x: p.x, y: p.y, z: p.z, key: 'whitepine:' + (i % 2), h: 31 + (p.sc - 0.85) * 12, w: 1.05, rot: p.rot, tint: 0.95 + (i % 3) * 0.05, keep: true })));
 
   // ---- camp gear from the photos: folding table under a blue tarp, red/blue/green chairs round the fire, a cooler, a hammock ----
   {
