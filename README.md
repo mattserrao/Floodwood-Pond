@@ -4,6 +4,35 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.15.0 (test branch): bikefree's trees
+
+Every tree is now drawn the way bikefree's main branch draws its trees (`js/treekit.js`, `js/treeengine.js`, ported from
+bikefree's `upstate-trees.js`, `northern-rockies.js` and `tree-engine.js`):
+- **Trees grown as skeletons.** Broadleaves have a trunk and limbs of curved, tapered tubes, spread up the trunk at the
+  golden angle and pulled toward the light, with leaf clusters at the branch ends. Conifers are stacked tiers with jagged,
+  drooping rims and dark undersides.
+- **Species**: sugar maple, red maple, paper birch, beech, red spruce, balsam fir, hemlock, white pine and tamarack.
+  Broadleaves come in variants by how far they've turned (green, turning, turned), with the top and outside of the
+  crown turning first. Each old tree keeps its spot, height and colour family, so the forest's layout and tall shoreline
+  are unchanged.
+- **2D trees.** Each tree model is photographed from 12 sides when the game loads (about a quarter of a second). Every
+  tree on the map is then one card that turns to face you and blends the two nearest photos. All the trees are a single
+  draw call.
+- **Soft up close**: a magnified card is smoothed and broken up by leaf clusters so it doesn't pixelate. Silhouettes are
+  soft with MSAA (High) and cut cleanly without it (Low, Medium, phones).
+- **Leafy shadows**: the cards also cast shadows, turned toward the sun and cut by their photos. Each tree's shadow card
+  sits at its back, so a tree doesn't shade itself. Trees don't shade each other, as on main, where the forest's trees didn't take shadows either.
+- **Floodwood's changes**: bikefree keeps one time of day, so it photographs its trees already lit. Here the sun moves,
+  so two photos are taken: colour, and which way each surface faces. The cards are then lit live by the sun, sky, moon,
+  shadows and fog, and foliage glows when you look toward the sun. The cards also sway in the gusts as the old trees did.
+  The conifers' facing is rounded toward the crown so their flat tiers don't read black from the water.
+- The camp's giant white pines, Big Island's tall pines and spruces and the sword tree's crown use the engine too (the
+  sword tree keeps its 3D trunk for the katana). The near-field's detailed 3D trees are gone; its ground detail and
+  contact shadows stay.
+- Lighter: in the test views, draw calls went from 360–440 to 290–320 per frame and triangles fell by about 10–15%.
+  The photo atlas uses about 44 MB on Medium, about 79 MB on High and at most 56 MB on phones.
+- `?engine=0` brings back the old trees for comparison.
+
 ## v0.14.1 (test branch): steady reflections
 
 The reflections no longer shimmer:

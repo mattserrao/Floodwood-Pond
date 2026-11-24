@@ -1,7 +1,9 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.14.1';
-import { WIND, GUST_GLSL } from './wind.js?v=0.14.1';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.14.1';
+import { MAP } from './mapdata.js?v=0.15.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.15.0';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.15.0';
+import { makeKit } from './treekit.js?v=0.15.0';
+import { TreeEngine } from './treeengine.js?v=0.15.0';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -568,6 +570,7 @@ function tiled(scene, geo, mat, list, write, tag, lodGeo, cardGeo, cardMat) {
 export const CULL = { lodDist: 520, cardDist: 1100 };
 /** hide whole tiles beyond what the fog lets you see (frustum culling does the rest); far tree tiles switch to the LOD */
 export function cullTiles(camPos, visDist, litterDist, reedDist = visDist) {
+  if (WORLD.trees) WORLD.trees.setVis(visDist);
   for (const im of TILES) {
     const s = im.boundingSphere, d = Math.hypot(s.center.x - camPos.x, s.center.z - camPos.z) - s.radius, tag = im.userData.tag;
     const vis = d < (tag === 'litter' ? litterDist : tag === 'reed' ? reedDist : visDist), lod = im.userData.lod;
@@ -577,7 +580,29 @@ export function cullTiles(camPos, visDist, litterDist, reedDist = visDist) {
 /** scale how many litter clusters are drawn (instances are shuffled, so any prefix is an even sample) */
 export function setLitterScale(k) { for (const im of TILES) if (im.userData.tag === 'litter') im.count = Math.floor(im.userData.full * k); }
 
-export function buildTrees(scene) {
+// v0.15.0: bikefree's tree engine (treekit.js + treeengine.js) draws every tree as a photographed card; ?engine=0 keeps
+// the old cone / blob trees (and the near-field's detailed models) for comparison
+export const ENGINE = QS.get('engine') !== '0';
+/** which kit tree stands in for an old tree record (species picked from its old kind and colour) */
+function kitKey(r, isCon) {
+  const u = r[5];
+  if (isCon) {
+    if (r[9] === 4) return 'tamarack:0';
+    if (u < 0.3) return 'whitepine:' + (u < 0.15 ? 0 : 1);
+    if (u < 0.5) return 'hemlock:0';
+    if (u < 0.62) return 'fir:0';
+    return 'spruce:' + (Math.floor(u * 97) % 2);
+  }
+  switch (r[9]) {
+    case 0: return u < 0.6 ? 'sugarmaple:0' : 'redmaple:1';   // orange-red
+    case 1: return 'redmaple:0';                               // deep red
+    case 2: return u > 0.4 ? 'birch:0' : 'sugarmaple:1';       // yellow
+    case 3: return u > 0.5 ? 'birch:1' : 'sugarmaple:2';       // still green
+    case 4: return 'beech:0';                                  // bronze
+    default: return 'sugarmaple:1';                            // orange
+  }
+}
+export function buildTrees(scene, opts = {}) {
   const white = [1, 1, 1];
   const conifer = mergeGeoms([
     { geo: new THREE.CylinderGeometry(0.22, 0.32, 2, 4), color: [0.22, 0.14, 0.08], y: 1, bark: true },
@@ -653,12 +678,13 @@ export function buildTrees(scene) {
     WORLD.treeCull = { before, after: conAt.length + broadAt.length, ms: Math.round(performance.now() - t0) };
   }
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), Y = new THREE.Vector3(0, 1, 0), P3 = new THREE.Vector3(), S3 = new THREE.Vector3();
+  const paint = (list, cols, tamarack) => list.forEach((r) => {
+    let ci = Math.floor(r[5] * cols.length);
+    if (tamarack) ci = r[6] === 4 ? 4 : r[5] < 0.1 ? 4 : Math.floor(r[5] * 4 / 0.9) % 4;
+    const base = cols[Math.min(ci, cols.length - 1)], j = 0.88 + rnd() * 0.24; r[8] = [base[0] * j, base[1] * j, base[2] * j]; r[9] = ci; r[10] = j;
+  });
   const mk = (geo, list, cols, tamarack, tag, lodGeo) => {
-    list.forEach((r) => {
-      let ci = Math.floor(r[5] * cols.length);
-      if (tamarack) ci = r[6] === 4 ? 4 : r[5] < 0.1 ? 4 : Math.floor(r[5] * 4 / 0.9) % 4;
-      const base = cols[Math.min(ci, cols.length - 1)], j = 0.88 + rnd() * 0.24; r[8] = [base[0] * j, base[1] * j, base[2] * j]; r[9] = ci;
-    });
+    paint(list, cols, tamarack);
     return tiled(scene, geo, mat, list, (im, i, r) => {
       q.setFromAxisAngle(Y, r[4]); const wk = treeWidth(r[7]);
       m.compose(P3.set(r[0], r[1], r[2]), q, S3.set(r[3] * wk * (0.85 + r[5] * 0.3), r[3] * r[7], r[3] * wk * (0.85 + r[5] * 0.3)));
@@ -672,7 +698,21 @@ export function buildTrees(scene) {
       for (const sg of [1, -1]) { const o = sg * (3 + rnd() * 26), px = x + nx * o, pz = z + nz * o, sd = bil(SD, px, pz); if (-sd < 3 || -sd > 32 || inIsleBox(px, pz) || inCampBox(px, pz) || rnd() < 0.35) continue;
         const h = inCreekBox(px, pz) ? fullHeight(px, pz) : bil(H, px, pz); conAt.push([px, h - 0.15, pz, 0.16 + rnd() * 0.3, rnd() * 6.28, rnd(), rnd() < 0.15 ? 4 : 0, 1]); } }
   }
-  mk(conifer, conAt, conCols, true, 'tree', coniferLod); mk(broad, broadAt, broadCols, false, 'tree', broadLod);
+  if (ENGINE && opts.renderer) {
+    // v0.15.0: one card per tree, each a photographed kit tree as tall as the old one (11 m x its scale x the shore
+    // height factor), a little slimmer where the shore makes them tall
+    paint(conAt, conCols, true); paint(broadAt, broadCols, false);
+    const t0 = performance.now(), kit = makeKit(), t1 = performance.now();
+    const eng = new TreeEngine({ renderer: opts.renderer, kit, tier: opts.tier, msaa: opts.msaa, uniforms: { sway: SWAY, wind: WIND.uniforms, light: TREE_LIGHT }, gust: GUST_GLSL });
+    const cards = [];
+    for (const [list, isCon] of [[conAt, true], [broadAt, false]]) for (const r of list) {
+      const w = Math.pow(r[7], -0.15) * (0.85 + r[5] * 0.3);
+      cards.push({ x: r[0], y: r[1], z: r[2], key: kitKey(r, isCon), h: 11 * r[3] * r[7], w, rot: r[4], tint: r[10] });
+      r.kind = isCon ? 'con' : 'broad'; r.ws = r[3] * Math.pow(r[7], 0.62);
+    }
+    eng.setTrees(cards); scene.add(eng.mesh); WORLD.trees = eng;
+    WORLD.treeEngine = { kitMs: Math.round(t1 - t0), bakeMs: Math.round(performance.now() - t1), cell: eng.cell, atlas: eng.atlasSize, mb: eng.memMB, cards: cards.length };
+  } else { mk(conifer, conAt, conCols, true, 'tree', coniferLod); mk(broad, broadAt, broadCols, false, 'tree', broadLod); }
   // maples near the water drop leaves when a gust passes (see leaves.js)
   const maples = broadAt.filter((r) => -bil(SD, r[0], r[2]) < 90 && r[9] !== 3).map((r) => ({ x: r[0], z: r[2], y: r[1] + 6.6 * r[3] * r[7], r: 2.6 * r[3] * treeWidth(r[7]), col: r[8] }));
 
@@ -703,7 +743,7 @@ export function buildTrees(scene) {
   scene.add(padMesh); WORLD.pads = padMesh;
   const litter = buildLitter(scene);
   WORLD.maples = maples;
-  WORLD.treeRecs = [...conAt, ...broadAt]; WORLD.treeMat = mat; distFade(mat, 'out', 'tree');
+  WORLD.treeRecs = [...conAt, ...broadAt]; WORLD.treeMat = mat; if (!WORLD.trees) distFade(mat, 'out', 'tree');
   WORLD.treePos = [...conAt, ...broadAt].filter((r) => Math.hypot(r[0] - CAMP.tent[0], r[2] - CAMP.tent[1]) < CAMP.R + 10).map((r) => [r[0], r[2]]);
   return { trees: conAt.length + broadAt.length, reeds: reedPts.length, pads: pads.length, litter, tiles: TILES.length };
 }
@@ -954,8 +994,15 @@ export function buildIsland(scene) {
   const E = (y) => new THREE.Euler(0, y, 0), V = (x, y, z) => new THREE.Vector3(x, y, z);
   const tallPine = tall.filter((t) => t[5]), tallSpruce = tall.filter((t) => !t[5]);
   const ik = TREES.legacy ? 1 : TREES.mult, iw = treeWidth(ik);
-  place(pine, tallPine.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.9 * iw, t[3] * 1.05 * ik, t[3] * 0.9 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
-  place(spruce, tallSpruce.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.85 * iw, t[3] * ik, t[3] * 0.85 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
+  if (WORLD.trees) {
+    // v0.15.0: the island's tall pines and spruces are tree-engine cards too (as tall as before); the sword tree stays 3D
+    const w = Math.pow(ik, -0.15);
+    WORLD.trees.addTrees([...tallPine.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: 'whitepine:' + (i % 2), h: 13.4 * 1.05 * t[3] * ik, w, rot: t[4], tint: 0.85 + rnd() * 0.3 })),
+      ...tallSpruce.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: i % 5 === 0 ? 'fir:0' : 'spruce:' + (i % 2), h: 10.9 * t[3] * ik, w, rot: t[4], tint: 0.85 + rnd() * 0.3 }))]);
+  } else {
+    place(pine, tallPine.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.9 * iw, t[3] * 1.05 * ik, t[3] * 0.9 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
+    place(spruce, tallSpruce.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.85 * iw, t[3] * ik, t[3] * 0.85 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
+  }
   const shrubGeo = new THREE.IcosahedronGeometry(1, 0); shrubGeo.scale(1.25, 0.62, 1.25); shrubGeo.translate(0, 0.35, 0);
   const shrubCols = [[0.46, 0.1, 0.05], [0.3, 0.24, 0.09], [0.2, 0.24, 0.09], [0.1, 0.19, 0.08], [0.55, 0.22, 0.06]];
   place(shrubGeo, scrub.map((s) => { const k = 0.45 + rnd() * 0.85; return [V(s[0], fullHeight(s[0], s[1]) - 0.15, s[1]), E(rnd() * 6), V(k * (0.8 + rnd() * 0.5), k, k * (0.8 + rnd() * 0.5))]; }),
@@ -970,7 +1017,9 @@ export function buildIsland(scene) {
   const bark = new THREE.MeshStandardMaterial({ color: 0xa08a74, flatShading: true, roughness: 1 });
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.6, 15, 7), bark); trunk.position.y = 7.5; tree.add(trunk);
   const needles = new THREE.MeshStandardMaterial({ color: 0x1d3a22, flatShading: true, roughness: 1 });
-  [[3.2, 1.6, 11.2, 0.9, 0.2], [2.7, 1.4, 13.2, -0.8, 0.5], [3.0, 1.4, 15.0, 0.5, -0.6], [1.8, 1.4, 16.8, 0, 0.1]].forEach(([r, h, y, ox, oz]) => {
+  // v0.15.0: its crown is a kit white pine on the tree engine (the 3D trunk stays, round the card's own, for the sword)
+  if (WORLD.trees) WORLD.trees.addTrees([{ x: swordTree.x, y: gy - 0.3, z: swordTree.z, key: 'whitepine:1', h: 19, w: 1.1, rot: 0.7, tint: 1, keep: true }]);
+  else [[3.2, 1.6, 11.2, 0.9, 0.2], [2.7, 1.4, 13.2, -0.8, 0.5], [3.0, 1.4, 15.0, 0.5, -0.6], [1.8, 1.4, 16.8, 0, 0.1]].forEach(([r, h, y, ox, oz]) => {
     const t = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.35, r, h, 7), needles); t.position.set(ox, y, oz); tree.add(t);
   });
   [[5.5, 0.9], [7.4, 2.6], [9.2, 4.4]].forEach(([y, a]) => { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.12, 1.4, 5), bark); b.position.set(Math.cos(a) * 0.6, y, Math.sin(a) * 0.6); b.rotation.set(0, -a, Math.PI / 2.4); tree.add(b); });
