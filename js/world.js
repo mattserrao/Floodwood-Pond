@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.15.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.15.0';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.15.0';
-import { makeKit } from './treekit.js?v=0.15.0';
-import { TreeEngine } from './treeengine.js?v=0.15.0';
+import { MAP } from './mapdata.js?v=0.16.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.16.0';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.16.0';
+import { makeKit } from './treekit.js?v=0.16.0';
+import { TreeEngine } from './treeengine.js?v=0.16.0';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -707,7 +707,16 @@ export function buildTrees(scene, opts = {}) {
     const cards = [];
     for (const [list, isCon] of [[conAt, true], [broadAt, false]]) for (const r of list) {
       const w = Math.pow(r[7], -0.15) * (0.85 + r[5] * 0.3);
-      cards.push({ x: r[0], y: r[1], z: r[2], key: kitKey(r, isCon), h: 11 * r[3] * r[7], w, rot: r[4], tint: r[10] });
+      // v0.16.0 (bikefree's lean, here toward the light over the water): a tree within 16 m of the shore leans out over
+      // it, more the nearer it stands; about two in three do, by up to ~9 degrees (the top's offset per metre up)
+      let lean = null;
+      const sd = pondSD(r[0], r[2]);
+      if (sd > -16 && Math.abs(Math.sin(r[4] * 7.3)) < 0.66) {
+        const e = 3, gx = pondSD(r[0] + e, r[2]) - pondSD(r[0] - e, r[2]), gz = pondSD(r[0], r[2] + e) - pondSD(r[0], r[2] - e), gl = Math.hypot(gx, gz) || 1;
+        const k = Math.pow(1 - clamp(-sd / 16, 0, 1), 1.4) * (0.05 + 0.11 * Math.abs(Math.cos(r[4] * 3.1)));
+        lean = [gx / gl * k, gz / gl * k];
+      }
+      cards.push({ x: r[0], y: r[1], z: r[2], key: kitKey(r, isCon), h: 11 * r[3] * r[7], w, rot: r[4], tint: r[10], lean });
       r.kind = isCon ? 'con' : 'broad'; r.ws = r[3] * Math.pow(r[7], 0.62);
     }
     eng.setTrees(cards); scene.add(eng.mesh); WORLD.trees = eng;

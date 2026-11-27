@@ -230,30 +230,41 @@ function grow(seed, o, turn) {
   rad = Math.max(rad, R * .5); radY = Math.max(radY, 1.5);
   // one tree turns one way (a maple orange, its neighbour red), the top and outside first
   const hue = o.fall[Math.floor(rand() * o.fall.length)], hue2 = o.fall[Math.floor(rand() * o.fall.length)];
-  const pos = [], nor = [], uv = [], col = [], v = new THREE.Vector3(), qn = new THREE.Vector3();
+  // v0.16.0 (bikefree, 26 Nov: the three crossed quads per cluster read as "crosses"): each cluster is one or two
+  // camera-facing leaf clumps - all six vertices at the clump's centre, the corner carried in aCard and opened square to
+  // whichever camera draws it (here: the photo's) - a main clump and a smaller, darker one tucked beside it; normals
+  // spherized from the crown's centre, so the crown shades as soft overlapping volumes from any side
+  const C = { pos: [], nor: [], uv: [], col: [], card: [] }, qn = new THREE.Vector3(), p2 = new THREE.Vector3();
+  const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]], UVS = [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]];
+  const nAt = (p) => qn.set((p.x - cc.x) / rad, (p.y - cc.y) / radY + .25, (p.z - cc.z) / rad).normalize();
+  const pushCard = (c, w, h, roll, n, u0, v0, k) => {
+    for (let j = 0; j < 6; j++) {
+      C.pos.push(c.x, c.y, c.z); C.nor.push(n.x, n.y, n.z); C.col.push(k.r, k.g, k.b);
+      C.uv.push(u0 + UVS[j][0] * .5, v0 + UVS[j][1] * .5); C.card.push(CORNERS[j][0] * w, CORNERS[j][1] * h, roll, 0);
+    }
+  };
   for (const c of clusters) {
     const out = Math.min(1, Math.hypot((c.p.x - cc.x) / rad, (c.p.y - cc.y) / radY, (c.p.z - cc.z) / rad));
     const g = o.greens[Math.floor(rand() * o.greens.length)], u = rand(), top = (c.p.y - cc.y) / radY;
     const hex = u < turn * (.75 + top * .35 + out * .3) ? (rand() < .7 ? hue : mixHex(hue, hue2, .5)) : u < turn * 1.4 ? mixHex(g, hue, .4) : g;
     const k = new THREE.Color(hex).multiplyScalar(.8 + out * .28);   // depth: darker inside
-    const size = 1.75 * c.size;
-    for (let q = 0; q < 3; q++) {
-      const yaw = rand() * Math.PI, pitch = q === 2 ? Math.PI / 2 - .3 + rand() * .3 : (rand() - .5) * .6;
-      const ax = new THREE.Vector3(Math.cos(yaw), 0, Math.sin(yaw)), ay = new THREE.Vector3(0, Math.cos(pitch), 0).addScaledVector(new THREE.Vector3(-Math.sin(yaw), 0, Math.cos(yaw)), Math.sin(pitch));
-      const corner = (sx, sy) => v.copy(c.p).addScaledVector(ax, sx * size).addScaledVector(ay, sy * size).clone();
-      const P = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, -1), corner(1, 1), corner(-1, 1)], U = [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]];
-      const u0 = Math.floor(rand() * 2) * .5, v0 = Math.floor(rand() * 2) * .5;   // one of the texture's four clusters
-      P.forEach((pp, i) => {
-        pos.push(pp.x, pp.y, pp.z);
-        qn.set((pp.x - cc.x) / rad, (pp.y - cc.y) / radY + .25, (pp.z - cc.z) / rad).normalize(); nor.push(qn.x, qn.y, qn.z);
-        uv.push(u0 + U[i][0] * .5, v0 + U[i][1] * .5); col.push(k.r, k.g, k.b);
-      });
-    }
+    const size = 1.5 * c.size * 1.15;
+    pushCard(c.p, size, size, rand() * 6.283, nAt(c.p), Math.floor(rand() * 2) * .5, Math.floor(rand() * 2) * .5, k);
+    // a second, smaller clump tucked in beside it (outward and a little down), a shade darker: depth inside the mass
+    const a = rand() * 6.283, d = size * (.45 + rand() * .3);
+    p2.set(c.p.x + Math.cos(a) * d, c.p.y - size * (.1 + rand() * .3), c.p.z + Math.sin(a) * d);
+    pushCard(p2, size * (.6 + rand() * .2), size * (.6 + rand() * .2), rand() * 6.283, nAt(p2), Math.floor(rand() * 2) * .5, Math.floor(rand() * 2) * .5, k.clone().multiplyScalar(.82 + rand() * .1));
   }
   const leaves = new THREE.BufferGeometry();
-  leaves.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); leaves.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  leaves.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); leaves.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  leaves.computeBoundingBox();
+  leaves.setAttribute('position', new THREE.Float32BufferAttribute(C.pos, 3)); leaves.setAttribute('normal', new THREE.Float32BufferAttribute(C.nor, 3));
+  leaves.setAttribute('uv', new THREE.Float32BufferAttribute(C.uv, 2)); leaves.setAttribute('color', new THREE.Float32BufferAttribute(C.col, 3));
+  leaves.setAttribute('aCard', new THREE.Float32BufferAttribute(C.card, 4));
+  // (the vertices sit at the clumps' centres: the bounds padded by the largest clump)
+  leaves.computeBoundingBox(); leaves.boundingBox.expandByScalar(1.5 * 1.15 * 1.5 * Math.SQRT2);
+  leaves.userData.cards = true;
+  // (the crown, for the canopy shade: its leaves' extent, unpadded)
+  const lb = new THREE.Box3(); for (const c of clusters) lb.expandByPoint(c.p);
+  leaves.userData.crown = lb;
   return { wood: wood.build(), leaves };
 }
 
@@ -288,21 +299,27 @@ const CONIFERS = {
 };
 
 /**
- * The leaf-cluster texture: four clusters (one per quarter), each a spray of small pointed leaves in light greys
- * (vertex colour tints them by species and season), a little darker toward the middle, on transparent ground.
+ * The leaf-cluster texture (v0.16.0: bikefree's painterly clusters, fidelity step 6): four clusters (one per quarter),
+ * each fewer, larger leaves that merge into one soft mass, lit from above (a light top, a shaded underside), little
+ * leaf-to-leaf contrast and no midribs - the old 130 small leaves a quadrant, each its own shade with a dark rib, read
+ * as single-pixel noise once photographed. Light greys: the vertex colour tints them by species and season.
  */
 function makeLeafTexture(size = 512) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
   const g = cv.getContext('2d'), rand = randomSequence(777), h = size / 2;
   for (let q = 0; q < 4; q++) {
-    const ox = (q % 2) * h, oy = Math.floor(q / 2) * h;
-    for (let k = 0; k < 130; k++) {
-      const r = Math.pow(rand(), .65) * h * .44, a = rand() * 6.28, x = ox + h / 2 + Math.cos(a) * r, y = oy + h / 2 + Math.sin(a) * r;
-      const L = h * (.08 + rand() * .04), W = L * (.5 + rand() * .2), rot = a + (rand() - .5) * 1.2;
-      const v = Math.round(255 * (.72 + rand() * .28) * (.86 + .14 * r / (h * .44)));
-      g.save(); g.translate(x, y); g.rotate(rot); g.fillStyle = `rgb(${v},${v},${v})`;
+    const ox = (q % 2) * h, oy = Math.floor(q / 2) * h, leaves = [];
+    for (let k = 0; k < 62; k++) {
+      const r = Math.pow(rand(), .6) * h * .4, a = rand() * 6.28, x = ox + h / 2 + Math.cos(a) * r, y = oy + h / 2 + Math.sin(a) * r;
+      leaves.push({ x, y, r, L: h * (.13 + rand() * .06), w: .55 + rand() * .2, rot: a + (rand() - .5) * 1.2, n: rand() });
+    }
+    leaves.sort((p, q2) => p.y - q2.y);   // (drawn top to bottom: the lit upper leaves overlap the shaded lower ones' tips)
+    for (const l of leaves) {
+      const up = 1 - (l.y - oy) / h;      // 1 at the cluster's top, 0 at its foot
+      const v = Math.round(255 * (.8 + .2 * up) * (.94 + .06 * l.n) * (.9 + .1 * (1 - l.r / (h * .4))));
+      g.save(); g.translate(l.x, l.y); g.rotate(l.rot); g.fillStyle = `rgb(${v},${v},${v})`;
+      const L = l.L, W = L * l.w;
       g.beginPath(); g.moveTo(-L * .5, 0); g.quadraticCurveTo(0, -W, L * .5, 0); g.quadraticCurveTo(0, W, -L * .5, 0); g.fill();
-      g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = Math.max(1, size / 512); g.beginPath(); g.moveTo(-L * .45, 0); g.lineTo(L * .45, 0); g.stroke();
       g.restore();
     }
   }
@@ -316,7 +333,7 @@ export function makeKit() {
     const entries = [];
     Object.entries(BROAD).forEach(([sp, o], k) => o.turn.forEach((turn, v) => { const t = grow(4001 + k * 37 + v * 7, o, turn); entries.push({ key: `${sp}:${v}`, sp, v, turn, ...t }); }));
     // (Floodwood: bikefree's evergreen greens are ~2.5x darker than this pond's palette; the photos lift them to match)
-    for (const [sp, list] of Object.entries(CONIFERS)) list.forEach((fn, v) => entries.push({ key: `${sp}:${v}`, sp, v, wood: fn(), leaves: null, foliageGain: sp === 'tamarack' ? 1 : 2.3 }));
+    for (const [sp, list] of Object.entries(CONIFERS)) list.forEach((fn, v) => entries.push({ key: `${sp}:${v}`, sp, v, wood: fn(), leaves: null, foliageGain: sp === 'tamarack' ? 1 : 2.3, crownFrom: { whitepine: .4, tamarack: .25, hemlock: .15 }[sp] ?? .06 }));
     return { entries, leafTexture: makeLeafTexture(512) };
   });
 }

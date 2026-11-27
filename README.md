@@ -4,6 +4,39 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.16.0 (test branch): bikefree's newer trees and light
+
+Brings in bikefree's tree and lighting work from 24–27 Nov (the "zwift-look" and fidelity passes), as chosen on 27 Nov.
+
+**Trees** (`js/treekit.js`, `js/treeengine.js`)
+- **Leaf clumps**: each leaf cluster is now one or two soft, round clumps that open square to the camera when the trees
+  are photographed. They replace three crossed quads, which read as crosses. Normals are still rounded from the crown's
+  centre, and a smaller, darker clump sits beside each one for depth.
+- **Painterly leaf texture**: fewer, larger leaves, lit from above, without midribs, so the photos have less pixel
+  noise.
+- **Shoreline lean**: about two in three trees within 16 m of the water lean out over it, by up to about 9°, more the
+  closer they stand.
+- **Crown grade**: the lower part of each tree is darker and a little cooler, with the tops in sun. Bleached crowns are
+  held to a rich colour, and red crowns turn slightly toward gold (more gently than bikefree, so the red maples stay
+  red).
+
+**Light** (`js/light.js`, `js/post.js`, `js/main.js`)
+- **Sky as environment light**: the sky dome (with its clouds, sun glow and the ground's colour below) is rendered into
+  an environment map that every lit material takes its ambient light from. It rebuilds as the light changes, at most
+  every 2 s. The hemisphere light stays on as a fill.
+- **Key/fill grade** in the tone mapping, half way between v0.15's natural look and bikefree's warm, saturated one:
+  saturation ×1.075, a gentle S-curve, a little warmth, the sun ×1.06 and the fill ×0.95.
+- **Contact shading**: screen-space ambient occlusion from the depth buffer, darkening where rocks meet the shore,
+  where the canoe sits on the water and at the foot of trunks. On laptops and desktops only: 0.7 on High, 0.55 on
+  Medium, off on Low and on phones.
+- **Canopy shade**: crowns are drawn into a 320 m map around the camera, and a lit surface under a crown is shaded with
+  soft sun flecks. On Medium and High, the trees' card shadows cover the first 75 m and the canopy takes over beyond
+  (the far shores). On Low it is the trees' only shade.
+- Comparison switches: `?env=0`, `?grade=0`, `?ao=0`, `?canopy=0` (and `?engine=0` for the old trees).
+
+Not brought in (by choice): bikefree's near 3D trees, near 3D bark trunks and its air/sun-shaft pass (Floodwood keeps its
+own haze, mist and god rays).
+
 ## v0.15.0 (test branch): bikefree's trees
 
 Every tree is now drawn the way bikefree's main branch draws its trees (`js/treekit.js`, `js/treeengine.js`, ported from
