@@ -12,30 +12,38 @@ hemlock were solid zigzag cones with no needle texture, all washed to a bright t
 
 - **Needle sprays** (`js/treekit.js` `drawNeedles`): a new set on the right half of the leaf texture, drawn at load:
   - white pine: lobed brushes of long, soft needles
-  - fir: flat, two-rowed (pinnate) sprays; spruce uses these too, because the bottle-brush version photographed as
-    stripes
+  - spruce: a shaggy, crowded mass of short twigs with stiff needles all round them
+  - fir: an open, fern-like spray of paired side twigs
   - hemlock: a lacy spray with a drooping tip
   The sprays are dense and kept inside their quarter of the texture, since sparse needles thinned to nothing and
   clipped ones came out square.
 - **How each conifer is built** (`needleTree`): a trunk with dead lower limb stubs, a small dark inner core so the crown
   is never see-through, and whorls of limbs (some missing) that hang down and turn up at the tips. Needle-spray clumps
   run along each limb, held level and wider than tall, lighter toward the tips and darker inside and underneath. The
-  crown is pushed to one side.
+  crown is pushed east, downwind of the prevailing west wind, so every pine on the pond flags the same way.
 - **White pine in three ages:**
-  - young: a loose pyramid
+  - young: an uneven, ragged pyramid with irregular whorls, not stacked plates
   - mature: open, layered flat pads with sky and trunk between them
   - old: a flat-topped giant with forked leaders
   Forest pines pick their age by height. The camp giants and Big Island's pines are mature or old, and the sword tree
   is an old pine.
 - **The other species:**
-  - red spruce: narrow, dense and near-black green, plus a broken-top variant
-  - balsam fir: a narrow spire with upright purple-brown cones at the top
+  - red spruce: broader and shaggier than the fir, with hanging limbs whose tips turn up and a ragged outline;
+    near-black green, plus a broken-top variant
+  - balsam fir: a smooth, regular, narrow spire with level sprays and upright purple-brown cones at the top
   - hemlock: broad, with hanging sprays, a nodding leader and lighter new tips
-  - tamarack: soft gold tufts on thin limbs
+  - tamarack: an open, airy cone of small gold tufts on thin, slightly drooping limbs, with sky through it
   Each has two variants except tamarack.
 - **Colour:** each species keeps its own greens, lifted to match the pond's palette, in place of v0.15's flat 2.3×
   brightening.
+- **Seedlings and saplings** (`js/understory.js`): the small fir, spruce and new white pine are grown the same way,
+  and there are more of them under the trees. The near-field's old spruce sapling model is retired (`?under=0` keeps
+  it).
+- **Shoreline leaning trees** (`js/shore.js`): now kit white pines, spruces and hemlocks on the tree engine, leaning
+  out over the water, in place of the old bent tube with cones.
 - **Fixes along the way:**
+  - The needle sprays were mapped to the wrong quarters of the texture (the canvas is flipped), so every conifer wore
+    another species' needles. Each now gets its own.
   - The photos no longer darken the edges of leaf and needle clumps, which fixes a dark rim round every clump,
     broadleaf ones included.
   - v0.17's crossed plant cards no longer go black on their back faces.

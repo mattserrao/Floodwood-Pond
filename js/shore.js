@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { MAP } from './mapdata.js?v=0.18.0';
-import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP, UNDER } from './world.js?v=0.18.0';
+import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP, UNDER, WORLD, downwind } from './world.js?v=0.18.0';
 
 // v0.6: what a real Adirondack shoreline is made of - dead silver snags, leaning trees, granite boulders,
 // driftwood, stumps, a few docks. Everything lives within ~14 m of the water's edge, where the eye actually looks.
@@ -72,7 +72,16 @@ export function buildShore(scene, M = {}) {
   const rootGeo = (() => { const g = []; const plate = new THREE.CylinderGeometry(1.6, 1.4, 0.5, 9); plate.rotateX(Math.PI / 2 + 0.3); g.push(plate); for (let i = 0; i < 8; i++) { const r = new THREE.CylinderGeometry(0.03, 0.1, 0.8 + rnd() * 0.8, 4); const a = (i / 8) * 6.28; r.translate(0, 0.5, 0); r.rotateX(Math.PI / 2 + (rnd() - 0.5) * 0.4); r.rotateZ(a); r.translate(Math.cos(a) * 1.3, Math.sin(a) * 1.3, 0); g.push(r); } return merge(g); })();
 
   instanced(scene, snagGeo, silver, snags);
-  instanced(scene, leanGeo, new THREE.MeshStandardMaterial({ color: 0x3b5a3a, flatShading: true, roughness: 1 }), leaners.map((l) => ({ ...l, scl: l.scl })));
+  if (WORLD.trees) {
+    // v0.18.0: the leaning trees on the tree engine - a white pine, spruce or hemlock from the kit, its card sheared out
+    // over the water (the lean: the top's offset per metre up, toward the water's normal); the old bent tube still built
+    // above so the shore's random draws are unchanged
+    const KEYS = ['whitepine:0', 'spruce:0', 'hemlock:0', 'whitepine:0'];
+    WORLD.trees.addTrees(leaners.map((l) => {
+      const hsh = Math.abs(Math.sin(l.pos.x * 12.9898 + l.pos.z * 78.233) * 43758.5453), k = l.lean * 0.8, a = l.rot.y;
+      return { x: l.pos.x, y: l.pos.y + 0.15, z: l.pos.z, key: KEYS[Math.floor(hsh) % 4], h: 8.5 * l.scl.y, w: 1, rot: downwind(hsh % 6.28), tint: 0.9 + (hsh % 1) * 0.2, lean: [Math.sin(a) * k, Math.cos(a) * k], keep: true };
+    }));
+  } else instanced(scene, leanGeo, new THREE.MeshStandardMaterial({ color: 0x3b5a3a, flatShading: true, roughness: 1 }), leaners.map((l) => ({ ...l, scl: l.scl })));
   instanced(scene, rockGeo, gran, rocks);
   instanced(scene, driftGeo, silver, drift);
   instanced(scene, stumpGeo, bark, stumps);

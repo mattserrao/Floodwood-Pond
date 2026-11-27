@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp, sstep, rnd, fbm, pondSD, heightAt, CAMP, campPath, LEAF_COLS, leafGeometry, glowTexture, WORLD } from './world.js?v=0.18.0';
+import { clamp, lerp, sstep, rnd, fbm, pondSD, heightAt, CAMP, campPath, LEAF_COLS, leafGeometry, glowTexture, WORLD, downwind } from './world.js?v=0.18.0';
 
 // v0.6.2: the campsite at the start of the game - leaf litter and needle duff with a worn path, pine cones, twigs,
 // a fire ring with cold ash and a half-burnt log, split firewood, a camp chair, ferns and blueberry along the tree line,
@@ -119,7 +119,7 @@ export function buildCamp(scene, treePositions = [], post = null) {
     scene.add(g); bigPines.push({ x, z, r: 0.6 * sc, g });
   });
   // v0.15.0: the giant pines are kit white pines on the tree engine's cards, like every other tree (31-35 m)
-  if (WORLD.trees) WORLD.trees.addTrees(bigPines.map((p, i) => ({ x: p.x, y: p.y, z: p.z, key: 'whitepine:' + (i % 2 ? 2 : 1), h: 31 + (p.sc - 0.85) * 12, w: 1.05, rot: p.rot, tint: 0.95 + (i % 3) * 0.05, keep: true })));
+  if (WORLD.trees) WORLD.trees.addTrees(bigPines.map((p, i) => ({ x: p.x, y: p.y, z: p.z, key: 'whitepine:' + (i % 2 ? 2 : 1), h: 31 + (p.sc - 0.85) * 12, w: 1.05, rot: downwind(p.rot), tint: 0.95 + (i % 3) * 0.05, keep: true })));
 
   // ---- camp gear from the photos: folding table under a blue tarp, red/blue/green chairs round the fire, a cooler, a hammock ----
   {

@@ -171,11 +171,11 @@ export function buildUnderstory(scene, { renderer, tier = 'high', msaa = false, 
     const nF = (2.0 + 0.6 * patch) * dens;
     for (let q = 0; q < Math.floor(nF + r()); q++) {
       const L = 3 + Math.pow(r(), 1.5) * 38, [cx, cz] = at(-L, 4);
-      const kind = pickW(r, [['bracken', 2.4], ['hayscented', 1.8], ['cinnamon', .9], ['bunchberry', 1.4], ['lowblue', 1.6], ['moss', 1.4], ['seedling', .9], ['blueberry', .3]]);
+      const kind = pickW(r, [['bracken', 2.4], ['hayscented', 1.8], ['cinnamon', .9], ['bunchberry', 1.4], ['lowblue', 1.6], ['moss', 1.4], ['seedling', 1.4], ['blueberry', .3]]);
       if (kind === 'bunchberry') clump(5 + Math.floor(r() * 7), cx, cz, 2, onLand, (x, z) => card(SIDE.bunchberry, x, landY(x, z) - .03, z, 1.0 * jit() * K, 0.32 * jit() * K));
       else if (kind === 'lowblue') clump(4 + Math.floor(r() * 6), cx, cz, 2.4, onLand, (x, z) => card(SIDE.lowblue, x, landY(x, z) - .03, z, 1.1 * jit() * K, 0.55 * jit() * K));
       else if (kind === 'moss') clump(2 + Math.floor(r() * 3), cx, cz, 2.5, onLand, (x, z) => pad(TOP.moss, x, landY(x, z) + .025, z, 1.8 + r() * 2.4, [jit(), jit(), jit()]));
-      else if (kind === 'seedling') clump(1 + Math.floor(r() * 3), cx, cz, 3, onLand, (x, z) => plant(pickW(r, [['firling:0', 3], ['sprucling:0', 2], ['maplet:0', 1.5]]), x, landY(x, z) - .05, z, (.45 + r() * .7) * 1.3));
+      else if (kind === 'seedling') clump(1 + Math.floor(r() * 3), cx, cz, 3, onLand, (x, z) => plant(pickW(r, [['firling:0', 3], ['sprucling:0', 2], ['pinelet:0', 1.5], ['maplet:0', 1.5]]), x, landY(x, z) - .05, z, (.45 + r() * .7) * 1.3));
       else if (kind === 'blueberry') clump(1 + Math.floor(r() * 2), cx, cz, 2, onLand, (x, z) => plant('blueberry:0', x, landY(x, z) - .05, z, (.7 + r() * .4) * 1.3));
       else clump(4 + Math.floor(r() * 6), cx, cz, 2.6, onLand, (x, z) => plant(`${kind}:${r() < .5 ? 0 : 1}`, x, landY(x, z) - .05, z, (.85 + r() * .55) * 1.4));
     }

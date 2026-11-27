@@ -582,6 +582,9 @@ export function setLitterScale(k) { for (const im of TILES) if (im.userData.tag 
 
 // v0.15.0: bikefree's tree engine (treekit.js + treeengine.js) draws every tree as a photographed card; ?engine=0 keeps
 // the old cone / blob trees (and the near-field's detailed models) for comparison
+// v0.18.0: a conifer card's turn kept near 0 (the kit tree's own frame = the world's), so every crown's lee side - built
+// toward +x - flags east, downwind of the prevailing westerly; a little spread so they don't all match
+export const downwind = (r) => ((r * 7.13) % 1.2 + 1.2) % 1.2 - 0.6;
 export const ENGINE = QS.get('engine') !== '0';
 // v0.17.0: the understory (understory.js) replaces the old reeds, lily pads, shrub islands and the near ring's ferns,
 // shrubs and sedge; ?under=0 keeps the old ones
@@ -720,7 +723,7 @@ export function buildTrees(scene, opts = {}) {
         const k = Math.pow(1 - clamp(-sd / 16, 0, 1), 1.4) * (0.05 + 0.11 * Math.abs(Math.cos(r[4] * 3.1)));
         lean = [gx / gl * k, gz / gl * k];
       }
-      cards.push({ x: r[0], y: r[1], z: r[2], key: kitKey(r, isCon), h: 11 * r[3] * r[7], w, rot: r[4], tint: r[10], lean });
+      cards.push({ x: r[0], y: r[1], z: r[2], key: kitKey(r, isCon), h: 11 * r[3] * r[7], w, rot: isCon ? downwind(r[4]) : r[4], tint: r[10], lean });
       r.kind = isCon ? 'con' : 'broad'; r.ws = r[3] * Math.pow(r[7], 0.62);
     }
     eng.setTrees(cards); scene.add(eng.mesh); WORLD.trees = eng;
@@ -1011,8 +1014,8 @@ export function buildIsland(scene) {
   if (WORLD.trees) {
     // v0.15.0: the island's tall pines and spruces are tree-engine cards too (as tall as before); the sword tree stays 3D
     const w = Math.pow(ik, -0.15);
-    WORLD.trees.addTrees([...tallPine.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: 'whitepine:' + (i % 3 === 0 ? 2 : 1), h: 13.4 * 1.05 * t[3] * ik, w, rot: t[4], tint: 0.85 + rnd() * 0.3 })),
-      ...tallSpruce.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: i % 5 === 0 ? 'fir:0' : 'spruce:' + (i % 2), h: 10.9 * t[3] * ik, w, rot: t[4], tint: 0.85 + rnd() * 0.3 }))]);
+    WORLD.trees.addTrees([...tallPine.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: 'whitepine:' + (i % 3 === 0 ? 2 : 1), h: 13.4 * 1.05 * t[3] * ik, w, rot: downwind(t[4]), tint: 0.85 + rnd() * 0.3 })),
+      ...tallSpruce.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: i % 5 === 0 ? 'fir:0' : 'spruce:' + (i % 2), h: 10.9 * t[3] * ik, w, rot: downwind(t[4]), tint: 0.85 + rnd() * 0.3 }))]);
   } else {
     place(pine, tallPine.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.9 * iw, t[3] * 1.05 * ik, t[3] * 0.9 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
     place(spruce, tallSpruce.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.85 * iw, t[3] * ik, t[3] * 0.85 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
@@ -1032,7 +1035,7 @@ export function buildIsland(scene) {
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.6, 15, 7), bark); trunk.position.y = 7.5; tree.add(trunk);
   const needles = new THREE.MeshStandardMaterial({ color: 0x1d3a22, flatShading: true, roughness: 1 });
   // v0.15.0: its crown is a kit white pine on the tree engine (the 3D trunk stays, round the card's own, for the sword)
-  if (WORLD.trees) WORLD.trees.addTrees([{ x: swordTree.x, y: gy - 0.3, z: swordTree.z, key: 'whitepine:2', h: 21, w: 1.1, rot: 0.7, tint: 1, keep: true }]);
+  if (WORLD.trees) WORLD.trees.addTrees([{ x: swordTree.x, y: gy - 0.3, z: swordTree.z, key: 'whitepine:2', h: 21, w: 1.1, rot: 0.2, tint: 1, keep: true }]);
   else [[3.2, 1.6, 11.2, 0.9, 0.2], [2.7, 1.4, 13.2, -0.8, 0.5], [3.0, 1.4, 15.0, 0.5, -0.6], [1.8, 1.4, 16.8, 0, 0.1]].forEach(([r, h, y, ox, oz]) => {
     const t = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.35, r, h, 7), needles); t.position.set(ox, y, oz); tree.add(t);
   });
