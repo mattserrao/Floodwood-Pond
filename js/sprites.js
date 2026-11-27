@@ -10,8 +10,8 @@
 // tile one draw call, every flat one another. The side cards are lit as the ground under them (facing up), so they
 // don't flicker light and dark as they turn; they sway with the shared gust field, the top of the card most.
 import * as THREE from 'three';
-import { EXT, TILES, SWAY } from './world.js?v=0.17.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.17.0';
+import { EXT, TILES, SWAY } from './world.js?v=0.18.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.18.0';
 
 export const SIDE = { sedge: 0, cattail: 1, pickerel: 2, bulrush: 3, burreed: 4, bluejoint: 5, bunchberry: 6, lowblue: 7 };
 export const TOP = { lily: 0, spatter: 1, sphagnum: 2, moss: 3 };
@@ -215,9 +215,12 @@ function cardMaterial(map, cells, side, a2c) {
         #endif
         mvPosition = modelViewMatrix * mvPosition;
         gl_Position = projectionMatrix * mvPosition;`);
+    // (v0.18.0: both faces lit as the ground under them - three flips a back face's normal, so the far side of every
+    //  crossed card faced down into the dark ground light and came out black)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n  normal = normalize((viewMatrix * vec4(0., 1., 0., 0.)).xyz); nonPerturbedNormal = normal;');
     if (a2c) sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', 'diffuseColor.a = clamp((diffuseColor.a - .5) / max(fwidth(diffuseColor.a), 1e-4) + .5, 0., 1.); if (diffuseColor.a <= 0.) discard;');
   };
-  m.customProgramCacheKey = () => `fw-sprites-${side ? 's' : 't'}-${a2c ? 1 : 0}`;
+  m.customProgramCacheKey = () => `fw-sprites-2-${side ? 's' : 't'}-${a2c ? 1 : 0}`;
   return m;
 }
 

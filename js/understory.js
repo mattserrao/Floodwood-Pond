@@ -14,12 +14,12 @@
 // photographed from (bikefree near-trunks.js NearPlants). Marshy stretches get the reeds and pads, rocky ones a fringe.
 // Everything is placed once, from a seeded sequence of its own (the world's other random draws are untouched).
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.17.0';
-import { clamp, lerp, fbm, pondSD, heightAt, fullHeight, inPatch, inIsleBox, inCreekBox, beachFactor, CAMP, SWAY, TREE_LIGHT } from './world.js?v=0.17.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.17.0';
-import { makeUnderstoryKit } from './treekit.js?v=0.17.0';
-import { TreeEngine } from './treeengine.js?v=0.17.0';
-import { plantCards, SIDE, TOP } from './sprites.js?v=0.17.0';
+import { MAP } from './mapdata.js?v=0.18.0';
+import { clamp, lerp, fbm, pondSD, heightAt, fullHeight, inPatch, inIsleBox, inCreekBox, beachFactor, CAMP, SWAY, TREE_LIGHT } from './world.js?v=0.18.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.18.0';
+import { makeUnderstoryKit } from './treekit.js?v=0.18.0';
+import { TreeEngine } from './treeengine.js?v=0.18.0';
+import { plantCards, SIDE, TOP } from './sprites.js?v=0.18.0';
 
 const NEAR = [12, 15];   // m: the grown plants' card dissolves into the 3D model inside this
 const DENSITY = { low: 0.45, med: 0.75, high: 1 };

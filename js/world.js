@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.17.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.17.0';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.17.0';
-import { makeKit } from './treekit.js?v=0.17.0';
-import { TreeEngine } from './treeengine.js?v=0.17.0';
+import { MAP } from './mapdata.js?v=0.18.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.18.0';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.18.0';
+import { makeKit } from './treekit.js?v=0.18.0';
+import { TreeEngine } from './treeengine.js?v=0.18.0';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -591,9 +591,10 @@ function kitKey(r, isCon) {
   const u = r[5];
   if (isCon) {
     if (r[9] === 4) return 'tamarack:0';
-    if (u < 0.3) return 'whitepine:' + (u < 0.15 ? 0 : 1);
-    if (u < 0.5) return 'hemlock:0';
-    if (u < 0.62) return 'fir:0';
+    // v0.18.0: white pines by size - a young pyramid, a mature irregular tree, the odd old flat-topped giant
+    if (u < 0.3) { const h = 11 * r[3] * r[7]; return 'whitepine:' + (h < 14 ? 0 : h > 26 && Math.floor(u * 1000) % 3 === 0 ? 2 : 1); }
+    if (u < 0.5) return 'hemlock:' + (Math.floor(u * 991) % 2);
+    if (u < 0.62) return 'fir:' + (Math.floor(u * 977) % 2);
     return 'spruce:' + (Math.floor(u * 97) % 2);
   }
   switch (r[9]) {
@@ -1010,7 +1011,7 @@ export function buildIsland(scene) {
   if (WORLD.trees) {
     // v0.15.0: the island's tall pines and spruces are tree-engine cards too (as tall as before); the sword tree stays 3D
     const w = Math.pow(ik, -0.15);
-    WORLD.trees.addTrees([...tallPine.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: 'whitepine:' + (i % 2), h: 13.4 * 1.05 * t[3] * ik, w, rot: t[4], tint: 0.85 + rnd() * 0.3 })),
+    WORLD.trees.addTrees([...tallPine.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: 'whitepine:' + (i % 3 === 0 ? 2 : 1), h: 13.4 * 1.05 * t[3] * ik, w, rot: t[4], tint: 0.85 + rnd() * 0.3 })),
       ...tallSpruce.map((t, i) => ({ x: t[0], y: t[1], z: t[2], key: i % 5 === 0 ? 'fir:0' : 'spruce:' + (i % 2), h: 10.9 * t[3] * ik, w, rot: t[4], tint: 0.85 + rnd() * 0.3 }))]);
   } else {
     place(pine, tallPine.map((t) => [V(t[0], t[1], t[2]), E(t[4]), V(t[3] * 0.9 * iw, t[3] * 1.05 * ik, t[3] * 0.9 * iw)]), () => { const j = 0.85 + rnd() * 0.3; return c.setRGB(j, j, j); });
@@ -1031,7 +1032,7 @@ export function buildIsland(scene) {
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.6, 15, 7), bark); trunk.position.y = 7.5; tree.add(trunk);
   const needles = new THREE.MeshStandardMaterial({ color: 0x1d3a22, flatShading: true, roughness: 1 });
   // v0.15.0: its crown is a kit white pine on the tree engine (the 3D trunk stays, round the card's own, for the sword)
-  if (WORLD.trees) WORLD.trees.addTrees([{ x: swordTree.x, y: gy - 0.3, z: swordTree.z, key: 'whitepine:1', h: 19, w: 1.1, rot: 0.7, tint: 1, keep: true }]);
+  if (WORLD.trees) WORLD.trees.addTrees([{ x: swordTree.x, y: gy - 0.3, z: swordTree.z, key: 'whitepine:2', h: 21, w: 1.1, rot: 0.7, tint: 1, keep: true }]);
   else [[3.2, 1.6, 11.2, 0.9, 0.2], [2.7, 1.4, 13.2, -0.8, 0.5], [3.0, 1.4, 15.0, 0.5, -0.6], [1.8, 1.4, 16.8, 0, 0.1]].forEach(([r, h, y, ox, oz]) => {
     const t = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.35, r, h, 7), needles); t.position.set(ox, y, oz); tree.add(t);
   });

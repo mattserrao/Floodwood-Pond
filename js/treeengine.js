@@ -53,7 +53,7 @@ const BAKE_FS = /* glsl */`
       // (bikefree: the alpha scaled up with the mip level, so a far cluster keeps its fill)
       vec2 tx = vUv * uSize; float lod = max(0., .5 * log2(max(dot(dFdx(tx), dFdx(tx)), dot(dFdy(tx), dFdy(tx)))));
       if (min(1., t.a * (1. + lod * .35)) < .45) discard;
-      c *= t.rgb;
+      c *= min(t.rgb / max(t.a, .05), vec3(1.));   // (v0.18.0: un-premultiplied: a mip's edge texels averaged with transparent black came out dark - a rim round every clump)
     } else {
       float tA = atan(vO.z, vO.x);
       if (vK < .5) {

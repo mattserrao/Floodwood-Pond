@@ -4,6 +4,44 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.18.0 (test branch): the conifers rebuilt
+
+A review of the pines on 27 Nov found that the white pine was a pole of evenly stacked plates, while spruce, fir and
+hemlock were solid zigzag cones with no needle texture, all washed to a bright teal. Every conifer has been rebuilt
+(chosen: all conifers, mixed-age white pines, a dark core with needle sprays over it).
+
+- **Needle sprays** (`js/treekit.js` `drawNeedles`): a new set on the right half of the leaf texture, drawn at load:
+  - white pine: lobed brushes of long, soft needles
+  - fir: flat, two-rowed (pinnate) sprays; spruce uses these too, because the bottle-brush version photographed as
+    stripes
+  - hemlock: a lacy spray with a drooping tip
+  The sprays are dense and kept inside their quarter of the texture, since sparse needles thinned to nothing and
+  clipped ones came out square.
+- **How each conifer is built** (`needleTree`): a trunk with dead lower limb stubs, a small dark inner core so the crown
+  is never see-through, and whorls of limbs (some missing) that hang down and turn up at the tips. Needle-spray clumps
+  run along each limb, held level and wider than tall, lighter toward the tips and darker inside and underneath. The
+  crown is pushed to one side.
+- **White pine in three ages:**
+  - young: a loose pyramid
+  - mature: open, layered flat pads with sky and trunk between them
+  - old: a flat-topped giant with forked leaders
+  Forest pines pick their age by height. The camp giants and Big Island's pines are mature or old, and the sword tree
+  is an old pine.
+- **The other species:**
+  - red spruce: narrow, dense and near-black green, plus a broken-top variant
+  - balsam fir: a narrow spire with upright purple-brown cones at the top
+  - hemlock: broad, with hanging sprays, a nodding leader and lighter new tips
+  - tamarack: soft gold tufts on thin limbs
+  Each has two variants except tamarack.
+- **Colour:** each species keeps its own greens, lifted to match the pond's palette, in place of v0.15's flat 2.3×
+  brightening.
+- **Fixes along the way:**
+  - The photos no longer darken the edges of leaf and needle clumps, which fixes a dark rim round every clump,
+    broadleaf ones included.
+  - v0.17's crossed plant cards no longer go black on their back faces.
+- **Cost:** the tree atlas grows from 15 to 18 rows (about 95 MB on High, up from 79 MB, still within budget). Load
+  photos take about 0.8 s and draw calls are unchanged.
+
 ## v0.17.0 (test branch): the understory
 
 The ground under the trees, the water's edge and the shallows are filled in with late-October plants, using bikefree's

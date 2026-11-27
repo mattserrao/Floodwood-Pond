@@ -121,42 +121,6 @@ function conifer(seed, o) {
   else b.add(cone(R * .1, H * .08, 5), M(0, H * .94, 0), o.colors[1]);
   return b.build();
 }
-/** tamarack (eastern larch): tall and open, short soft tufts along a long trunk; gold in October (bikefree larch) */
-function tamarack(v) {
-  const rand = randomSequence(1701 + v), b = new Builder(), H = 20 + v * 3, R = 2.4;
-  const leaf = ['#d2a53a', '#ddb54a', '#c3922e'];
-  b.as(PLATED).add(cyl(.14, .4, H * .92, 6), M(), '#7a5034');
-  stubs(b, rand, 6, H * .1, H * .34, 1.1, .32);
-  b.as(LEAF);
-  // (Floodwood: more, softer tiers than bikefree's larch - seen side-on from the water nine thin discs read as a pagoda)
-  for (let k = 0; k < 16; k++) { const t = k / 16, r = R * (1 - t * .82) * (.75 + rand() * .5); b.add(whorl(r, H * .09, 7, .32, .42, rand), M((rand() - .5) * .6, H * (.22 + t * .72), (rand() - .5) * .6, 1, 1, 1, rand() * 6.28), leaf[k % 3]); }
-  return b.build();
-}
-/** eastern white pine: a tall straight trunk, long near-horizontal limbs in whorls carrying flat ragged sprays (bikefree) */
-function whitePine(v) {
-  const rand = randomSequence(5101 + v), b = new Builder(), H = 30 + v * 3, lean = rand() * 6.28;
-  b.as(PLATED); limb(b, new THREE.Vector3(), dirOf(lean, Math.PI / 2 - .02), H * .97, .55, .12, 7, '#584536');
-  stubs(b, rand, 6, H * .1, H * .4, 1.2, .45);
-  b.as(LEAF);
-  const whorls = 9;
-  for (let t = 0; t < whorls; t++) {
-    const y = H * (.38 + .58 * t / whorls) + (rand() - .5), arms = 4 + (rand() < .4 ? 1 : 0);
-    for (let a = 0; a < arms; a++) {
-      if (rand() < .15) continue;
-      const az = lean * .4 + a / arms * 6.28 + (rand() - .5) * 1.1 + t * .9, reach = (7 - t * .55) * (.6 + rand() * .55);
-      if (reach < 1) continue;
-      b.as(PLATED); limb(b, new THREE.Vector3(0, y - .3, 0), dirOf(az, .1 + rand() * .12), reach, .18, .05, 4, '#584536'); b.as(LEAF);
-      for (let k = 0; k < 3; k++) {
-        const f = .45 + k * .25, len = reach * (.5 - k * .07), x = Math.cos(az) * reach * f, z = Math.sin(az) * reach * f;
-        b.add(whorl(len, .55, 7, .2, .42, rand), M(x, y + .1 + (rand() - .5) * .5 - k * .15, z, 1, 1, .7, -az + (rand() - .5) * .5), ['#2b4734', '#33523b', '#3d5f43'][k], 0, rand);
-        b.add(underside(len * .95, .2, 7), M(x, y + .08 - k * .15, z, 1, 1, .7, -az), '#1f3528', 0, rand);
-      }
-    }
-  }
-  b.add(blob(0), M(Math.cos(lean) * .7, H * .99, Math.sin(lean) * .7, 2.4, .9, 1.8, -lean), '#33513a', 0, rand);
-  return b.build();
-}
-
 // ------------------------------------------------------------------ broadleaves grown as skeletons (bikefree upstate-trees.js)
 /** a swept branch: a curved, tapered tube along pts (parallel-transport frames, so it doesn't twist) */
 function tube(pts, radii, seg) {
@@ -252,7 +216,7 @@ function grow(seed, o, turn) {
   const pushCard = (c, w, h, roll, n, u0, v0, k) => {
     for (let j = 0; j < 6; j++) {
       C.pos.push(c.x, c.y, c.z); C.nor.push(n.x, n.y, n.z); C.col.push(k.r, k.g, k.b);
-      C.uv.push(u0 + UVS[j][0] * .5, v0 + UVS[j][1] * .5); C.card.push(CORNERS[j][0] * w, CORNERS[j][1] * h, roll, 0);
+      C.uv.push((u0 + UVS[j][0] * .5) * .5, v0 + UVS[j][1] * .5); C.card.push(CORNERS[j][0] * w, CORNERS[j][1] * h, roll, 0);   // (v0.18.0: the leaves are the texture's left half)
     }
   };
   for (const c of clusters) {
@@ -322,16 +286,6 @@ const BROAD = {
     levels: [[7, .2, 1.05, .4], [4, .3, .65, .22], [3, .35, .6, .11]],
     greens: ['#5a843c', '#628c42', '#527a37'], fall: ['#b07a34', '#9a6a30', '#c9a440'], turn: [.9] },
 };
-const CONIFERS = {
-  // red spruce: a narrow spire, branches near the ground, the occasional broken top
-  spruce: [0, 1].map((v) => () => conifer(5301 + v, { H: 20 + v * 3, R: 3.6, colors: ['#25412f', '#2d4b37', '#345440'], trunk: '#4d3b2e', trunkBase: .36, droop: .5, jag: .3, seg: 7, layers: 10, crown: .03, top: v ? 'broken' : 'leader', under: 5, lopsided: v === 1, stubs: 2 })),
-  // balsam fir: very narrow and dense, dark blue-green
-  fir: [0].map((v) => () => conifer(1501 + v, { H: 16, R: 2.2, colors: ['#22402f', '#294834', '#30503b'], trunk: '#4d4036', trunkBase: .26, droop: .18, jag: .32, seg: 6, layers: 11, crown: .03, top: 'leader', under: 3 })),
-  // eastern hemlock: soft feathery tiers and a nodding leader
-  hemlock: [0].map((v) => () => conifer(5201 + v, { H: 22, R: 4.2, colors: ['#2c4a38', '#355643', '#294536'], trunk: '#5b4636', trunkBase: .5, trunkTop: .18, trunkH: .55, droop: .45, jag: .28, seg: 7, layers: 9, crown: .12, top: 'nod', stubs: 3 })),
-  whitepine: [0, 1].map((v) => () => whitePine(v)),
-  tamarack: [0].map((v) => () => tamarack(v)),
-};
 
 /**
  * The leaf-cluster texture (v0.16.0: bikefree's painterly clusters, fidelity step 6): four clusters (one per quarter),
@@ -340,7 +294,7 @@ const CONIFERS = {
  * as single-pixel noise once photographed. Light greys: the vertex colour tints them by species and season.
  */
 function makeLeafTexture(size = 512) {
-  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const cv = document.createElement('canvas'); cv.width = size * 2; cv.height = size;
   const g = cv.getContext('2d'), rand = randomSequence(777), h = size / 2;
   for (let q = 0; q < 4; q++) {
     const ox = (q % 2) * h, oy = Math.floor(q / 2) * h, leaves = [];
@@ -358,9 +312,220 @@ function makeLeafTexture(size = 512) {
       g.restore();
     }
   }
+  drawNeedles(g, size, size);
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return t;
 }
+/**
+ * v0.18.0: the needle sprays, the texture's right half (x0..x0+size), one per quarter, light greys tinted by the clump's
+ * colour; each a twig seen from above-ish, its needles lighter toward the tips (the new growth, the light):
+ *   0 white pine  long, soft five-needle bundles fanning out round the twig's end - a brush
+ *   1 spruce      short stiff needles all round a twig and its side twigs - a bottle brush
+ *   2 fir         flat sprays: needles in two rows along each twig, side twigs paired (pinnate)
+ *   3 hemlock     a lacy flat spray of tiny needles on fine twigs, the tip drooping
+ */
+export const NEEDLE = { pine: 0, spruce: 1, fir: 2, hemlock: 3 };
+function drawNeedles(g, x0, size) {
+  // (dense, round tufts that stay inside their quarter - sparse lines thinned to nothing in the photos' mipmaps, and any
+  //  that ran past the quarter's edge were cut square)
+  const rand = randomSequence(4242), h = size / 2, RMAX = h * .44;
+  const needle = (ax, ay, bx, by, w, v0, v1) => {   // a needle, darker at its base, lighter at its tip
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    g.lineWidth = w;
+    g.strokeStyle = `rgb(${v0},${v0},${v0})`; g.beginPath(); g.moveTo(ax, ay); g.lineTo(mx, my); g.stroke();
+    g.strokeStyle = `rgb(${v1},${v1},${v1})`; g.beginPath(); g.moveTo(mx, my); g.lineTo(bx, by); g.stroke();
+  };
+  const inside = (x, y, cx, cy, k = 1) => Math.hypot(x - cx, (y - cy) / k) < RMAX;
+  g.lineCap = 'round';
+  for (let q = 0; q < 4; q++) {
+    const ox = x0 + (q % 2) * h, oy = Math.floor(q / 2) * h, cx = ox + h / 2, cy = oy + h / 2;
+    g.save(); g.beginPath(); g.rect(ox, oy, h, h); g.clip();
+    if (q === NEEDLE.pine) {
+      // white pine: a few bundles of long soft needles bursting from points along a twig - a lobed brush, wider than
+      // tall, lighter above
+      const tufts = [[-.22, .06], [-.08, -.1], [.08, .08], [.2, -.04], [0, .15], [.14, -.16], [-.16, -.14]].map(([u, v]) => [cx + u * h, cy + v * h]);
+      for (let k = 0; k < 300; k++) {
+        const [bx0, by0] = tufts[k % tufts.length], bx = bx0 + (rand() - .5) * h * .04, by = by0 + (rand() - .5) * h * .03;
+        const a = rand() * 6.283, L = h * (.08 + rand() * .14), ex = bx + Math.cos(a) * L, ey = by + Math.sin(a) * L * .9 + L * .1;
+        if (!inside(ex, ey, cx, cy, .9)) continue;
+        const lit = 1 - (ey - oy) / h;
+        needle(bx, by, ex, ey, 2.2, Math.round(255 * (.5 + .15 * lit)), Math.round(255 * (.72 + .26 * lit * (.7 + .3 * rand()))));
+      }
+    } else if (q === NEEDLE.spruce || q === NEEDLE.fir) {
+      // spruce: short stiff needles bristling all round a twig and its side twigs (a bottle brush); fir: the same
+      // twigs, needles in two flat rows (pinnate) - both dense, filling an oval
+      const fir = q === NEEDLE.fir;
+      const twig = (ax, ay, ang, L, depth) => {
+        const n = Math.round(L / 1.6);
+        for (let k = 0; k <= n; k++) {
+          const t = k / n, px = ax + Math.cos(ang) * L * t, py = ay + Math.sin(ang) * L * t, nl = h * (fir ? .075 : .06) * (1 - t * .35);
+          const rows = fir ? [-1.25, 1.25] : [-2.2, -1.2, -.5, .5, 1.2, 2.2];
+          for (const off of rows) {
+            const d = ang + off + (rand() - .5) * .3, ex = px + Math.cos(d) * nl, ey = py + Math.sin(d) * nl - (fir ? nl * .15 : 0);
+            if (!inside(ex, ey, cx, cy, .75)) continue;
+            const lit = 1 - (ey - oy) / h;
+            needle(px, py, ex, ey, fir ? 2.6 : 2.2, Math.round(255 * (.5 + .12 * lit)), Math.round(255 * (.66 + .28 * t * .6 + .18 * lit)));
+          }
+          if (depth < 1 && k > 2 && k < n - 2 && k % 5 === 0) for (const sg of fir ? [-1, 1] : [k % 10 ? 1 : -1]) twig(px, py, ang + sg * .75, L * .42, depth + 1);
+        }
+      };
+      twig(cx - RMAX * .9, cy, 0, RMAX * 1.75, 0);
+      if (!fir) { twig(cx - RMAX * .6, cy + RMAX * .3, .3, RMAX * .9, 1); twig(cx - RMAX * .5, cy - RMAX * .3, -.35, RMAX * .9, 1); }
+    } else {
+      // hemlock: a lacy flat spray of tiny needles on fine twigs branching every few needles, its tip bending down
+      const lace = (ax, ay, ang, L, depth, bend) => {
+        const n = Math.round(L / 1.5);
+        let px = ax, py = ay, a = ang;
+        for (let k = 0; k <= n; k++) {
+          const t = k / n; a += bend / n; px += Math.cos(a) * L / n; py += Math.sin(a) * L / n;
+          const nl = h * .045 * (1 - t * .3);
+          for (const sg of [-1, 1]) {
+            const d = a + sg * 1.35, ex = px + Math.cos(d) * nl, ey = py + Math.sin(d) * nl;
+            if (!inside(ex, ey, cx, cy, .8)) continue;
+            needle(px, py, ex, ey, 2, Math.round(255 * .55), Math.round(255 * (.68 + .3 * t)));
+          }
+          if (depth < 2 && k > 2 && k % 4 === 0) lace(px, py, a + (k % 8 ? .75 : -.75), L * .45, depth + 1, bend * .6);
+        }
+      };
+      lace(cx - RMAX * .9, cy - RMAX * .15, .05, RMAX * 1.75, 0, .45);
+    }
+    g.restore();
+  }
+}
+
+// ------------------------------------------------------------------ v0.18.0: conifers as limbs and needle sprays
+/**
+ * The pond's conifers rebuilt (user, 27 Nov: "review the shape and texture of the pine trees" -> all conifers, mixed-age
+ * white pines, "core + tuft clumps"). Each one: a trunk (bark, dead lower stubs), a dark inner core (the old tier cones,
+ * shrunk and shaded - so the crown is never see-through), and over it limbs carrying camera-facing needle-spray clumps
+ * (the texture's right half) - the way the broadleaves carry their leaf clumps: soft, feathery edges, each spray lit on
+ * its own, lighter at the tips, darker inside and under; normals rounded from the crown's axis.
+ * o: { H, R, trunk, trunkBase, core: [colours] or null, tiers, crown (where it starts, 0-1), limbs (per tier), droop
+ *      (how the limbs hang: + down), tipUp (the tips' upturn), sprays (clumps per limb), spray (clump size x R),
+ *      needle (NEEDLE kind), cols (spray colours), tips (new-growth colour), shape (the outline's taper: 1 cone),
+ *      top: leader | nod | broken | flat, lee (0-1: how far the crown is pushed to one side), cones: upright | hanging }
+ */
+function needleTree(seed, o) {
+  const rand = randomSequence(seed), b = new Builder(), H = o.H, R = o.R;
+  const C = { pos: [], nor: [], uv: [], col: [], card: [] }, nv = new THREE.Vector3();
+  const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]], UVS = [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]];
+  const nq = o.needle, u0 = .5 + (nq % 2) * .25, v0 = Math.floor(nq / 2) * .5;
+  const lean = rand() * 6.283, leeX = Math.cos(lean) * (o.lee || 0), leeZ = Math.sin(lean) * (o.lee || 0);
+  const cy = H * (o.crown + (1 - o.crown) * .5), ry = H * (1 - o.crown) * .5;
+  // (a spray held level-ish and wider than tall - the pines' flat pads most of all - not spun at random: round, every
+  //  way turned clumps read as discs)
+  const flat = o.flat || (o.pad ? [1.3, .95, .45] : [1.2, .9, .7]);   // [width, height, roll spread]
+  const spray = (p, size, col) => {
+    nv.set((p.x - leeX * R * .5) / R, (p.y - cy) / Math.max(ry, 1) * .6 + .35, (p.z - leeZ * R * .5) / R).normalize();
+    const roll = (rand() - .5) * flat[2] + (rand() < .5 ? Math.PI : 0), flip = rand() < .5 ? .25 : 0;   // (either way round: the quarter's other half)
+    for (let j = 0; j < 6; j++) {
+      C.pos.push(p.x, p.y, p.z); C.nor.push(nv.x, nv.y, nv.z); C.col.push(col.r, col.g, col.b);
+      C.uv.push(u0 + (flip ? 1 - UVS[j][0] : UVS[j][0]) * .25, v0 + UVS[j][1] * .5); C.card.push(CORNERS[j][0] * size * flat[0], CORNERS[j][1] * size * flat[1], roll, 0);
+    }
+  };
+  // the trunk (a white pine's runs nearly to the top; old ones fork into leaders), stubs of dead limbs below the crown
+  const tH = H * (o.top === 'flat' ? .72 : .97);
+  b.as(o.bark || PLATED); limb(b, new THREE.Vector3(), dirOf(lean, Math.PI / 2 - .015), tH, o.trunkBase, .08, 8, o.trunk);
+  stubs(b, rand, o.stubs ?? 5, H * .08, H * o.crown + .5, R * .35, o.trunkBase * .8);
+  if (o.top === 'flat') for (let k = 0; k < 3; k++) { const a = lean + k * 2.1 + rand() * .5; limb(b, new THREE.Vector3(0, tH - .5, 0), dirOf(a, 1.05 + rand() * .2), H * .3, o.trunkBase * .45, .05, 5, o.trunk); }
+  if (o.top === 'broken') { b.as(DEAD); limb(b, new THREE.Vector3(0, tH, 0), dirOf(lean, 1.45), H * .1, .1, .03, 4, '#9a948a'); }
+  // the dark core: the old tier cones, shrunk and shaded (never see-through)
+  if (o.core) {
+    b.as(LEAF);
+    const layers = Math.round(o.tiers * .8);
+    for (let k = 0; k < layers; k++) {
+      const t = k / layers, r = R * (o.coreR ?? .5) * Math.pow(1 - t * .9, o.shape ?? 1) * (.85 + rand() * .3), y = H * (o.crown + t * (1 - o.crown) * .85);
+      b.add(whorl(r, H * (1 - o.crown) * 1.4 / layers, 7, (o.droop ?? .2) + .1, .3, rand), M(leeX * r * .4, y, leeZ * r * .4, 1, 1, 1, rand() * 6.28), o.core[k % o.core.length]);
+    }
+  }
+  // limbs in whorls, each carrying sprays along its outer part
+  // (the greens lifted to the pond's palette: a spray's colour is multiplied by the needles' greys in the photo)
+  const gain = o.gain ?? 2.2, cols = o.cols.map((c) => new THREE.Color(c).multiplyScalar(gain)), tips = new THREE.Color(o.tips || o.cols[0]).multiplyScalar(gain);
+  const wood = o.limbCol || o.trunk;
+  for (let k = 0; k < o.tiers; k++) {
+    const t = (k + rand() * .4) / o.tiers;
+    const y = H * (o.crown + t * (1 - o.crown) * .93);
+    const reachT = R * Math.pow(Math.max(.05, 1 - t * (o.flatTop ? .35 : .92)), o.shape ?? 1) * (.75 + rand() * .45);
+    const n = o.limbs + (rand() < .4 ? 1 : 0);
+    for (let q = 0; q < n; q++) {
+      if (rand() < (o.gaps ?? .1)) continue;
+      const az = q / n * 6.283 + rand() * .9 + k * 1.3;
+      // (the crown pushed to the lee: limbs that way longer, the weather side's shorter)
+      const lee = 1 + (o.lee || 0) * Math.cos(az - lean) * .6, reach = reachT * lee;
+      if (reach < .4) continue;
+      const el = -(o.droop ?? .2) * .6 + (rand() - .5) * .15;
+      // the limb: out and a little down, its outer third turning up (tipUp)
+      const p0 = new THREE.Vector3(0, y, 0), d1 = dirOf(az, el), p1 = p0.clone().addScaledVector(d1, reach * .65);
+      const d2 = dirOf(az + (rand() - .5) * .3, el + (o.tipUp ?? .2)), p2 = p1.clone().addScaledVector(d2, reach * .35);
+      if (reach > R * .35) { b.as(BARK); limb(b, p0, d1, reach * .66, Math.min(.16, .05 + reach * .02), .025, 4, wood); limb(b, p1, d2, reach * .36, .03, .01, 3, wood); }
+      // the sprays: along the limb's outer part, larger and lighter toward the tip, a flat pad round it (white pine)
+      const m = Math.max(2, Math.round(o.sprays * (.6 + reach / R * .6)));
+      for (let j = 0; j < m; j++) {
+        const u = .12 + .88 * (j + rand() * .6) / m, p = u < .65 ? p0.clone().lerp(p1, u / .65) : p1.clone().lerp(p2, (u - .65) / .35);
+        const pad = o.pad ? reach * o.pad * (.4 + rand() * .6) : reach * .12;
+        p.x += (rand() - .5) * pad * 2; p.z += (rand() - .5) * pad * 2; p.y += (rand() - .5) * (o.pad ? .25 : .5) - (o.hang ? u * u * o.hang : 0);
+        const size = R * o.spray * (.6 + .5 * u) * (.8 + rand() * .4);
+        const out = Math.min(1, Math.hypot(p.x, p.z) / R), up = (p.y - H * o.crown) / (H * (1 - o.crown));
+        const c = cols[Math.floor(rand() * cols.length)].clone().lerp(tips, Math.max(0, u - .55) * .7 * rand()).multiplyScalar((.72 + .28 * out) * (.85 + .2 * up));
+        spray(p, size, c);
+      }
+    }
+  }
+  // the leader: a narrow spire of small sprays (or the hemlock's nod)
+  if (o.top !== 'flat' && o.top !== 'broken') for (let j = 0; j < 6; j++) {
+    const t = j / 6, p = new THREE.Vector3(o.top === 'nod' ? t * t * R * .25 : 0, H * (.9 + t * .1) - (o.top === 'nod' ? t * t * H * .03 : 0), 0);
+    spray(p, R * o.spray * (.5 - t * .25), cols[j % cols.length].clone().lerp(tips, .4));
+  }
+  // cones: a fir's stand upright on the top tiers (purple-brown); a white pine's hang from its upper pads
+  if (o.cones) {
+    b.as(SHRUB);
+    for (let k = 0; k < 14; k++) {
+      const yf = o.cones === 'upright' ? .8 + rand() * .12 : .72 + rand() * .18, a = rand() * 6.283, rr = R * .5 * Math.pow(1 - yf, .9) * (.4 + rand() * .6), y = H * yf;
+      if (o.cones === 'upright') b.add(cyl(.035, .045, .22, 5), M(Math.cos(a) * rr, y, Math.sin(a) * rr), rand() < .5 ? '#5a3a46' : '#6a4a3a');
+      else b.add(cyl(.05, .03, .32, 5), M(Math.cos(a) * rr * 2, y, Math.sin(a) * rr * 2, 1, 1, 1, 0, Math.PI), '#7a5a3a');
+    }
+  }
+  const leaves = new THREE.BufferGeometry();
+  leaves.setAttribute('position', new THREE.Float32BufferAttribute(C.pos, 3)); leaves.setAttribute('normal', new THREE.Float32BufferAttribute(C.nor, 3));
+  leaves.setAttribute('uv', new THREE.Float32BufferAttribute(C.uv, 2)); leaves.setAttribute('color', new THREE.Float32BufferAttribute(C.col, 3));
+  leaves.setAttribute('aCard', new THREE.Float32BufferAttribute(C.card, 4));
+  leaves.computeBoundingBox(); const crownBox = leaves.boundingBox.clone(); leaves.boundingBox.expandByScalar(R * o.spray * 1.2 * Math.SQRT2);
+  leaves.userData.cards = true; leaves.userData.crown = crownBox;
+  return { wood: b.build(), leaves };
+}
+// the species (late October: the evergreens' own greens - no brightening; the tamarack gold)
+const NEEDLES = {
+  // eastern white pine: soft blue-green with a silver cast; long limbs nearly level, tips turned up, flat pads of
+  // needles; young - a loose pyramid; mature - irregular, gappy, pushed to the lee; old - flat-topped super-canopy
+  whitepine: [
+    { H: 16, R: 3.8, trunk: '#5a4a3c', trunkBase: .32, crown: .22, tiers: 10, limbs: 5, droop: .05, tipUp: .35, sprays: 6, spray: .26, pad: .3, gaps: .1, lee: .15, needle: NEEDLE.pine,
+      gain: 1.7, cols: ['#5f8270', '#6a8c78', '#57786a'], tips: '#8aa898', core: ['#22362c'], coreR: .3, shape: 1, stubs: 3 },
+    { H: 30, R: 7, trunk: '#4e4036', trunkBase: .6, crown: .42, tiers: 7, limbs: 4, droop: .04, tipUp: .4, sprays: 12, spray: .16, pad: .3, gaps: .3, lee: .45, needle: NEEDLE.pine,
+      gain: 1.7, cols: ['#5b7e6c', '#668a76', '#527264'], tips: '#88a696', core: ['#20342a'], coreR: .22, shape: .75, stubs: 7, cones: 'hanging' },
+    { H: 34, R: 8.5, trunk: '#4a3d34', trunkBase: .75, crown: .55, tiers: 6, limbs: 4, droop: .02, tipUp: .3, sprays: 10, spray: .18, pad: .38, gaps: .3, lee: .6, needle: NEEDLE.pine,
+      gain: 1.7, cols: ['#587a68', '#628572', '#4f6e60'], tips: '#82a090', core: ['#1e3228'], coreR: .2, shape: .5, flatTop: true, top: 'flat', stubs: 9, cones: 'hanging' },
+  ],
+  // red spruce: narrow and dense, near-black green, limbs down then the tips up; the odd broken top (its sprays drawn
+  // with the fir's texture: the bottle-brush twigs photographed as stripes)
+  spruce: [
+    { H: 21, R: 3.4, trunk: '#4d3b2e', trunkBase: .36, crown: .05, tiers: 13, limbs: 6, droop: .35, tipUp: .45, sprays: 5, spray: .3, needle: NEEDLE.fir, flat: [1.1, 1, 1.1], cols: ['#2f4a38', '#35513e', '#2a4434'], tips: '#4e6a4c', core: ['#18291f', '#1c2e22'], shape: 1, stubs: 3 },
+    { H: 24, R: 3.6, trunk: '#4d3b2e', trunkBase: .4, crown: .08, tiers: 12, limbs: 6, droop: .4, tipUp: .45, sprays: 5, spray: .3, gaps: .18, lee: .2, needle: NEEDLE.fir, flat: [1.1, 1, 1.1], cols: ['#2d4736', '#33503d', '#283f31'], tips: '#4a6648', core: ['#17281e'], shape: 1, top: 'broken', stubs: 5 },
+  ],
+  // balsam fir: a very narrow, dense spire, dark blue-green, flat sprays; upright cones on its top
+  fir: [
+    { H: 16, R: 2.3, trunk: '#4d4036', trunkBase: .26, crown: .04, tiers: 14, limbs: 6, droop: .15, tipUp: .2, sprays: 4, spray: .32, needle: NEEDLE.fir, cols: ['#2c4a3c', '#315242', '#284437'], tips: '#4a6e5a', core: ['#172a21', '#1a2e24'], shape: 1.15, stubs: 2, cones: 'upright' },
+    { H: 19, R: 2.6, trunk: '#4d4036', trunkBase: .3, crown: .1, tiers: 14, limbs: 6, droop: .18, tipUp: .2, sprays: 4, spray: .32, gaps: .12, needle: NEEDLE.fir, cols: ['#2a4739', '#30503f', '#264235'], tips: '#466a56', core: ['#16281f'], shape: 1.2, stubs: 4, cones: 'upright' },
+  ],
+  // eastern hemlock: broad, soft, the long sprays hanging from drooping limbs; the leader nods; lighter new tips
+  hemlock: [
+    { H: 22, R: 4.4, trunk: '#5b4636', trunkBase: .5, crown: .12, tiers: 10, limbs: 6, droop: .3, tipUp: -.1, sprays: 7, spray: .26, hang: 1.1, needle: NEEDLE.hemlock, cols: ['#36533f', '#3c5a45', '#314c3a'], tips: '#5e7c58', core: ['#1e3326', '#22382a'], shape: .9, top: 'nod', stubs: 4 },
+    { H: 25, R: 5, trunk: '#5b4636', trunkBase: .6, crown: .2, tiers: 9, limbs: 6, droop: .35, tipUp: -.15, sprays: 7, spray: .25, hang: 1.3, gaps: .15, lee: .2, needle: NEEDLE.hemlock, cols: ['#34503d', '#3a5843', '#2f4a38'], tips: '#5a7856', core: ['#1d3125'], shape: .85, top: 'nod', stubs: 6 },
+  ],
+  // tamarack: tall and open, soft tufts of gold along thin limbs (the pine sprays, gold), little core
+  tamarack: [
+    { H: 21, R: 2.8, trunk: '#7a5034', trunkBase: .35, crown: .25, tiers: 12, limbs: 5, droop: .1, tipUp: .25, sprays: 4, spray: .3, gaps: .2, needle: NEEDLE.pine, flat: [1, 1, 2.5], gain: 1.25, cols: ['#c49838', '#d2aa48', '#b88a30'], tips: '#e2c060', core: null, shape: .9, stubs: 6 },
+  ],
+};
 
 // ------------------------------------------------------------------ v0.17.0: the understory (bikefree upstate-trees.js
 // fern(), its shrubs grown as the trees are, saplings) - the pond's late-October edge
@@ -461,8 +626,9 @@ export function makeKit() {
   return withSmooth(true, () => {
     const entries = [];
     Object.entries(BROAD).forEach(([sp, o], k) => o.turn.forEach((turn, v) => { const t = grow(4001 + k * 37 + v * 7, o, turn); entries.push({ key: `${sp}:${v}`, sp, v, turn, ...t }); }));
-    // (Floodwood: bikefree's evergreen greens are ~2.5x darker than this pond's palette; the photos lift them to match)
-    for (const [sp, list] of Object.entries(CONIFERS)) list.forEach((fn, v) => entries.push({ key: `${sp}:${v}`, sp, v, wood: fn(), leaves: null, foliageGain: sp === 'tamarack' ? 1 : 2.3, crownFrom: { whitepine: .4, tamarack: .25, hemlock: .15 }[sp] ?? .06 }));
+    // v0.18.0: the conifers as limbs and needle sprays over a dark core (needleTree); their greens their own (the
+    // core a little lifted: bikefree's dark tier colours were ~2.5x below the pond's palette)
+    Object.entries(NEEDLES).forEach(([sp, list], k) => list.forEach((o, v) => entries.push({ key: `${sp}:${v}`, sp, v, ...needleTree(9001 + k * 41 + v * 13, o), foliageGain: 1.9 })));
     return { entries, leafTexture: makeLeafTexture(512) };
   });
 }
