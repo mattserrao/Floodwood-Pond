@@ -24,6 +24,7 @@ export function createPost(renderer) {
     uFxaa: { value: 0 },
     uDark: { value: 0 }, uBehind: { value: 0 }, uAway: { value: new THREE.Vector2(0, 1) }, uPlayer: { value: new THREE.Vector3() },
     tShelter: { value: null }, uExt: { value: new THREE.Vector4(-1700, -1400, 3400, 2800) }, uBay: { value: 1 }, uLift: { value: 0 }, uHaze: { value: new THREE.Color(0.6, 0.66, 0.74) }, uHazeK: { value: 0.9 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 0.8, 0.6) }, uWake: { value: new THREE.Vector2(0, 1) }, uSpeed: { value: 0 },
+    uAO: { value: new THREE.Vector2(0, 0.7) }, uFocal: { value: 1 },   // v0.16.0: contact shading (strength, world radius m)
     uMistCol: { value: new THREE.Color(0.6, 0.65, 0.7) }, uCloudSh: { value: 0 }, uCloudSun: { value: new THREE.Vector2() }, uLightPos: { value: new THREE.Vector2(0.5, 0.5) }, uLightCol: { value: new THREE.Color(1, 0.8, 0.6) }, uLightVis: { value: 0 },
   };
   const mat = new THREE.ShaderMaterial({
@@ -52,6 +53,28 @@ export function createPost(renderer) {
       float fbm(vec2 p){ float a=.5,s=0.; for(int i=0;i<4;i++){ s+=a*n2(p); p*=2.03; a*=.5; } return s; }
       float luma(vec3 c){ return dot(c, vec3(.2126,.7152,.0722)); }
       vec3 worldAt(vec2 uv, float d){ vec4 ndc = vec4(uv*2.-1., d*2.-1., 1.); vec4 v = uProjInv*ndc; v/=v.w; return (uCamWorld*v).xyz; }
+      // v0.16.0: contact shading (bikefree post.js contactAO, 24-26 Nov): a screen-space ambient occlusion from the depth
+      // alone - pairs of opposite taps in two rings sized to ~0.7 m in the world; 1/z is linear across a plane on screen,
+      // so a flat surface (the water, a dock seen low) has the centre on the line between them and shades nothing; a
+      // crease (a rock meeting the shore, the canoe on the water, a trunk's foot) has the centre farther: shaded by how
+      // much (0.04-1.6 m). Fades out by 220 m.
+      uniform vec2 uAO; uniform float uFocal;
+      float linZ(vec2 uv){ float d = texture2D(tDepth, uv).r; return (uNear * uFar) / (uFar - d * (uFar - uNear)); }
+      float contactAO(vec2 uv, float z){
+        if (uAO.x <= 0. || z > 220.) return 1.;
+        float r = uAO.y * uFocal / max(z, 1.);
+        float occ = 0., rot = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5) * .785;
+        for (int i = 0; i < 6; i++) {
+          float a = float(i) * .523599 + rot;
+          for (int j = 1; j <= 2; j++) {
+            vec2 o = vec2(cos(a), sin(a) * uRes.x / uRes.y) * r * float(j) * .5;
+            float wa = 1. / max(linZ(uv + o), .1), wb = 1. / max(linZ(uv - o), .1);
+            float dz = z - 1. / max((wa + wb) * .5, 1e-4);
+            occ += smoothstep(.04, .3, dz) * (1. - smoothstep(.8, 1.6, dz));
+          }
+        }
+        return 1. - uAO.x * min(1., occ / 12. * 1.25) * (1. - smoothstep(120., 220., z));
+      }
 
       vec3 kuwahara(vec2 uv){
         vec2 px = 1./uRes; const int R = 3; vec3 m[4]; vec3 s[4];
@@ -71,6 +94,7 @@ export function createPost(renderer) {
         vec3 wp = sky ? uCamPos + normalize(worldAt(uv, 0.9999) - uCamPos) * 2500. : worldAt(uv, d);
         float dist = length(wp - uCamPos);
         vec3 col = uFxaa > .5 ? fxaa(uv) : texture2D(tColor, uv).rgb;
+        if (uAO.x > 0. && !sky) col *= contactAO(uv, linZ(uv));
         // ---- motion blur: reproject with last frame's camera, smear along the screen velocity (canoe stays crisp)
         if (uBlur > 0.) {
           vec4 pc = uPrevVP * vec4(wp, 1.);
@@ -256,6 +280,8 @@ export function createPost(renderer) {
       const s = renderer.getDrawingBufferSize(new THREE.Vector2()); rt.setSize(s.x, s.y); U.uRes.value.copy(s);
       mistRT.setSize(Math.max(2, Math.round(s.x * mistScale)), Math.max(2, Math.round(s.y * mistScale))); U.uMistRes.value.set(mistRT.width, mistRT.height);
     },
+    /** v0.16.0: contact shading (0: off - phones) */
+    setAO(strength, radiusM = 0.7) { U.uAO.value.set(strength, radiusM); },
     /** apply a quality tier: MSAA samples and mist resolution */
     setQuality(q) {
       if (rt.samples !== q.msaa) { rt.samples = q.msaa; rt.dispose(); }
@@ -266,7 +292,7 @@ export function createPost(renderer) {
     blurAllowed: true, motionBlur: false, prevVP: new THREE.Matrix4(), hasPrev: false,
     /** lightDir: world direction to the sun or moon; lightCol: its colour; mistCol: current fog/mist tint */
     render(scene, camera, t, lightDir, lightCol, mistCol) {
-      U.uTime.value = t; U.uNear.value = camera.near; U.uFar.value = camera.far;
+      U.uTime.value = t; U.uNear.value = camera.near; U.uFar.value = camera.far; U.uFocal.value = camera.projectionMatrix.elements[5] * 0.5;
       U.uProjInv.value.copy(camera.projectionMatrixInverse); U.uCamWorld.value.copy(camera.matrixWorld); U.uCamPos.value.copy(camera.position);
       if (mistCol) U.uMistCol.value.copy(mistCol);
       if (lightDir) {

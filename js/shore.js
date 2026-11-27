@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.15.0';
-import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP } from './world.js?v=0.15.0';
+import { MAP } from './mapdata.js?v=0.18.0';
+import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP, UNDER, WORLD, downwind } from './world.js?v=0.18.0';
 
 // v0.6: what a real Adirondack shoreline is made of - dead silver snags, leaning trees, granite boulders,
 // driftwood, stumps, a few docks. Everything lives within ~14 m of the water's edge, where the eye actually looks.
@@ -72,7 +72,16 @@ export function buildShore(scene, M = {}) {
   const rootGeo = (() => { const g = []; const plate = new THREE.CylinderGeometry(1.6, 1.4, 0.5, 9); plate.rotateX(Math.PI / 2 + 0.3); g.push(plate); for (let i = 0; i < 8; i++) { const r = new THREE.CylinderGeometry(0.03, 0.1, 0.8 + rnd() * 0.8, 4); const a = (i / 8) * 6.28; r.translate(0, 0.5, 0); r.rotateX(Math.PI / 2 + (rnd() - 0.5) * 0.4); r.rotateZ(a); r.translate(Math.cos(a) * 1.3, Math.sin(a) * 1.3, 0); g.push(r); } return merge(g); })();
 
   instanced(scene, snagGeo, silver, snags);
-  instanced(scene, leanGeo, new THREE.MeshStandardMaterial({ color: 0x3b5a3a, flatShading: true, roughness: 1 }), leaners.map((l) => ({ ...l, scl: l.scl })));
+  if (WORLD.trees) {
+    // v0.18.0: the leaning trees on the tree engine - a white pine, spruce or hemlock from the kit, its card sheared out
+    // over the water (the lean: the top's offset per metre up, toward the water's normal); the old bent tube still built
+    // above so the shore's random draws are unchanged
+    const KEYS = ['whitepine:0', 'spruce:0', 'hemlock:0', 'whitepine:0'];
+    WORLD.trees.addTrees(leaners.map((l) => {
+      const hsh = Math.abs(Math.sin(l.pos.x * 12.9898 + l.pos.z * 78.233) * 43758.5453), k = l.lean * 0.8, a = l.rot.y;
+      return { x: l.pos.x, y: l.pos.y + 0.15, z: l.pos.z, key: KEYS[Math.floor(hsh) % 4], h: 8.5 * l.scl.y, w: 1, rot: downwind(hsh % 6.28), tint: 0.9 + (hsh % 1) * 0.2, lean: [Math.sin(a) * k, Math.cos(a) * k], keep: true };
+    }));
+  } else instanced(scene, leanGeo, new THREE.MeshStandardMaterial({ color: 0x3b5a3a, flatShading: true, roughness: 1 }), leaners.map((l) => ({ ...l, scl: l.scl })));
   instanced(scene, rockGeo, gran, rocks);
   instanced(scene, driftGeo, silver, drift);
   instanced(scene, stumpGeo, bark, stumps);
@@ -116,8 +125,10 @@ export function buildShore(scene, M = {}) {
     if (rnd() < 0.7 * k) for (let i = 0; i < 40; i++) { const d = 1 + rnd() * 11 * k, x = p.x + p.nx * d + (rnd() - 0.5) * 5, z = p.z + p.nz * d + (rnd() - 0.5) * 5; if (pondSD(x, z) < 0.3 || pondSD(x, z) > 13) continue;
       const j = 0.8 + rnd() * 0.35; beds.push({ pos: V(x, -0.05, z), rot: E((rnd() - 0.5) * 0.25, rnd() * 6.3, (rnd() - 0.5) * 0.25), scl: V(1, 0.6 + rnd() * 0.8, 1), col: [0.7 * j, 0.6 * j, 0.32 * j] }); }
   });
-  instanced(scene, shrubGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), shrubs, 'shrub');
-  instanced(scene, reedBed, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), beds, 'reed');
+  if (!UNDER) {   // v0.17.0: the understory's grown leatherleaf / sweet gale and its reed cards take their place
+    instanced(scene, shrubGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), shrubs, 'shrub');
+    instanced(scene, reedBed, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), beds, 'reed');
+  }
   return { shrubs: shrubs.length, beds: beds.length, snags: snags.length, leaners: leaners.length, rocks: rocks.length, drift: drift.length, stumps: stumps.length, roots: roots.length, docks: docks.length };
 }
 

@@ -6,7 +6,7 @@
 //  - soft contact shadows under trunks, rocks and stumps
 // Everything is instanced (one draw call per kind) and rebuilt only when the canoe has moved a few metres.
 import * as THREE from 'three';
-import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE, gridSD } from './world.js?v=0.15.0';
+import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE, gridSD, UNDER } from './world.js?v=0.18.0';
 
 // ------------------------------------------------------------------ geometry helpers
 /** a mesh builder that collects triangles with colours and a bark flag */
@@ -159,7 +159,7 @@ export function createNearField(scene, opts = {}) {
   function genCell(cx, cz) {
     const R = seeded((cx * 73856093) ^ (cz * 19349663)), items = [], x0 = cx * CELL, z0 = cz * CELL;
     if (-gridSD(x0 + CELL / 2, z0 + CELL / 2) > 55) return items;   // v0.14.0: ground detail only in the strip you can see from the water
-    const put = (type, x, z, s, rotY, col, tilt = 0, dy = 0) => { const y = landY(x, z); items.push([type, x, y + dy, z, s, rotY, col, tilt]); };
+    const put = (type, x, z, s, rotY, col, tilt = 0, dy = 0) => { if (UNDER && (type === 'fern' || type === 'shrub' || type === 'sedge')) return; /* (v0.17.0: the understory's) */ const y = landY(x, z); items.push([type, x, y + dy, z, s, rotY, col, tilt]); };
     const N = (k) => Math.floor(k + R());
     const tries = 64;
     for (let i = 0; i < tries; i++) {
@@ -187,7 +187,7 @@ export function createNearField(scene, opts = {}) {
       else if (pick < 0.76) put('cone', x, z, 0.9 + R() * 0.5, R() * 6.3, [0.36 * j, 0.24 * j, 0.11 * j]);
       else if (pick < 0.8) put('rock', x, z, 0.2 + R() * 0.7, R() * 6.3, R() < 0.6 ? [0.16 * j, 0.2 * j, 0.1 * j] : [0.22 * j, 0.22 * j, 0.2 * j], (R() - 0.5) * 0.3, -0.1);
       else if (pick < 0.84 && tree < 5) put('root', x, z, 0.6 + R() * 0.7, R() * 6.3, [0.34 * j, 0.26 * j, 0.18 * j]);
-      else if (pick < 0.87 && tree > 3) put('sapling', x, z, 0.12 + R() * 0.3, R() * 6.3, R() < 0.2 ? [0.5, 0.36, 0.06] : [0.07 * j, 0.2 * j, 0.1 * j]);
+      else if (pick < 0.87 && tree > 3) { const sa = [0.12 + R() * 0.3, R() * 6.3, R() < 0.2 ? [0.5, 0.36, 0.06] : [0.07 * j, 0.2 * j, 0.1 * j]]; if (!UNDER) put('sapling', x, z, ...sa); }   // (v0.18.0: the understory's needle saplings instead; the draws kept)
       else if (pick < 0.885) put('stump', x, z, 0.8 + R() * 0.6, R() * 6.3, [0.62 * j, 0.55 * j, 0.48 * j]);
       else if (pick < 0.9 && tree > 2.5) put('log', x, z, 0.8 + R() * 0.4, R() * 6.3, [0.4 * j, 0.34 * j, 0.28 * j], (R() - 0.5) * 0.08, -0.05);
     }

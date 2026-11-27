@@ -1,22 +1,24 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.15.0';
-import { AmbientAudio } from './audio.js?v=0.15.0';
-import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, MOUNTAINS, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees , TILES } from './world.js?v=0.15.0';
-import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.15.0';
-import { createPost } from './post.js?v=0.15.0';
-import { mergeStatic } from './merge.js?v=0.15.0';
-import { createCanoe, Ripples, Loons, Geese, createFireflies, createSwimmer } from './canoe.js?v=0.15.0';
-import { WIND, gustAt, updateWind } from './wind.js?v=0.15.0';
-import { Q } from './quality.js?v=0.15.0';
-import { WX } from './weather.js?v=0.15.0';
-import { createWildlife } from './wildlife.js?v=0.15.0';
-import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.15.0';
-import { createStory } from './story.js?v=0.15.0';
-import { buildShore } from './shore.js?v=0.15.0';
-import { loadModels } from './models.js?v=0.15.0';
-import { buildCamp } from './camp.js?v=0.15.0';
-import { createNearField } from './nearfield.js?v=0.15.0';
-import { setModels } from './story.js?v=0.15.0';
+import { MAP } from './mapdata.js?v=0.18.0';
+import { AmbientAudio } from './audio.js?v=0.18.0';
+import { clamp, lerp, sstep, rnd, pondSD, NQ, EXT, heightAt, buildTerrain, buildPaths, buildTrees, buildMountains, buildCamps, buildDock, MOUNTAINS, buildIsland, ISLE, CAMP, buildCreek, CREEK, creekSD, CQ, cullTiles, setLitterScale, SWAY, WORLD, TREE_LIGHT, shadeUnderTrees, TILES, UNDER } from './world.js?v=0.18.0';
+import { createSky, createWater, createReflection, samplePalette, sunDirection, moonDirection } from './sky.js?v=0.18.0';
+import { createPost } from './post.js?v=0.18.0';
+import { mergeStatic } from './merge.js?v=0.18.0';
+import { createCanoe, Ripples, Loons, Geese, createFireflies, createSwimmer } from './canoe.js?v=0.18.0';
+import { WIND, gustAt, updateWind } from './wind.js?v=0.18.0';
+import { Q, TIERS as TIERS_AO } from './quality.js?v=0.18.0';
+import { WX } from './weather.js?v=0.18.0';
+import { createWildlife } from './wildlife.js?v=0.18.0';
+import { createFloatingLeaves, createFallingLeaves, createDrips, createRain } from './details.js?v=0.18.0';
+import { createStory } from './story.js?v=0.18.0';
+import { buildShore } from './shore.js?v=0.18.0';
+import { loadModels } from './models.js?v=0.18.0';
+import { buildCamp } from './camp.js?v=0.18.0';
+import { createNearField } from './nearfield.js?v=0.18.0';
+import { setModels } from './story.js?v=0.18.0';
+import { SkyEnvironment, installGrade, GRADE, CanopyShade, patchCanopy } from './light.js?v=0.18.0';
+import { buildUnderstory } from './understory.js?v=0.18.0';
 
 const DAY_LEN = 540;           // real seconds per 24 in-game hours
 const START_HOUR = 5.45;       // just before sunrise: pink horizon, mist on the water
@@ -30,6 +32,8 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 const dprFor = (q) => Math.min(window.devicePixelRatio || 1, q.pixelRatio, isTouch ? 1.5 : 2);
 renderer.setPixelRatio(dprFor(Q.s));
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+// v0.16.0: bikefree's key/fill grade in the tone mapping (half way to its warm, saturated look); ?grade=0 for plain ACES
+if (new URLSearchParams(location.search).get('grade') !== '0') installGrade(renderer);
 renderer.info.autoReset = false; // reset once per frame so the counts cover every pass (reflection + main + post)
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0xaabbcc, 0.0007);
@@ -48,6 +52,13 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 scene.add(hemi, sunLight, sunLight.target, moonLight, moonLight.target);
 
 // ------------------------------------------------------------------ build the world
+// v0.16.0: the sky as environment light, and the canopy's dappled shade (light.js); patchLit adds the canopy to every lit
+// material in the scene (again now and then: the wildlife, the story's things come and go)
+const envLight = new SkyEnvironment(renderer), canopy = new CanopyShade(), envGround = new THREE.Color();
+const LIGHT_QS = new URLSearchParams(location.search), ENV_ON = LIGHT_QS.get('env') !== '0', CANOPY_ON = LIGHT_QS.get('canopy') !== '0';
+let litAt = -1e9;
+function patchLit() { if (!CANOPY_ON) return; scene.traverse((o) => { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(patchCanopy); }); }
+const crowns = (x, z, R) => (WORLD.trees ? WORLD.trees.crownsNear(x, z, R) : []);
 let world = {}, story = null, swimmer, canoe, ripples, loons, geese, flies, mist, sky, water, camps, wild, floatLeaves, fallLeaves, drips, rain, audio = new AmbientAudio();
 const launchInfo = {};
 function build() {
@@ -59,6 +70,7 @@ function build() {
   world.stats = buildTrees(scene, { renderer, tier: Q.tier, msaa: Q.s.msaa > 0 }); shadeUnderTrees(terrainMesh);
   world.isle = buildIsland(scene);
   world.shore = buildShore(scene, world.models);
+  if (UNDER) { world.under = buildUnderstory(scene, { renderer, tier: Q.tier, msaa: Q.s.msaa > 0 }); console.log('understory', JSON.stringify(world.under.stats)); }
   world.camp = buildCamp(scene, WORLD.treePos || [], post);
   world.near = createNearField(scene); world.near.setQuality(Q.s);
   // v0.9.0: solid things cast and catch shadows (the shadow box only covers ~80 m round the canoe, so this stays cheap)
@@ -68,6 +80,7 @@ function build() {
   // v0.15.0: the tree cards throw their leafy shade on the ground, the canoe and the props, but don't take it from each
   // other (as on main, where the forest's trees neither cast nor received): a dense stand of cards went dark
   if (WORLD.trees) { WORLD.trees.mesh.castShadow = true; WORLD.trees.mesh.receiveShadow = false; }
+  patchLit();
   buildCreek(scene);
   camps = buildCamps(scene);
   // find the hand launch on the shore, and which way is water
@@ -114,6 +127,8 @@ function applyQuality() {
   const q = Q.s;
   renderer.setPixelRatio(dprFor(q)); renderer.setSize(innerWidth, innerHeight, false);
   post.setQuality(q); refl.setScale(q.refl);
+  // v0.16.0: contact shading on laptops and desktops (bikefree: High .7, Balanced .55, none on Low or phones)
+  post.setAO(isTouch || LIGHT_QS.get('ao') === '0' ? 0 : q === TIERS_AO.high ? 0.7 : q === TIERS_AO.med ? 0.55 : 0, q === TIERS_AO.high ? 0.7 : 0.6);
   if (water) water.material.uniforms.uReflOn.value = q.refl > 0 ? 1 : 0;
   if (floatLeaves) floatLeaves.setCount(q.leaves);
   if (rain) rain.setCount(q.rain);
@@ -123,13 +138,14 @@ function applyQuality() {
   scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
   if (world.near) world.near.setQuality(q);
   if (WORLD.trees) WORLD.trees.setMSAA(q.msaa > 0);
+  if (world.under) world.under.setMSAA(q.msaa > 0);
   const el = document.getElementById('pQual'); if (el) el.textContent = 'Graphics: ' + Q.label();
 }
 Q.onChange(applyQuality);
 
 // ------------------------------------------------------------------ state
 const P = { x: 0, z: 0, psi: 0, vx: 0, vz: 0, w: 0, phase: 0, side: -1, act: 0, roll: 0, pitch: 0, wakeT: 0, bump: 0 };
-const VERSION = '0.15.0';
+const VERSION = '0.18.0';
 const G = { fog: 0, fogLift: 0, transport: null, moonPhase: 0.15 + Math.random() * 0.7, moonUp: null, paused: false, mapOpen: false, menu: false, snap: false, mode: 'title', t: 0, hour: START_HOUR, jump: null, launchT: 0, idle: 0, time: 0 };
 const cam = { heading: 0, yaw: 0, pitch: 0.28, dist: 11, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 const keys = new Set(); const joy = { x: 0, y: 0 };
@@ -555,7 +571,7 @@ function updateCamera(dt, t) {
   const gl = story && G.mode !== 'title' ? story.glanceLift || 0 : 0;   // v0.10.0: rise up to look down over the broken edge
   tmpV.set(P.x - Math.sin(a) * cp * cam.dist * (1 + 0.5 * gl), 0.9 + Math.sin(cam.pitch) * cam.dist + 7 * gl, P.z - Math.cos(a) * cp * cam.dist * (1 + 0.5 * gl));
   tmpV.y = Math.max(tmpV.y, Math.max(heightAt(tmpV.x, tmpV.z), 0) + 1.4);
-  cam.pos.lerp(tmpV, G.mode === 'title' || G.snap ? 1 : Math.min(1, dt * 6)); G.snap = false;
+  cam.pos.lerp(tmpV, G.mode === 'title' || G.snap ? 1 : Math.min(1, dt * 6)); G.lightSnap = G.snap; G.snap = false;
   camera.position.copy(cam.pos);
   const lb = story ? Math.abs(story.glanceYaw) / Math.PI : 0; // while glancing back, look past the canoe into the mist
   cam.look.set(P.x + Math.sin(P.psi) * 3 * (1 - 2.2 * lb - 6 * gl), 1.0 + 1.5 * lb - 3.5 * gl, P.z + Math.cos(P.psi) * 3 * (1 - 2.2 * lb - 6 * gl));
@@ -594,9 +610,11 @@ function updateEnvironment(dt, t) {
   // lights
   TREE_LIGHT.uSunDir.value.copy(sunV); TREE_LIGHT.uSunCol.value.copy(pal.sun); TREE_LIGHT.uSunK.value = sstep(-0.04, 0.12, sunV.y) * (1 - 0.8 * cover);
   if (world.near) world.near.update(camera.position);
-  sunLight.color.copy(pal.sun); sunLight.intensity = 3.2 * sunI; sunLight.position.set(P.x + sunV.x * 300, sunV.y * 300 + 20, P.z + sunV.z * 300); sunLight.target.position.set(P.x, 0, P.z);
+  sunLight.color.copy(pal.sun); sunLight.intensity = 3.2 * sunI * GRADE.sun; sunLight.position.set(P.x + sunV.x * 300, sunV.y * 300 + 20, P.z + sunV.z * 300); sunLight.target.position.set(P.x, 0, P.z);
   moonLight.intensity = 0.8 * moonVis * (0.2 + 0.8 * moonFrac); moonLight.position.set(P.x + moonV.x * 300, moonV.y * 300 + 20, P.z + moonV.z * 300); moonLight.target.position.set(P.x, 0, P.z);
-  hemi.color.copy(pal.hemiS); hemi.groundColor.copy(pal.hemiG); hemi.intensity = pal.hemiI * 1.15;
+  hemi.color.copy(pal.hemiS); hemi.groundColor.copy(pal.hemiG); hemi.intensity = pal.hemiI * 1.15 * (ENV_ON ? 0.3 : 1) * GRADE.sky;
+  // v0.16.0 (bikefree fidelity step 4): the sky dome is the ambient light; the hemisphere stays on as a fill
+  scene.environmentIntensity = ENV_ON ? pal.hemiI * 1.15 * 0.75 * GRADE.sky : 0;
   const lift = story && story.fogLift ? story.fogLift() : 0, WXF = WX.fog * (1 - lift); WX.clearK = 1 - lift;   // v0.8.0: weather fog and grey cover burn off with it   // v0.7.1: the morning fog lifts after a minute on the water
   const fogA = clamp(G.fog, 0, 1);
   // v0.4: haze follows the day - thick at dawn and at night, clearest at midday - plus fog mornings and rain
@@ -615,6 +633,10 @@ function updateEnvironment(dt, t) {
   su.uSunI.value = sstep(-0.012, 0.03, sunV.y) * (1 - cover); su.uGlow.value = glow * (1 - 0.75 * cover); su.uCover.value = cover; su.uMoonI.value = moonVis * (1 - 0.9 * cover); su.uStars.value = stars; su.uTime.value = t; su.uPhase.value = G.moonPhase; su.uFogCol.value.copy(fogCol); su.uFogMix.value = fogA * 0.92;
   su.uCloudLit.value.copy(pal.hor).lerp(tintC.set(0xffffff), 0.45 * day).multiplyScalar(0.8 + 0.5 * day); su.uCloudShade.value.copy(pal.mid).multiplyScalar(0.55);
   sky.position.copy(camera.position);
+  if (ENV_ON) {
+    envGround.copy(pal.hemiG).multiplyScalar(0.7);
+    if (envLight.maybeUpdate(sky, envGround, [sunV.x, sunV.y, sunV.z, cover, fogA, WX.rain, pal.top.r, pal.hor.g, G.moonPhase * moonVis], G.time, G.lightSnap ? 0 : 2)) scene.environment = envLight.texture;
+  }
   // water
   const wu = water.material.uniforms; wu.uTime.value = t; wu.uSun.value.copy(sunV); wu.uMoon.value.copy(moonV); wu.uSunCol.value.copy(pal.sun);
   wu.uSunI.value = sstep(-0.02, 0.1, sunV.y); wu.uMoonI.value = moonVis * (0.15 + 0.85 * moonFrac); wu.uSkyTop.value.copy(pal.top).lerp(pal.mid, 0.3); wu.uSkyHor.value.copy(pal.hor);
@@ -633,7 +655,14 @@ function updateEnvironment(dt, t) {
     U.uWake.value.set(Math.sin(P.psi), Math.cos(P.psi)); U.uSpeed.value = Math.hypot(P.vx, P.vz); }
   // the fog decides how far you can see; whole forest tiles past that are skipped
   G.visDist = Math.min(9000, 2.4 / Math.max(fogD, 1e-5));
-  cullTiles(camera.position, G.visDist, Math.min(G.visDist, 320), 900); wu.uLight.value = clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y) + 0.14 * moonVis, 0, 1);
+  cullTiles(camera.position, G.visDist, Math.min(G.visDist, 320), 900);
+  if (world.under) { world.under.setVis(Math.min(G.visDist, 260)); world.under.update(camera, G.time); }
+  if (CANOPY_ON) {
+    // v0.16.0: the canopy's dapples - beyond the shadow map's reach where there is one (its leafy card shadows are nearer)
+    canopy.setReach(Q.s.shadow ? 75 : 0);
+    canopy.update(camera, sunV, crowns, 0, t, sstep(0.04, 0.25, sunV.y) * (1 - 0.85 * cover) * (1 - WXF), G.lightSnap ? 0 : 2);
+    if (G.time - litAt > 8) { litAt = G.time; patchLit(); }
+  } wu.uLight.value = clamp(0.1 + 0.9 * sstep(-0.1, 0.4, sunV.y) + 0.14 * moonVis, 0, 1);
   if (world.camp) { camera.getWorldDirection(tmpV); world.camp.update(t, sunV.y, tmpV.dot(sunV), sunV); }
   // lanterns
   const lamp = 1 - sstep(-0.06, 0.14, sunV.y), flick = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 5.3);
@@ -780,7 +809,7 @@ function boot() {
     const t0 = performance.now(); build(); resetPlayer(); drawStaticMap(); buildTitleShots(); buildSkips();
     cam.pos.set(P.x, 5, P.z - 12);
     document.querySelectorAll('.ver').forEach((el) => (el.textContent = 'v' + VERSION));
-    window.game = { trees: () => ({ engine: WORLD.treeEngine, cull: WORLD.treeCull }), treeEngine: () => WORLD.trees, leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05, ctl = false) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, ctl); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, TITLE, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe, get near() { return world.near; } };
+    window.game = { under: () => world.under, trees: () => ({ engine: WORLD.treeEngine, cull: WORLD.treeCull }), treeEngine: () => WORLD.trees, leaves: () => floatLeaves, audio, simulate: (n, dt = 0.05, ctl = false) => { for (let i = 0; i < n; i++) { G.time += dt; if (G.mode === 'play') { stepCanoe(dt, ctl); if (story) story.update(dt, G.time); } poseCanoe(dt, G.time, Math.hypot(P.vx, P.vz)); updateCamera(dt, G.time); updateEnvironment(dt, G.time); updateDrips(dt); } }, Q, WX, WIND, CINE, setCine, setBox, wild: () => wild, renderer, refl, setWeather: (k) => { WX.forced = k; WX.roll(false); WX.cloud = k === 'overcast' || k === 'rain' ? 0.9 : WX.cloud; WX.fog = k === 'fog' ? 1 : 0; if (k !== 'rain') WX.shower = null; }, P, G, cam, scene, camera, setHour: (h) => { G.hour = h; }, teleport: (x, z, psi) => { P.x = x; P.z = z; if (psi !== undefined) P.psi = psi; cam.heading = P.psi; }, start: startGame, launchInfo, step: (n, dt, ctl) => { const r = []; for (let i = 0; i < n; i++) r.push(stepCanoe(dt, ctl !== false)); return r[r.length - 1]; }, stats: world.stats, isle: () => world.isle, TITLE, story: () => story, shore: () => world.shore, CREEK, heightAt, keys, travelTo, openMap, setPaused, AUTO, setAuto, swimmer: () => swimmer, post, canoe: () => canoe, get near() { return world.near; } };
     console.log('Floodwood Pond built in', Math.round(performance.now() - t0), 'ms', world.stats);
     ready = true; frame();
     if (pendingStart) startGame();
