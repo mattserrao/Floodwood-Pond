@@ -6,7 +6,7 @@
 //  - soft contact shadows under trunks, rocks and stumps
 // Everything is instanced (one draw call per kind) and rebuilt only when the canoe has moved a few metres.
 import * as THREE from 'three';
-import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE, gridSD } from './world.js?v=0.16.0';
+import { clamp, lerp, rnd, fbm, pondSD, heightAt, fullHeight, inPatch, inCampBox, CAMP, ISLE, inIsleBox, beachFactor, WORLD, swayMaterial, foliageLight, LEAF_COLS, distFade, NEAR_FADE, gridSD, UNDER } from './world.js?v=0.17.0';
 
 // ------------------------------------------------------------------ geometry helpers
 /** a mesh builder that collects triangles with colours and a bark flag */
@@ -159,7 +159,7 @@ export function createNearField(scene, opts = {}) {
   function genCell(cx, cz) {
     const R = seeded((cx * 73856093) ^ (cz * 19349663)), items = [], x0 = cx * CELL, z0 = cz * CELL;
     if (-gridSD(x0 + CELL / 2, z0 + CELL / 2) > 55) return items;   // v0.14.0: ground detail only in the strip you can see from the water
-    const put = (type, x, z, s, rotY, col, tilt = 0, dy = 0) => { const y = landY(x, z); items.push([type, x, y + dy, z, s, rotY, col, tilt]); };
+    const put = (type, x, z, s, rotY, col, tilt = 0, dy = 0) => { if (UNDER && (type === 'fern' || type === 'shrub' || type === 'sedge')) return; /* (v0.17.0: the understory's) */ const y = landY(x, z); items.push([type, x, y + dy, z, s, rotY, col, tilt]); };
     const N = (k) => Math.floor(k + R());
     const tries = 64;
     for (let i = 0; i < tries; i++) {

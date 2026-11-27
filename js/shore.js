@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.16.0';
-import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP } from './world.js?v=0.16.0';
+import { MAP } from './mapdata.js?v=0.17.0';
+import { clamp, lerp, rnd, fbm, pondSD, NQ, heightAt, inIsleBox, inCreekBox, ISLE, beachFactor, TILES, CAMP, UNDER } from './world.js?v=0.17.0';
 
 // v0.6: what a real Adirondack shoreline is made of - dead silver snags, leaning trees, granite boulders,
 // driftwood, stumps, a few docks. Everything lives within ~14 m of the water's edge, where the eye actually looks.
@@ -116,8 +116,10 @@ export function buildShore(scene, M = {}) {
     if (rnd() < 0.7 * k) for (let i = 0; i < 40; i++) { const d = 1 + rnd() * 11 * k, x = p.x + p.nx * d + (rnd() - 0.5) * 5, z = p.z + p.nz * d + (rnd() - 0.5) * 5; if (pondSD(x, z) < 0.3 || pondSD(x, z) > 13) continue;
       const j = 0.8 + rnd() * 0.35; beds.push({ pos: V(x, -0.05, z), rot: E((rnd() - 0.5) * 0.25, rnd() * 6.3, (rnd() - 0.5) * 0.25), scl: V(1, 0.6 + rnd() * 0.8, 1), col: [0.7 * j, 0.6 * j, 0.32 * j] }); }
   });
-  instanced(scene, shrubGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), shrubs, 'shrub');
-  instanced(scene, reedBed, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), beds, 'reed');
+  if (!UNDER) {   // v0.17.0: the understory's grown leatherleaf / sweet gale and its reed cards take their place
+    instanced(scene, shrubGeo, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), shrubs, 'shrub');
+    instanced(scene, reedBed, new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 }), beds, 'reed');
+  }
   return { shrubs: shrubs.length, beds: beds.length, snags: snags.length, leaners: leaners.length, rocks: rocks.length, drift: drift.length, stumps: stumps.length, roots: roots.length, docks: docks.length };
 }
 

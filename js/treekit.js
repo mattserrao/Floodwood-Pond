@@ -183,7 +183,18 @@ const BEEF = 2;   // (bikefree: trunks and limbs twice the first build)
  * the parent at the golden angle, splayed out. Leaf clusters (three crossed cards each) hang along the outer branches.
  * turn: how far it has turned (0 green - 1 all autumn colour), the top and outside first.
  */
+/** two Builder geometries as one (same attributes) */
+function mergeBuilt(a, b) {
+  const g = new THREE.BufferGeometry();
+  for (const k of ['position', 'normal', 'color', 'aTree']) {
+    const A = a.attributes[k].array, B = b.attributes[k].array, out = new Float32Array(A.length + B.length);
+    out.set(A); out.set(B, A.length); g.setAttribute(k, new THREE.BufferAttribute(out, a.attributes[k].itemSize));
+  }
+  g.computeBoundingBox(); g.computeBoundingSphere(); a.dispose(); b.dispose();
+  return g;
+}
 function grow(seed, o, turn) {
+  let berryGeo = null;
   const rand = randomSequence(seed), H = o.H, R = o.R;
   const wood = new Builder(); wood.as(o.bark);
   const clusters = [], up = new THREE.Vector3(0, 1, 0), queue = [], stems = o.stems || 1;
@@ -236,7 +247,8 @@ function grow(seed, o, turn) {
   // spherized from the crown's centre, so the crown shades as soft overlapping volumes from any side
   const C = { pos: [], nor: [], uv: [], col: [], card: [] }, qn = new THREE.Vector3(), p2 = new THREE.Vector3();
   const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]], UVS = [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]];
-  const nAt = (p) => qn.set((p.x - cc.x) / rad, (p.y - cc.y) / radY + .25, (p.z - cc.z) / rad).normalize();
+  const nAt = (p, lift = .25) => qn.set((p.x - cc.x) / rad, (p.y - cc.y) / radY + lift, (p.z - cc.z) / rad).normalize();
+  const leafScale = Math.min(1, Math.max(.24, H / 12));   // (bikefree: a leaf cluster's size is a tree's - a shrub's scaled down with it)
   const pushCard = (c, w, h, roll, n, u0, v0, k) => {
     for (let j = 0; j < 6; j++) {
       C.pos.push(c.x, c.y, c.z); C.nor.push(n.x, n.y, n.z); C.col.push(k.r, k.g, k.b);
@@ -248,12 +260,33 @@ function grow(seed, o, turn) {
     const g = o.greens[Math.floor(rand() * o.greens.length)], u = rand(), top = (c.p.y - cc.y) / radY;
     const hex = u < turn * (.75 + top * .35 + out * .3) ? (rand() < .7 ? hue : mixHex(hue, hue2, .5)) : u < turn * 1.4 ? mixHex(g, hue, .4) : g;
     const k = new THREE.Color(hex).multiplyScalar(.8 + out * .28);   // depth: darker inside
-    const size = 1.5 * c.size * 1.15;
+    const size = 1.5 * c.size * 1.15 * leafScale;
     pushCard(c.p, size, size, rand() * 6.283, nAt(c.p), Math.floor(rand() * 2) * .5, Math.floor(rand() * 2) * .5, k);
     // a second, smaller clump tucked in beside it (outward and a little down), a shade darker: depth inside the mass
     const a = rand() * 6.283, d = size * (.45 + rand() * .3);
     p2.set(c.p.x + Math.cos(a) * d, c.p.y - size * (.1 + rand() * .3), c.p.z + Math.sin(a) * d);
     pushCard(p2, size * (.6 + rand() * .2), size * (.6 + rand() * .2), rand() * 6.283, nAt(p2), Math.floor(rand() * 2) * .5, Math.floor(rand() * 2) * .5, k.clone().multiplyScalar(.82 + rand() * .1));
+  }
+  // a shrub's fluff (bikefree, 24 Nov): clumps in three nested shells round the crown's middle - small and dark deep
+  // inside, middling halfway, large and lit at the rim - so the bush reads as a full, soft mass with depth from any side
+  if (o.fluff) {
+    const shells = [[.32, 6, .4, .5], [.66, 10, .48, .75], [.97, 14, .54, 1]];   // [radius fraction, cards, size (x R), shade]
+    for (const [fr, n, sz, sh] of shells) for (let q = 0; q < n * o.fluff; q++) {
+      const a = q * 2.39996 + rand() * .7, hf = rand() * 2 - 1, ring = Math.sqrt(Math.max(0, 1 - hf * hf * .8));
+      const size = rad * sz * (.75 + rand() * .5);
+      const p = new THREE.Vector3(cc.x + Math.cos(a) * rad * fr * ring, Math.max(size * .85, cc.y + hf * radY * fr * .9), cc.z + Math.sin(a) * rad * fr * ring);
+      const g = o.greens[Math.floor(rand() * o.greens.length)], hex = rand() < turn ? (rand() < .7 ? hue : hue2) : g;
+      pushCard(p, size, size * .85, (rand() - .5) * .5, nAt(p, .1), Math.floor(rand() * 2) * .5, Math.floor(rand() * 2) * .5, new THREE.Color(hex).multiplyScalar(sh * (.9 + rand() * .2)));
+    }
+  }
+  // berries (winterberry): small red beads along the outer twigs, held clear of the leaves
+  if (o.berries) {
+    const bw = new Builder(); bw.as(SHRUB);
+    for (const c of clusters) for (let q = 0; q < o.berries; q++) {
+      const a = rand() * 6.28, d = rad * .12 * rand();
+      bw.add(blob(0), M(c.p.x + Math.cos(a) * d * 3, c.p.y + (rand() - .3) * .25, c.p.z + Math.sin(a) * d * 3, .045, .045, .045), rand() < .8 ? '#c42420' : '#e04a2a', 0, rand);
+    }
+    berryGeo = bw.build();
   }
   const leaves = new THREE.BufferGeometry();
   leaves.setAttribute('position', new THREE.Float32BufferAttribute(C.pos, 3)); leaves.setAttribute('normal', new THREE.Float32BufferAttribute(C.nor, 3));
@@ -265,7 +298,9 @@ function grow(seed, o, turn) {
   // (the crown, for the canopy shade: its leaves' extent, unpadded)
   const lb = new THREE.Box3(); for (const c of clusters) lb.expandByPoint(c.p);
   leaves.userData.crown = lb;
-  return { wood: wood.build(), leaves };
+  let woodGeo = wood.build();
+  if (berryGeo) woodGeo = mergeBuilt(woodGeo, berryGeo);
+  return { wood: woodGeo, leaves };
 }
 
 // levels: per level [children, start (0-1 up the parent), splay (rad), length (x H)]; turn: one entry per variant
@@ -325,6 +360,100 @@ function makeLeafTexture(size = 512) {
   }
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return t;
+}
+
+// ------------------------------------------------------------------ v0.17.0: the understory (bikefree upstate-trees.js
+// fern(), its shrubs grown as the trees are, saplings) - the pond's late-October edge
+/** a leaf blade, both faces: base at the origin, tip at +y (length 1), widest at `at` up it, width 1 */
+function bladeGeo(at = .4) {
+  const P = [0, 0, 0, -.5, at, 0, -.18, .82, 0, 0, 1, 0, .18, .82, 0, .5, at, 0], N = [], I = [];
+  const pos = [...P, ...P];
+  for (let k = 0; k < 6; k++) N.push(0, 0, 1); for (let k = 0; k < 6; k++) N.push(0, 0, -1);
+  for (const [a, b, c] of [[0, 5, 4], [0, 4, 3], [0, 3, 2], [0, 2, 1]]) { I.push(a, b, c); I.push(c + 6, b + 6, a + 6); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setIndex(I);
+  return g;
+}
+/**
+ * A fern (bikefree, 24 Nov: "green paper strips" -> "Real fern fronds"): a crown of arching, twice-divided fronds - each
+ * a rachis with paired pinnae, long in the middle and tapering to a fine tip, each pinna a row of little lobes. o:
+ * { L (frond length), up (how high it arches), n (fronds), cols (late-October colours, weighted by repeats), droop
+ * (share of fronds gone limp), flat (bracken: one tiered blade held flat on a tall stalk), erect (cinnamon: a vase) }
+ */
+function fern(seed, o) {
+  const rand = randomSequence(seed), b = new Builder(), Y = new THREE.Vector3(0, 1, 0);
+  const lobe = (p, dir, up, len, w, col) => {
+    const x = new THREE.Vector3().crossVectors(dir, up).normalize(), zN = new THREE.Vector3().crossVectors(x, dir).normalize();
+    const m = new THREE.Matrix4().makeBasis(x.multiplyScalar(w), dir.clone().multiplyScalar(len), zN).setPosition(p);
+    b.add(bladeGeo(.45), m, col, 0, rand);
+  };
+  b.as(SHRUB);
+  const fronds = o.n + Math.floor(rand() * 3);
+  for (let f = 0; f < fronds; f++) {
+    const a = f * 2.4 + rand() * .5, L = o.L * (.75 + rand() * .45), out = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+    const limp = rand() < (o.droop ?? .1), col = o.cols[Math.floor(rand() * o.cols.length)];
+    const up = (o.up ?? .55) * (.8 + rand() * .4) - (limp ? .35 : 0);
+    const lift = o.flat ? o.L * .9 : 0;   // bracken: the blade on a bare stalk
+    if (o.flat) lobe(new THREE.Vector3(0, 0, 0), new THREE.Vector3(out.x * .15, 1, out.z * .15).normalize(), out, lift, .012, shade(col, .8));
+    const at = (t) => out.clone().multiplyScalar(L * t * (o.erect ? .55 : 1) + .03).add(new THREE.Vector3(0, lift + Math.max(.02, up * (o.erect ? 1.6 : 1) * Math.sin(Math.PI * t * (o.flat ? .25 : .7)) - (.12 + (limp ? .35 : 0)) * t * t * L), 0));
+    const N = 10;
+    for (let k = 1; k <= N; k++) {
+      const t = k / N, p0 = at(t - 1 / N), p = at(t), d = p.clone().sub(p0), dl = d.length(); d.normalize();
+      const side = new THREE.Vector3().crossVectors(d, Y).normalize(), top = new THREE.Vector3().crossVectors(side, d).normalize();
+      lobe(p0, d, top, dl * 1.05, .018, col);   // the rachis
+      const plen = ((o.flat ? .3 : .22) * Math.sin(Math.PI * Math.min(1, t * 1.1)) + .025) * (.9 + rand() * .2) * (o.L / .95);
+      for (const sg of [-1, 1]) {
+        const pd = side.clone().multiplyScalar(sg).addScaledVector(d, .45).addScaledVector(top, -.12).normalize();
+        const lobes = Math.max(1, Math.min(3, Math.round(plen / .08)));
+        for (let q = 0; q < lobes; q++) {
+          const u = (q + .5) / lobes, c = p.clone().addScaledVector(pd, plen * u);
+          const ld = d.clone().addScaledVector(pd, .4).normalize(), lw = plen * .5 * (1 - u * .6);
+          lobe(c, ld, top, Math.max(.02, lw), lw * .55, col);
+        }
+        lobe(p, pd, top, plen, .02, col);   // its midrib
+      }
+    }
+  }
+  return b.build();
+}
+// late-October colours (weighted by repeats): cinnamon rusts first, royal goes gold-tan, bracken bronze, hay-scented
+// bleaches to cream - a few fronds still green on each
+const FERNS = {
+  cinnamon: { L: 1.0, up: .7, n: 8, erect: true, droop: .2, cols: ['#b0602a', '#c27434', '#9a5226', '#b0602a', '#8a4a22', '#6f7a3a'] },
+  royal: { L: .95, up: .55, n: 7, droop: .15, cols: ['#c49a4a', '#b88c3c', '#d2ab58', '#a87c34', '#7c8a3e'] },
+  bracken: { L: .6, up: .1, n: 3, flat: true, droop: .1, cols: ['#9a6a34', '#a87a3a', '#8a5a2c', '#b48a44'] },
+  hayscented: { L: .7, up: .45, n: 9, droop: .25, cols: ['#d8c070', '#cdb35e', '#e2cf8a', '#c4a650', '#8f9a50'] },
+};
+// the pond's shrubs (grown as the trees are: several thin stems, twiggy branching, leaf clumps in shells)
+const SHRUBS = {
+  // leatherleaf: the bog's low evergreen thicket, leaves gone bronze and maroon for the winter
+  leatherleaf: { H: 1.0, R: .9, fluff: 1.1, fork: .2, trunkR: .02, trunk: '#5a3f30', bark: BARK, stems: 6, gnarl: .4, up: .12,
+    levels: [[4, .3, .6, .45], [3, .3, .6, .25], [2, .4, .6, .12]], greens: ['#6a6a34', '#5e6230'], fall: ['#8a4430', '#9a5034', '#7a3a2c', '#a8643a'], turn: [.8, .55] },
+  // sweet gale: grey-olive, upright, a little taller; browning
+  sweetgale: { H: 1.4, R: .9, fluff: .8, fork: .25, trunkR: .025, trunk: '#4f4339', bark: BARK, stems: 5, gnarl: .3, up: .14,
+    levels: [[4, .35, .5, .45], [3, .3, .55, .25], [2, .4, .6, .12]], greens: ['#5f6a44', '#69704a', '#56603e'], fall: ['#7a6a3a', '#8a7440', '#6a5a34'], turn: [.5] },
+  // highbush blueberry: the shore's scarlet - wiry stems, a loose vase
+  blueberry: { H: 2.2, R: 1.3, fluff: .9, fork: .25, trunkR: .03, trunk: '#6a3a2c', bark: BARK, stems: 6, gnarl: .4, up: .1,
+    levels: [[4, .3, .55, .45], [3, .3, .6, .25], [2, .4, .6, .12]], greens: ['#5a7a3a'], fall: ['#c4321e', '#a8261b', '#d84a24', '#8a2020'], turn: [.95, .8] },
+  // winterberry: leaves yellowing and thinning, the red berries showing
+  winterberry: { H: 2.4, R: 1.2, fluff: .55, fork: .25, trunkR: .03, trunk: '#55504a', bark: BARK, stems: 5, gnarl: .3, up: .12, berries: 3,
+    levels: [[4, .3, .55, .45], [3, .3, .6, .25], [2, .4, .6, .12]], greens: ['#6a7a3a', '#7a8440'], fall: ['#b4a040', '#a08a34', '#c2ae52'], turn: [.7] },
+};
+/**
+ * The understory kit (v0.17.0): ferns, shrubs and conifer seedlings, photographed by a second tree engine. Every entry
+ * keeps its model (`near`: the engine draws it in 3D close to the camera).
+ */
+export function makeUnderstoryKit() {
+  return withSmooth(true, () => {
+    const entries = [];
+    Object.entries(FERNS).forEach(([sp, o], k) => [0, 1].forEach((v) => entries.push({ key: `${sp}:${v}`, sp, v, wood: fern(7001 + k * 31 + v * 7, o), leaves: null, near: true })));
+    Object.entries(SHRUBS).forEach(([sp, o], k) => o.turn.forEach((turn, v) => { const t = grow(7301 + k * 37 + v * 7, o, turn); entries.push({ key: `${sp}:${v}`, sp, v, turn, ...t, near: true }); }));
+    // seedlings: balsam fir and red spruce no taller than a person, a young maple in red
+    entries.push({ key: 'firling:0', sp: 'firling', v: 0, wood: conifer(1551, { H: 2.6, R: .9, colors: ['#22402f', '#294834', '#30503b'], trunk: '#4d4036', trunkBase: .05, trunkTop: .02, droop: .2, jag: .3, seg: 6, layers: 8, crown: .02, top: 'leader', under: 3 }), leaves: null, foliageGain: 2.3, near: true });
+    entries.push({ key: 'sprucling:0', sp: 'sprucling', v: 0, wood: conifer(5351, { H: 3.4, R: 1.1, colors: ['#25412f', '#2d4b37', '#345440'], trunk: '#4d3b2e', trunkBase: .06, trunkTop: .02, droop: .4, jag: .3, seg: 6, layers: 8, crown: .03, top: 'leader', under: 3 }), leaves: null, foliageGain: 2.3, near: true });
+    { const t = grow(7501, { ...BROAD.redmaple, H: 3.2, R: 1.1, trunkR: .05, fluff: .5 }, .95); entries.push({ key: 'maplet:0', sp: 'maplet', v: 0, turn: .95, ...t, near: true }); }
+    return { entries, leafTexture: makeLeafTexture(512) };
+  });
 }
 
 /** every species' variants: { key: 'sp:v', sp, v, wood, leaves (null for conifers), turn } */

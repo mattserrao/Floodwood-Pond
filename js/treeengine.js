@@ -102,7 +102,7 @@ const CARD_PARS = (gust) => /* glsl */`
   attribute vec4 iA; attribute vec4 iB;   // iA: x, y, z, rotation; iB: width, height, atlas row, tint
   attribute vec2 iL;                       // v0.16.0: the lean (the top's offset per metre up, x and z: out over the water)
   uniform float uRows, uVisD, uTime;
-  varying vec2 vUv; varying vec2 vUv2; varying float vBlend; varying float vTint; varying vec3 vRight; varying vec3 vToCam; varying float vHf;
+  varying vec2 vUv; varying vec2 vUv2; varying float vBlend; varying float vTint; varying vec3 vRight; varying vec3 vToCam; varying float vHf; varying float vNear;
   ${gust}`;
 const CARD_VERT = /* glsl */`
   vec3 o = iA.xyz; vec2 to = o.xz - cameraPosition.xz; float d = length(to);
@@ -118,6 +118,11 @@ const CARD_VERT = /* glsl */`
   vUv = vec2((f0 + uv.x) / ${ANGLES}., (iB.z + uv.y) / uRows);
   vUv2 = vec2((f1 + uv.x) / ${ANGLES}., (iB.z + uv.y) / uRows);
   float on = step(d, uVisD) * step(.001, iB.x);
+  #ifdef NEAR_SWAP
+    vNear = 1. - smoothstep(NEAR_SWAP, d);   // (inside it: the 3D model, in the complementary dither)
+  #else
+    vNear = 0.;
+  #endif
   float hgt = position.y * iB.y * on;
   vec3 transformed = o + right * position.x * iB.x * on + vec3(0., hgt, 0.);
   transformed.xz += iL * hgt; vHf = position.y;
@@ -156,6 +161,9 @@ const CARD_SAMPLE = /* glsl */`
  */
 const TREE_GRADE = /* glsl */`
   vec3 treeGrade(vec3 c, float h) {
+    #ifdef NO_GRADE
+      return c;
+    #endif
     float l = dot(c, vec3(.3, .59, .11));
     float redness = clamp((c.r - c.g) * 2.2, 0., 1.) * clamp((c.r - c.b) * 2., 0., 1.);
     c = mix(c, vec3(1., .7, .32) * l * 1.3, .2 * redness);
@@ -168,14 +176,17 @@ const TREE_GRADE = /* glsl */`
 
 export class TreeEngine {
   /** opts: renderer, kit (treekit.makeKit()), tier ('low' | 'med' | 'high'), msaa, uniforms (sway, wind, light), gust (GLSL) */
-  constructor({ renderer, kit, tier = 'high', msaa = false, uniforms, gust }) {
+  /** v0.17.0 options: name; cell ({ low, med, high } photo sizes); near ([from, to] m: inside it a card dissolves into
+   *  its 3D model - the models of `near` entries are kept); grade (false: no crown grade); visD (m: a far cap) */
+  constructor({ renderer, kit, tier = 'high', msaa = false, uniforms, gust, name = 'Trees (tree engine)', cell = CELL, near = null, grade = true, visD = 1e9 }) {
     this.renderer = renderer; this.kit = kit; this.uniforms = uniforms; this.gust = gust;
+    this.cellSizes = cell; this.near = near; this.grade = grade; this.visCap = visD;
     this.index = new Map(); kit.entries.forEach((e, row) => { e.row = row; this.index.set(e.key, e); });
     this._bake(tier);
     this._material();
     this.geo = cardGeometry(); this.cap = 0; this.trees = [];
     this.mesh = new THREE.Mesh(this.geo, this.mat);
-    this.mesh.frustumCulled = false; this.mesh.name = 'Trees (tree engine)'; this.mesh.userData.keep = true; this.mesh.userData.tag = 'treecards';
+    this.mesh.frustumCulled = false; this.mesh.name = name; this.mesh.userData.keep = true; this.mesh.userData.tag = 'treecards';
     this.mesh.customDepthMaterial = this.depthMat;
     this.setMSAA(msaa);
   }
@@ -185,7 +196,7 @@ export class TreeEngine {
     const r = this.renderer, list = this.kit.entries, max = r.capabilities?.maxTextureSize || 4096, mobile = isMobile();
     // (bikefree: the atlas kept to a memory budget - a phone's or tablet's far smaller; colour + normals at half size)
     const budgetPx = (mobile ? 56e6 : 160e6) / (4 * 1.34 * 1.25), fit = Math.floor(Math.sqrt(budgetPx / (ANGLES * list.length)) / 8) * 8;
-    const cell = Math.max(64, Math.min(CELL[tier] || 192, fit, Math.floor(max / list.length), Math.floor(max / ANGLES)));
+    const cell = Math.max(64, Math.min(this.cellSizes[tier] || 192, fit, Math.floor(max / list.length), Math.floor(max / ANGLES)));
     const W = cell * ANGLES, H = cell * list.length;
     const opts = (s) => ({ generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, samples: s });
     const rtC = new THREE.WebGLRenderTarget(W, H, opts(mobile ? 0 : 4)), rtN = new THREE.WebGLRenderTarget(W / 2, H / 2, opts(0));
@@ -225,7 +236,7 @@ export class TreeEngine {
     const sz = new THREE.Vector2(); r.getSize(sz); r.setViewport(0, 0, sz.x, sz.y);
     mats.flat().forEach((m) => m.dispose());
     // the models are only ever photographed: their geometry goes
-    for (const e of list) { e.wood?.dispose(); e.leaves?.dispose(); e.wood = e.leaves = null; }
+    for (const e of list) { e.broad = !!e.leaves; if (this.near && e.near) continue; e.wood?.dispose(); e.leaves?.dispose(); e.wood = e.leaves = null; }
     this.rtC = rtC; this.rtN = rtN; this.cell = cell; this.atlasSize = [W, H];
     this.memMB = Math.round(W * H * 4 * 1.34 * 1.25 / 1e6);
   }
@@ -244,11 +255,12 @@ export class TreeEngine {
     };
     // lit pass: a MeshStandardMaterial whose colour, coverage and facing come from the photos
     this.mat = new THREE.MeshStandardMaterial({ roughness: .92, metalness: 0, side: THREE.DoubleSide });
+    const defs = (this.near ? `#define NEAR_SWAP ${this.near[0].toFixed(1)}, ${this.near[1].toFixed(1)}\n` : '') + (this.grade ? '' : '#define NO_GRADE\n');
     this.mat.onBeforeCompile = (sh) => {
-      vert(sh);
+      vert(sh); sh.vertexShader = defs + sh.vertexShader; sh.fragmentShader = defs + sh.fragmentShader;
       Object.assign(sh.uniforms, U.light);
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-        varying vec2 vUv; varying vec2 vUv2; varying float vBlend; varying float vTint; varying vec3 vRight; varying vec3 vToCam; varying float vHf;
+        varying vec2 vUv; varying vec2 vUv2; varying float vBlend; varying float vTint; varying vec3 vRight; varying vec3 vToCam; varying float vHf; varying float vNear;
         uniform vec3 uSunDir, uSunCol; uniform float uSunK;
         ${TREE_GRADE}
         ${CARD_SAMPLE}`)
@@ -266,6 +278,7 @@ export class TreeEngine {
             tc.rgb *= 1. + (lf * .6 + lf2 * .4 - .5) * .75 * mag;
             tc.a = clamp(tc.a + (lf2 - .5) * .55 * mag * smoothstep(.15, .85, tc.a) * (1. - smoothstep(.85, 1., tc.a)) * 2., 0., 1.);
           }
+          if (vNear > 0. && vNear > fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(.06711056, .00583715))))) discard;
           float cov = clamp((tc.a - .5) / max(fwidth(tc.a), 1e-4) + .5, 0., 1.);
           if (cov <= 0. || (uA2C < .5 && tc.a < .5)) discard;
           diffuseColor = vec4(treeGrade(pow(tc.rgb / max(tc.a, .3), vec3(2.2)), vHf) * vTint * uGain, uA2C > .5 ? cov : 1.);
@@ -282,7 +295,7 @@ export class TreeEngine {
             outgoingLight += uSunCol * diffuseColor.rgb * back * (.35 + .9 * (1. - abs(normal.z))) * .8 * uSunK; }
           #include <opaque_fragment>`);
     };
-    this.mat.customProgramCacheKey = () => 'fw-tree-engine-2';
+    this.mat.customProgramCacheKey = () => 'fw-tree-engine-3' + defs;
     // shadow pass: the cards turned to the light (cameraPosition is the light's there), cut by their photos
     this.depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
     this.depthMat.onBeforeCompile = (sh) => {
@@ -302,7 +315,16 @@ export class TreeEngine {
     this.own.uA2C.value = a2c ? 1 : 0;
   }
   /** cards beyond this distance (the fog's reach) are dropped in the vertex shader */
-  setVis(d) { this.own.uVisD.value = d; }
+  setVis(d) { this.own.uVisD.value = Math.min(d, this.visCap); }
+  /** the trees within R (m) of (x, z) whose entry keeps its model (the near 3D plants) */
+  near3d(x, z, R) {
+    const out = [], g0 = Math.floor((x - R) / 40), g1 = Math.floor((x + R) / 40), h0 = Math.floor((z - R) / 40), h1 = Math.floor((z + R) / 40);
+    for (let i = g0; i <= g1; i++) for (let j = h0; j <= h1; j++) for (const t of this.grid.get(i + ',' + j) || []) {
+      if (!t.e.wood || this.iB[t.k * 4] <= 0 || (t.x - x) ** 2 + (t.z - z) ** 2 > R * R) continue;
+      out.push(t);
+    }
+    return out;
+  }
 
   /** trees: [{ x, y, z, key ('sp:v'), h (height, m), w (width x its natural width), rot, tint }] */
   setTrees(trees) {

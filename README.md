@@ -4,6 +4,40 @@ A calm, low-poly canoe game for the browser (three.js). You launch from the hand
 in the St. Regis Canoe Area (Adirondack Park, NY) and paddle slowly around the real shoreline, Big Island and its campsites,
 from a pre-dawn sky through day, golden hour and a starry night.
 
+## v0.17.0 (test branch): the understory
+
+The ground under the trees, the water's edge and the shallows are filled in with late-October plants, using bikefree's
+hybrid method (chosen 27 Nov): small plants are picture cards, and ferns and shrubs are grown and photographed like the
+trees, in 3D up close. Built on v0.16.0.
+
+- **Picture cards** (`js/sprites.js`, after bikefree's `grass-cards.js`): plants are drawn on a canvas when the game
+  loads (nothing is downloaded). Each one is three crossed cards that sway in the gusts.
+  - Side views: sedge tussock, cattail, pickerelweed gone brown, bulrush, bur-reed, bluejoint grass, bunchberry and
+    lowbush blueberry.
+  - Flat: fragrant water lily and spatterdock pads, sphagnum mats with cranberry, and moss carpets.
+  - The cards are grouped in 400 m tiles, with one draw call per tile for the upright plants and one for the flat ones.
+- **Grown plants** (`js/treekit.js` `makeUnderstoryKit`, after bikefree's `fern()` and shrubs): fronds that are
+  divided twice, in four fall colourings (cinnamon rust, royal gold-tan, bracken bronze, hay-scented cream).
+  Leatherleaf, sweet gale, highbush blueberry and winterberry (with berries) are grown from several stems with leaf
+  clumps in nested shells. There are also balsam fir, spruce and red maple seedlings. They're photographed by a second
+  tree engine with its own atlas (about 35 MB on High). Each plant is one card, and within 12–15 m of the camera it
+  dissolves into its 3D model with gently swaying fronds and twigs.
+- **Placement** (`js/understory.js`): along every shore of the pond, in drifts and clumps rather than single plants,
+  and about 1.5× life size to match Floodwood's tall trees.
+  - **Shallows:** beds of cattail, bulrush, pickerelweed and bur-reed in the marshy stretches, and a sedge fringe
+    elsewhere. Leatherleaf and sweet gale thickets stand in the water, with patches of lily pads off the marsh and in
+    the coves.
+  - **Waterline:** sedge and grass the whole way round, plus royal and cinnamon ferns, blueberry, winterberry, sweet
+    gale and sphagnum.
+  - **Under the trees (to about 40 m):** fern drifts, bunchberry and blueberry carpets, moss and seedlings.
+  - The launch, the campsite, Big Island's beach and the creek are kept clear.
+- **Replaced:** the old 4-sided reed cones, plain lily-pad discs, shrub islands and the near-field ring's triangle
+  ferns, shrubs and sedge. The ring's duff, moss, sticks, rocks, roots, stumps, logs and saplings stay.
+- **Reach and cost:** the cards shrink away from 200 to 260 m. Density is 1 on High, 0.75 on Medium and 0.45 on Low.
+  On High that's about 38,000 grown plants, 57,000 plant cards and 13,000 pads and mats, built in about 1 s. In the
+  test views, triangles rose by up to about 0.8 M per frame and draw calls by 0–45.
+- `?under=0` brings back the old reeds, pads and ring plants for comparison.
+
 ## v0.16.0 (test branch): bikefree's newer trees and light
 
 Brings in bikefree's tree and lighting work from 24–27 Nov (the "zwift-look" and fidelity passes), as chosen on 27 Nov.

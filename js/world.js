@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { MAP } from './mapdata.js?v=0.16.0';
-import { WIND, GUST_GLSL } from './wind.js?v=0.16.0';
-import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.16.0';
-import { makeKit } from './treekit.js?v=0.16.0';
-import { TreeEngine } from './treeengine.js?v=0.16.0';
+import { MAP } from './mapdata.js?v=0.17.0';
+import { WIND, GUST_GLSL } from './wind.js?v=0.17.0';
+import { mergeGeometries } from '../lib/BufferGeometryUtils.js?v=0.17.0';
+import { makeKit } from './treekit.js?v=0.17.0';
+import { TreeEngine } from './treeengine.js?v=0.17.0';
 
 export const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -573,7 +573,7 @@ export function cullTiles(camPos, visDist, litterDist, reedDist = visDist) {
   if (WORLD.trees) WORLD.trees.setVis(visDist);
   for (const im of TILES) {
     const s = im.boundingSphere, d = Math.hypot(s.center.x - camPos.x, s.center.z - camPos.z) - s.radius, tag = im.userData.tag;
-    const vis = d < (tag === 'litter' ? litterDist : tag === 'reed' ? reedDist : visDist), lod = im.userData.lod;
+    const vis = d < (tag === 'litter' ? litterDist : tag === 'reed' ? reedDist : tag === 'under' ? Math.min(visDist, 270) : visDist), lod = im.userData.lod;
     if (lod) { const card = im.userData.card, near = d < CULL.lodDist, mid = d < CULL.cardDist || !card; im.visible = vis && near; lod.visible = vis && !near && mid; if (card) card.visible = vis && !mid; } else im.visible = vis;
   }
 }
@@ -583,6 +583,9 @@ export function setLitterScale(k) { for (const im of TILES) if (im.userData.tag 
 // v0.15.0: bikefree's tree engine (treekit.js + treeengine.js) draws every tree as a photographed card; ?engine=0 keeps
 // the old cone / blob trees (and the near-field's detailed models) for comparison
 export const ENGINE = QS.get('engine') !== '0';
+// v0.17.0: the understory (understory.js) replaces the old reeds, lily pads, shrub islands and the near ring's ferns,
+// shrubs and sedge; ?under=0 keeps the old ones
+export const UNDER = QS.get('under') !== '0';
 /** which kit tree stands in for an old tree record (species picked from its old kind and colour) */
 function kitKey(r, isCon) {
   const u = r[5];
@@ -737,7 +740,8 @@ export function buildTrees(scene, opts = {}) {
   }
   const m4 = new THREE.Matrix4(), e = new THREE.Euler();
   const reedMat = swayMaterial(new THREE.MeshStandardMaterial({ color: 0xb59a52, flatShading: true, roughness: 1 }), 1.9, 0.35);
-  tiled(scene, reedGeo, reedMat, reedPts.map((p) => [p[0], 0, p[1]]), (im, i, p) => { const s = 0.6 + rnd() * 0.9; e.set((rnd() - 0.5) * 0.35, rnd() * 6, (rnd() - 0.5) * 0.35); m4.compose(P3.set(p[0], 0, p[2]), q.setFromEuler(e), S3.set(1, s, 1)); im.setMatrixAt(i, m4); }, 'reed');
+  if (UNDER) for (let i = 0; i < reedPts.length * 4; i++) rnd();   // (v0.17.0: the old reeds' draws still taken, so everything placed after them stays put)
+  else tiled(scene, reedGeo, reedMat, reedPts.map((p) => [p[0], 0, p[1]]), (im, i, p) => { const s = 0.6 + rnd() * 0.9; e.set((rnd() - 0.5) * 0.35, rnd() * 6, (rnd() - 0.5) * 0.35); m4.compose(P3.set(p[0], 0, p[2]), q.setFromEuler(e), S3.set(1, s, 1)); im.setMatrixAt(i, m4); }, 'reed');
 
   // Lily pads in the shallows (late-season: olive and brown)
   const padGeo = new THREE.CircleGeometry(0.55, 7); padGeo.rotateX(-Math.PI / 2);
@@ -749,7 +753,7 @@ export function buildTrees(scene, opts = {}) {
   const padMesh = new THREE.InstancedMesh(padGeo, new THREE.MeshStandardMaterial({ color: 0x5b6b2a, roughness: 0.8, side: THREE.DoubleSide }), pads.length);
   const pc = new THREE.Color();
   pads.forEach((p, i) => { const s = 0.7 + rnd() * 0.9; m4.compose(new THREE.Vector3(p[0], 0.045, p[1]), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 6), new THREE.Vector3(s, 1, s)); padMesh.setMatrixAt(i, m4); pc.setHSL(0.17 + rnd() * 0.08, 0.5, 0.2 + rnd() * 0.12); padMesh.setColorAt(i, pc); });
-  scene.add(padMesh); WORLD.pads = padMesh;
+  if (!UNDER) scene.add(padMesh); WORLD.pads = padMesh;
   const litter = buildLitter(scene);
   WORLD.maples = maples;
   WORLD.treeRecs = [...conAt, ...broadAt]; WORLD.treeMat = mat; if (!WORLD.trees) distFade(mat, 'out', 'tree');
